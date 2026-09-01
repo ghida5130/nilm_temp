@@ -1,0 +1,127 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs and runtime files
+*.log
+logs/
+*.pid
+*.pid.lock
+tmp/
+temp/
+
+# React / Node.js
+node_modules/
+.npm/
+.yarn/
+.pnpm-store/
+dist/
+coverage/
+.vite/
+.parcel-cache/
+.next/
+.nuxt/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Spring Boot / Java / Gradle
+.gradle/
+**/build/
+out/
+target/
+bin/
+*.class
+*.jar
+*.war
+*.ear
+!**/gradle/wrapper/gradle-wrapper.jar
+hs_err_pid*
+replay_pid*
+
+# FastAPI / Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+site/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Garment collection data and generated operational artifacts
+ai/garment_dataset/
+ai/garment_dataset-v2/
+ai/**/raw/
+ai/**/normalized/
+ai/**/images/
+!ai/image_demo_local/test_data/musinsa/images/
+!ai/image_demo_local/test_data/musinsa/images/**
+ai/**/reports/
+ai/**/probe/
+ai/**/pilot/
+ai/catalog_index/
+# 아바타 프리셋 원본 — S3 배포본이 소스라 로컬 참조용만 보관
+ai/avatar_references/
+ai/tryon_results/
+
+# IntelliJ IDEA / JetBrains
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Eclipse / STS
+.apt_generated/
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+
+# Visual Studio Code / Visual Studio
+.vscode/
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux / editor swap files
+*~
+*.swp
+*.swo
+.#*
