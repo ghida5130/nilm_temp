@@ -219,20 +219,21 @@ docker exec -it mosquitto-broker mosquitto_sub -t "home/#"
 스마트홈 내 각 가구 및 가전기기의 실시간 소비 전력(W)을 모사하여 Mosquitto MQTT 브로커로 실시간 발행(Publish)하는 Python 프로그램입니다.
 
 ### (1) 시뮬레이션 사양
-- **대상 가구**: `H001`, `H002`, `H003` (확장 가능)
-- **대상 가전 (6종)**:
+- **대상 가구**: `H001` ~ `H010` (총 10개 가구)
+- **계측 지점**: 가구별 스마트 미터 / **메인 분전반 (`main`)**
+- **내부 모델링 (NILM 대상 6종 가전 + 기저 부하)**:
   - 냉장고 (`fridge`), TV (`tv`), 에어컨 (`aircon`), 세탁기 (`washing_machine`), 전자레인지 (`microwave`), 조명 (`lights`)
+  - 상시 기저 대기전력(25~45W) 및 센서 노이즈
 - **특징**:
-  - 기기별 대기 전력(Standby) 및 가동 전력(Active) 모델링
-  - ON/OFF 상태 전이 확률 및 가우시안 노이즈 기반 실시간 전력값 생성
-- **발행 토픽 규칙**: `v1/power/sim/{house}/{device}` (예: `v1/power/sim/H001/tv`)
+  - 가구 내 각 가전들의 상태 전이 및 소비 전력을 합산하여 **가구 전체 메인 분전반 총 전력(W)**을 산출 및 발행
+- **발행 토픽 규칙**: `v1/power/sim/{house}/main` (예: `v1/power/sim/H001/main`)
 - **전송 메시지 스키마 (JSON)**:
   ```json
   {
     "house": "H001",
-    "device": "tv",
-    "ts": "2026-09-01T07:05:38.042Z",
-    "power_w": 112.35
+    "device": "main",
+    "ts": "2026-09-02T05:05:38.042Z",
+    "power_w": 1245.35
   }
   ```
 
