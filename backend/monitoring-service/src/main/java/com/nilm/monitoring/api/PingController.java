@@ -23,6 +23,11 @@ public class PingController {
         return Map.of("service", "monitoring-service", "status", "ok");
     }
 
+    @GetMapping("/admin/ping")
+    public Map<String, String> adminPing() {
+        return Map.of("service", "monitoring-service", "admin", "ok");
+    }
+
     @PostMapping("/echo")
     public Map<String, String> echo(@Valid @RequestBody EchoRequest request) {
         return Map.of("echo", request.message());
