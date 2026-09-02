@@ -73,6 +73,16 @@ services:
     depends_on:
       - kafka
 
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mqtt/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mqtt/config/passwd:/mosquitto/config/passwd
+
 volumes:
   postgres_data:
   kafka_data:
