@@ -13,10 +13,17 @@ import argparse
 import json
 import random
 import time
+from datetime import datetime, timezone
 
 from confluent_kafka import Producer
 
 TOPIC = "power-raw"
+
+
+def to_iso(epoch: float) -> str:
+    """epoch 초 → ISO 8601 UTC 문자열 (밀리초 포함, MQTT 시뮬레이터와 동일 포맷)."""
+    dt = datetime.fromtimestamp(epoch, timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 # ---------- 합성 데이터: 가구별 상태머신 ----------
 
@@ -74,7 +81,7 @@ def run_synthetic(producer: Producer, n_houses: int, hz: float, speed: float):
     try:
         while True:
             for h in houses:
-                msg = {"house": h.id, "ts": round(sim_time, 3), "power_w": h.tick(dt)}
+                msg = {"house": h.id, "device": "main", "ts": to_iso(sim_time), "power_w": h.tick(dt)}
                 producer.produce(TOPIC, key=h.id, value=json.dumps(msg))
                 sent += 1
             producer.poll(0)
@@ -101,7 +108,7 @@ def run_csv(producer: Producer, path: str, speed: float):
             if prev_ts is not None and ts > prev_ts:
                 time.sleep((ts - prev_ts) / speed)
             prev_ts = ts
-            msg = {"house": row["house"], "ts": ts, "power_w": float(row["power_w"])}
+            msg = {"house": row["house"], "device": "main", "ts": to_iso(ts), "power_w": float(row["power_w"])}
             producer.produce(TOPIC, key=row["house"], value=json.dumps(msg))
             producer.poll(0)
             sent += 1
