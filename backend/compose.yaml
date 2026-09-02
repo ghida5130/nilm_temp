@@ -9,6 +9,9 @@ services:
     environment:
       IOT_DEVICE_SERVICE_URL: http://iot-device-service:8081
       MONITORING_SERVICE_URL: http://monitoring-service:8082
+      APP_SECURITY_ENABLED: "true"
+      JWT_ISSUER_URI: http://localhost:8090/realms/nilm
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://keycloak:8080/realms/nilm/protocol/openid-connect/certs
     depends_on:
       - iot-device-service
       - monitoring-service
