@@ -10,7 +10,7 @@ from confluent_kafka import Producer
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "simulator_user")
-MQTT_PASS = os.getenv("MQTT_PASS", "")
+MQTT_PASS = os.getenv("MQTT_PASS", "test1234")
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "v1/power/sim/+/main")
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")

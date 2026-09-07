@@ -221,19 +221,30 @@ docker exec -it mosquitto-broker mosquitto_sub -t "home/#"
 ### (1) 시뮬레이션 사양
 - **대상 가구**: `H001` ~ `H010` (총 10개 가구)
 - **계측 지점**: 가구별 스마트 미터 / **메인 분전반 (`main`)**
-- **내부 모델링 (NILM 대상 6종 가전 + 기저 부하)**:
-  - 냉장고 (`fridge`), TV (`tv`), 에어컨 (`aircon`), 세탁기 (`washing_machine`), 전자레인지 (`microwave`), 조명 (`lights`)
-  - 상시 기저 대기전력(25~45W) 및 센서 노이즈
+- **내부 모델링 (NILM AI 모델 학습 대상 6종 수동 가전 + 기저/미계측 부하)**:
+  - **수동 활동 가전 6종**: 전기포트 (`kettle`), 인덕션 (`induction`), 전기다리미 (`iron`), 전자레인지 (`microwave`), 헤어드라이기 (`hair_dryer`), 진공 청소기 (`vacuum_cleaner`)
+  - **기저 및 미계측 부하**: AI Hub 실측 분전반 미계측 부하(~65%) 및 냉장고 자동 컴프레서 주기(5~20분 가동/정지 반복, 70~100W) 모사
+  - **가전 파형 합성 엔진 (AI 모델 추론 최적화)**:
+    - **기동 돌입전류(Inrush Overshoot)**: 켜짐 직후 1~2초간 1.05~1.50배 피크 전력 및 순간 역률 저하 모사
+    - **단속 운전(Duty Cycle)**: 인덕션/전기다리미의 서모스탯 온도 제어(가열 ON ↔ 휴지 OFF) 반복 모사
+    - **시계열 완만 드리프트(AR-1)**: 전압 및 기저 대기전력이 독립 난수가 아닌 부드러운 시계열 곡선을 갖도록 1차 자기회귀 프로세스 적용
 - **특징**:
-  - 가구 내 각 가전들의 상태 전이 및 소비 전력을 합산하여 **가구 전체 메인 분전반 총 전력(W)**을 산출 및 발행
+  - 가구 내 각 가전들의 상태 전이 및 소비 전력/역률을 합산하여 **가구 전체 메인 분전반 총 교류 전력 특성(4특징 및 전압/전류)**을 산출 및 발행
+  - NILM AI 모델 요구 스펙(다변량 4특징) 및 기존 데이터 파이프라인(Kafka Bridge, HDFS Loader) 호환성 유지
 - **발행 토픽 규칙**: `v1/power/sim/{house}/main` (예: `v1/power/sim/H001/main`)
 - **전송 메시지 스키마 (JSON)**:
   ```json
   {
     "house": "H001",
     "device": "main",
-    "ts": "2026-09-02T05:05:38.042Z",
-    "power_w": 1245.35
+    "ts": "2026-09-07T01:45:00.123Z",
+    "power_w": 1245.35,
+    "active_power": 1245.35,
+    "reactive_power": 420.18,
+    "power_factor": 0.947,
+    "current": 5.974,
+    "voltage": 220.1,
+    "apparent_power": 1314.37
   }
   ```
 
@@ -258,17 +269,17 @@ docker exec -it mosquitto-broker mosquitto_sub -t "home/#"
      venv\Scripts\activate.bat
      ```
 
-3. **필수 라이브러리(`paho-mqtt`) 설치**
+3. **필수 라이브러리(`aiomqtt`) 설치**
    ```bash
    pip install -r requirements.txt
    ```
-   *(또는 `pip install paho-mqtt`)*
+   *(또는 `pip install aiomqtt`)*
 
 4. **시뮬레이터 구동**
    ```bash
    python simulator.py
    ```
-   *1초 주기로 3개 가구 × 6개 기기(총 18건)의 전력 데이터가 브로커로 연속 발행됩니다. (종료: `Ctrl + C`)*
+   *1초 주기로 10개 가구의 메인 분전반 전력 데이터가 비동기로 브로커에 연속 발행됩니다. (종료: `Ctrl + C`)*
 
 ### (3) 시뮬레이터 데이터 실시간 수신 검증 (구독 테스트)
 별도의 터미널 창에서 아래 명령어를 실행하여 시뮬레이터가 보낸 데이터가 실시간으로 들어오는지 확인합니다:
@@ -311,11 +322,11 @@ docker exec -it mosquitto-broker mosquitto_sub -t "v1/power/sim/#" -u "kafka_bri
 
 ### 단계별 상세 명세
 
-| 단계 | 구분 | 구성 요소 | 상세 내용 |
-| :--- | :--- | :--- | :--- |
-| **Step 1** | **발행 (Publish)** | `simulator.py` (Python 3) | 가구별 6종 가전의 전력값(W)을 1초 주기로 JSON 직렬화하여 발행 |
-| **Step 2** | **수집 (Broker)** | `mosquitto-broker` (Docker) | `v1/power/sim/{house}/{device}` 토픽으로 수신 및 인메모리 라우팅 |
-| **Step 3** | **구독 (Subscribe)** | CLI / 파이프라인 수신단 | `v1/power/sim/#` 토픽을 구독하여 실시간 데이터 수신 및 검증 |
+| 단계       | 구분                 | 구성 요소                   | 상세 내용                                                        |
+| :--------- | :------------------- | :-------------------------- | :--------------------------------------------------------------- |
+| **Step 1** | **발행 (Publish)**   | `simulator.py` (Python 3)   | 가구별 6종 가전의 전력값(W)을 1초 주기로 JSON 직렬화하여 발행    |
+| **Step 2** | **수집 (Broker)**    | `mosquitto-broker` (Docker) | `v1/power/sim/{house}/{device}` 토픽으로 수신 및 인메모리 라우팅 |
+| **Step 3** | **구독 (Subscribe)** | CLI / 파이프라인 수신단     | `v1/power/sim/#` 토픽을 구독하여 실시간 데이터 수신 및 검증      |
 
 
 
