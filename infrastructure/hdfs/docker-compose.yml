@@ -1,7 +1,7 @@
 name: nilm-hdfs
 
 # HDFS 데이터 레이크 (원본 파형·Parquet 적재용)
-# 실행: infrastructure의 메인 compose를 먼저 올려 nilm-net 생성 후,
+# 실행: infrastructure/local의 compose를 먼저 올려 nilm-net 생성 후,
 #       이 폴더에서 docker compose up -d
 # 검증: http://localhost:9870 (NameNode UI)
 
