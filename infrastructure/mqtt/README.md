@@ -275,11 +275,36 @@ docker exec -it mosquitto-broker mosquitto_sub -t "home/#"
    ```
    *(또는 `pip install aiomqtt`)*
 
-4. **시뮬레이터 구동**
-   ```bash
-   python simulator.py
-   ```
-   *1초 주기로 10개 가구의 메인 분전반 전력 데이터가 비동기로 브로커에 연속 발행됩니다. (종료: `Ctrl + C`)*
+4. **시뮬레이터 구동 (CLI 옵션 지원)**
+   - **기본 실행 (10개 가구, 1초 주기 연속 발행)**:
+     ```bash
+     python simulator.py
+     ```
+   - **커맨드라인 옵션 상세 (`python simulator.py --help`)**:
+     | 옵션 | 단축키 | 기본값 | 설명 |
+     | :--- | :--- | :--- | :--- |
+     | `--houses` | `-n` | `10` | 시뮬레이션 대상 가구 수 (`H001` - `H{n:03d}`) |
+     | `--interval` | `-i` | `1.0` | 데이터 발행 주기 (초 단위) |
+     | `--hz` | | `None` | 가구당 초당 측정 횟수 (지정 시 `1/hz` 초로 자동 환산) |
+     | `--count` | `-c` | `0` | 전송 사이클 횟수 (`0`: 무한, `N > 0`: N회 발행 후 자동 종료) |
+     | `--host` | | `localhost` | MQTT 브로커 호스트 주소 |
+     | `--port` | `-p` | `1883` | MQTT 브로커 포트 번호 |
+     | `--user` | `-u` | `simulator_user` | MQTT 인증 계정명 |
+     | `--password` | | `test1234` | MQTT 인증 비밀번호 |
+     | `--qos` | | `1` | 발행 QoS 레벨 (`0` 또는 `1`) |
+     | `--quiet` | `-q` | `False` | 요약 모드 (매초 상세 로그 생략, 5초 주기 누적 TPS 통계만 출력) |
+
+   - **다양한 실행 예시**:
+     ```bash
+     # 1) 테스트용 5회 전송 후 자동 종료
+     python simulator.py --count 5
+
+     # 2) 50가구 부하 테스트 (0.5초 주기 / 2Hz, 요약 모드)
+     python simulator.py --houses 50 --interval 0.5 --quiet
+
+     # 3) 100가구 100회 한정 대규모 발행 (자동화 검증)
+     python simulator.py -n 100 -c 100 -q
+     ```
 
 ### (3) 시뮬레이터 데이터 실시간 수신 검증 (구독 테스트)
 별도의 터미널 창에서 아래 명령어를 실행하여 시뮬레이터가 보낸 데이터가 실시간으로 들어오는지 확인합니다:
