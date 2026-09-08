@@ -3,6 +3,7 @@ import sys
 import json
 import math
 import time
+import uuid
 import random
 import asyncio
 import argparse
@@ -326,14 +327,21 @@ async def publish_house_power(client: aiomqtt.Client, house: str, now_iso: str, 
     metrics = calculate_main_panel_metrics(house)
 
     payload = {
-        "house": house,
-        "device": "main",
-        "ts": now_iso,
-        "power_w": metrics["active_power"],         # 기존 bridge.py / loader.py 하위 호환 유지
+        # [신규 명세] realtime-analysis-service MVP 요구사항 명세서 6.1 규격 대응
+        "message_id": str(uuid.uuid4()),
+        "household_id": house,
+        "device_id": "main",
+        "measured_at": now_iso,
         "active_power": metrics["active_power"],     # AI 모델 입력 피처 1 (W)
         "reactive_power": metrics["reactive_power"], # AI 모델 입력 피처 2 (var)
         "power_factor": metrics["power_factor"],     # AI 모델 입력 피처 3 (역률)
         "current": metrics["current"],               # AI 모델 입력 피처 4 (A)
+
+        # [하위 호환] 기존 MQTT-Kafka Bridge, HDFS Loader 및 레거시 호환 필드
+        "house": house,
+        "device": "main",
+        "ts": now_iso,
+        "power_w": metrics["active_power"],
         "voltage": metrics["voltage"],               # 전압 (V)
         "apparent_power": metrics["apparent_power"]  # 피상전력 (VA)
     }
