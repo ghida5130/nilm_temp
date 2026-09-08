@@ -20,9 +20,10 @@ def forward_message(client, producer, message, topic, failed):
         payload = json.loads(message.payload)
         if not isinstance(payload, dict):
             raise ValueError("payload must be an object")
-        house = payload.get("house")
-        if not isinstance(house, str) or not house or not {"power_w", "ts"} <= payload.keys():
-            raise ValueError("house, power_w and ts required")
+        house = payload.get("household_id") or payload.get("house")
+        has_required = ({"power_w", "ts"} <= payload.keys()) or ({"active_power", "measured_at"} <= payload.keys())
+        if not isinstance(house, str) or not house or not has_required:
+            raise ValueError("house/household_id, power_w/active_power and ts/measured_at required")
     except (ValueError, UnicodeError):
         LOG.warning("Skipping invalid message on %s", message.topic)
         client.ack(message.mid, message.qos)
@@ -62,9 +63,9 @@ def main():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                          client_id=os.getenv("MQTT_CLIENT_ID", "nilm-kafka-bridge"),
                          clean_session=False, manual_ack=True)
-    username = os.getenv("MQTT_USER", "")
+    username = os.getenv("MQTT_USER", "kafka_bridge_user")
     if username:
-        client.username_pw_set(username, os.getenv("MQTT_PASS", ""))
+        client.username_pw_set(username, os.getenv("MQTT_PASS", "test1234"))
     configure_tls(client)
     client.reconnect_delay_set(min_delay=1, max_delay=30)
 
