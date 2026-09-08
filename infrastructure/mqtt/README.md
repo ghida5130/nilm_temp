@@ -8,7 +8,9 @@ Mosquitto 서비스 실행은 [local Compose](../local/compose.yaml) 또는 [EC2
 - config/mosquitto.production.conf: 운영 8883 TLS 리스너와 계정 인증.
 - config/passwd: 로컬 계정 해시 파일. Git 제외.
 - config/mosquitto.conf: 이전 컨테이너 바인드 경로 보존용. 새 Compose는 사용하지 않는다.
-- simulator/simulator.py: 로컬 데이터 발행 도구.
+- simulator/simulator.py: 로컬 및 대규모 데이터 발행 도구 (10초 피크 시연 모드 내장).
+- simulator/waveform_viewer.html: 브라우저 기반 실시간 인터랙티브 시각화 대시보드.
+- simulator/README.md: 시뮬레이터 전용 상세 명세 및 실행 가이드.
 
 ## 최초 실행
 
@@ -225,61 +227,43 @@ docker exec -it mosquitto-broker mosquitto_sub -t "home/#"
   - 가구 내 각 가전들의 상태 전이 및 소비 전력/역률을 합산하여 **가구 전체 메인 분전반 총 교류 전력 특성(4특징 및 전압/전류)**을 산출 및 발행
   - NILM AI 모델 요구 스펙(다변량 4특징) 및 기존 데이터 파이프라인(Kafka Bridge, HDFS Loader) 호환성 유지
 - **발행 토픽 규칙**: `v1/power/sim/{house}/main` (예: `v1/power/sim/H001/main`)
-- **전송 메시지 스키마 (JSON)**:
+- **전송 메시지 스키마 (JSON, 신규 AI 4특징 및 레거시 이중 호환)**:
   ```json
   {
+    "message_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "household_id": "H001",
+    "device_id": "main",
+    "measured_at": "2026-09-08T07:42:47.034Z",
+    "active_power": 3590.2,
+    "reactive_power": 412.5,
+    "power_factor": 0.993,
+    "current": 16.32,
+
     "house": "H001",
     "device": "main",
-    "ts": "2026-09-07T01:45:00.123Z",
-    "power_w": 1245.35,
-    "active_power": 1245.35,
-    "reactive_power": 420.18,
-    "power_factor": 0.947,
-    "current": 5.974,
+    "ts": "2026-09-08T07:42:47.034Z",
+    "power_w": 3590.2,
     "voltage": 220.1,
-    "apparent_power": 1314.37
+    "apparent_power": 3613.8
   }
   ```
 
 ### (2) 시뮬레이터 환경 구축 및 실행 방법
 
-1. **Python 가상환경 생성 (최초 1회)**
+1. **필수 라이브러리(`aiomqtt`) 설치**
    ```bash
-   python -m venv venv
+   pip install -r simulator/requirements.txt
    ```
 
-2. **가상환경 활성화**
-   - **Git Bash**:
-     ```bash
-     source venv/Scripts/activate
-     ```
-   - **PowerShell**:
-     ```powershell
-     .\venv\Scripts\Activate.ps1
-     ```
-   - **Windows CMD**:
-     ```cmd
-     venv\Scripts\activate.bat
-     ```
-
-3. **필수 라이브러리(`aiomqtt`) 설치**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   *(또는 `pip install aiomqtt`)*
-
-4. **시뮬레이터 구동 (CLI 옵션 지원)**
-   - **기본 실행 (10개 가구, 1초 주기 연속 발행)**:
-     ```bash
-     python simulator.py
-     ```
-   - **커맨드라인 옵션 상세 (`python simulator.py --help`)**:
+2. **시뮬레이터 구동 (CLI 옵션 지원)**
+   - **커맨드라인 옵션 상세 (`python simulator/simulator.py --help`)**:
      | 옵션 | 단축키 | 기본값 | 설명 |
      | :--- | :--- | :--- | :--- |
-     | `--houses` | `-n` | `10` | 시뮬레이션 대상 가구 수 (`H001` - `H{n:03d}`) |
+     | `--scenario` | `-s` | `random` | 시나리오 모드 (`random`: 연속 확률 시뮬레이션, `peak`: 10초 3,000W+ 피크 시연 모드) |
+     | `--houses` | `-n` | `10` | 시뮬레이션 대상 가구 수 (`H001` ~ `H{n:03d}`) |
      | `--interval` | `-i` | `1.0` | 데이터 발행 주기 (초 단위) |
      | `--hz` | | `None` | 가구당 초당 측정 횟수 (지정 시 `1/hz` 초로 자동 환산) |
-     | `--count` | `-c` | `0` | 전송 사이클 횟수 (`0`: 무한, `N > 0`: N회 발행 후 자동 종료) |
+     | `--count` | `-c` | `0` | 전송 사이클 횟수 (`0`: 무한, `N > 0`: N회 발행 후 종료, peak 모드 기본: 60) |
      | `--host` | | `localhost` | MQTT 브로커 호스트 주소 |
      | `--port` | `-p` | `1883` | MQTT 브로커 포트 번호 |
      | `--user` | `-u` | `simulator_user` | MQTT 인증 계정명 |
@@ -287,19 +271,27 @@ docker exec -it mosquitto-broker mosquitto_sub -t "home/#"
      | `--qos` | | `1` | 발행 QoS 레벨 (`0` 또는 `1`) |
      | `--quiet` | `-q` | `False` | 요약 모드 (매초 상세 로그 생략, 5초 주기 누적 TPS 통계만 출력) |
 
-   - **다양한 실행 예시**:
+   - **주요 실행 예시**:
      ```bash
-     # 1) 테스트용 5회 전송 후 자동 종료
-     python simulator.py --count 5
+     # 1) [시연용] 10초 피크 시연 모드 (H001 대상 10초에 3,500W 도달 후 60초 완주)
+     python simulator/simulator.py --scenario peak
 
-     # 2) 50가구 부하 테스트 (0.5초 주기 / 2Hz, 요약 모드)
-     python simulator.py --houses 50 --interval 0.5 --quiet
+     # 2) 1,000가구 대규모 스트리밍 부하 테스트 (1,000 msg/s 연속 발행)
+     python simulator/simulator.py -n 1000 -q
 
-     # 3) 100가구 100회 한정 대규모 발행 (자동화 검증)
-     python simulator.py -n 100 -c 100 -q
+     # 3) 테스트용 10가구 5회 전송 후 자동 종료
+     python simulator/simulator.py -n 10 -c 5
      ```
 
-### (3) 시뮬레이터 데이터 실시간 수신 검증 (구독 테스트)
+### (3) 실시간 웹 파형 시각화 대시보드 (`waveform_viewer.html`)
+브라우저에서 직접 원클릭으로 시연 시나리오를 시작하고 실시간 차트와 가전 상태를 관찰할 수 있는 인터랙티브 뷰어입니다.
+* **실행**: 파일 탐색기에서 `simulator/waveform_viewer.html`을 더블 클릭하거나 웹 브라우저로 오픈
+* **주요 기능**:
+  * **[10초 피크 시연 시작] 버튼**: 클릭 즉시 실시간 애니메이션 차트 가동, 10초에 3,400~3,500W 피크 경보 점멸
+  * **[연속 실시간 시뮬레이션] 버튼**: 6대 가전 무한 연속 동작
+  * **일시정지 / 리셋 / 배속 조절(1x, 2x, 5x) / CSV 내보내기 지원**
+
+### (4) 시뮬레이터 데이터 실시간 수신 검증 (구독 테스트)
 별도의 터미널 창에서 아래 명령어를 실행하여 시뮬레이터가 보낸 데이터가 실시간으로 들어오는지 확인합니다:
 ```cmd
 docker exec -it mosquitto-broker mosquitto_sub -t "v1/power/sim/#" -u "kafka_bridge_user" -P "test1234" -v
