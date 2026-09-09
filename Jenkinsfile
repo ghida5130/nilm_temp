@@ -1,24 +1,53 @@
 def notifyMattermost(String result) {
     node('ci') {
         withCredentials([string(credentialsId: 'mattermost-webhook', variable: 'MATTERMOST_WEBHOOK')]) {
-            withEnv(["BUILD_RESULT=${result}"]) {
+            withEnv(["BUILD_RESULT=${result}",
+                     "BUILD_DURATION=${currentBuild.durationString.replace(' and counting', '')}"]) {
                 sh '''
                     python3 - <<'EOF'
 import json
 import os
 import urllib.request
 
-ok = os.environ["BUILD_RESULT"] == "success"
-deploy = os.environ.get("ENABLE_CD") == "true" and os.environ.get("BRANCH_NAME") == "master"
-mode = "배포" if deploy else "CI"
-sha = os.environ.get("IMAGE_TAG", "")[:8] or "unknown"
-text = "\\n".join([
-    ("✅" if ok else "❌") + f" **{mode} {'성공' if ok else '실패'}** `{os.environ['JOB_NAME']}` #{os.environ['BUILD_NUMBER']}",
-    f"브랜치 `{os.environ.get('BRANCH_NAME', '-')}` · 커밋 `{sha}`",
-    os.environ["BUILD_URL"],
+env = os.environ
+ok = env["BUILD_RESULT"] == "success"
+deploy = env.get("ENABLE_CD") == "true" and env.get("BRANCH_NAME") == "master"
+service = env["JOB_NAME"].split("/")[0]
+sha = env.get("IMAGE_TAG", "")[:7] or "unknown"
+subject = env.get("GIT_COMMIT_SUBJECT") or "-"
+author = env.get("GIT_AUTHOR_NAME") or "-"
+console = env["BUILD_URL"] + "console"
+
+if ok and deploy:
+    title = "### ✅ Jenkins Build & Deploy Success!"
+    note = "> ✨ 최신 변경 사항이 서버에 정상적으로 배포되었습니다.  "
+    link = f"> 🔗 [Jenkins 콘솔 로그 확인하기]({console})"
+elif ok:
+    title = "### ✅ Jenkins Build Success!"
+    note = "> ✨ 빌드 및 테스트가 정상적으로 통과했습니다.  "
+    link = f"> 🔗 [Jenkins 콘솔 로그 확인하기]({console})"
+else:
+    title = "### 🚨 Jenkins Build Failed!"
+    note = ("> ⚠️ 빌드 도중 에러가 발생하여 배포가 중단되었습니다. 아래 로그를 확인하세요.  " if deploy
+            else "> ⚠️ 빌드 도중 에러가 발생했습니다. 아래 로그를 확인하세요.  ")
+    link = f"> 🔗 [Jenkins 에러 콘솔 바로가기]({console})"
+
+text = chr(10).join([
+    title,
+    "",
+    f"* **서비스:** `{service}`",
+    f"* **빌드 번호:** `#{env['BUILD_NUMBER']}`",
+    f"* **브랜치:** `{env.get('BRANCH_NAME', '-')}`",
+    f"* **작업자:** `{author}`",
+    f"* **커밋:** `{sha}` - {subject}",
+    f"* **소요 시간:** {env.get('BUILD_DURATION') or '-'}",
+    "",
+    note,
+    link,
 ])
+payload = {"attachments": [{"color": "#28A745" if ok else "#DC3545", "text": text}]}
 request = urllib.request.Request(
-    os.environ["MATTERMOST_WEBHOOK"], data=json.dumps({"text": text}).encode(),
+    env["MATTERMOST_WEBHOOK"], data=json.dumps(payload).encode(),
     headers={"Content-Type": "application/json"})
 urllib.request.urlopen(request, timeout=20).read()
 EOF
@@ -51,6 +80,8 @@ pipeline {
                 checkout scm
                 script {
                     env.IMAGE_TAG = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    env.GIT_AUTHOR_NAME = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
+                    env.GIT_COMMIT_SUBJECT = sh(script: 'git log -1 --pretty=%s', returnStdout: true).trim()
                     env.RELEASE_ID = "${env.IMAGE_TAG}-b${env.BUILD_NUMBER}"
                     env.IMAGE_REPOSITORY = params.IMAGE_REPOSITORY?.trim() ?: 'docker.io/leejeongmin24/on-maum'
                     if (!(env.IMAGE_REPOSITORY ==~ /docker\.io\/[a-z0-9]+(?:[._-][a-z0-9]+)*\/[a-z0-9]+(?:[._-][a-z0-9]+)*/)) {
