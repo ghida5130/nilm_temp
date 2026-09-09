@@ -16,21 +16,17 @@ service = env["JOB_NAME"].split("/")[0]
 sha = env.get("IMAGE_TAG", "")[:7] or "unknown"
 subject = env.get("GIT_COMMIT_SUBJECT") or "-"
 author = env.get("GIT_AUTHOR_NAME") or "-"
-console = env["BUILD_URL"] + "console"
 
 if ok and deploy:
     title = "### ✅ Jenkins Build & Deploy Success!"
-    note = "> ✨ 최신 변경 사항이 서버에 정상적으로 배포되었습니다.  "
-    link = f"> 🔗 [Jenkins 콘솔 로그 확인하기]({console})"
+    note = "> ✨ 최신 변경 사항이 서버에 정상적으로 배포되었습니다."
 elif ok:
     title = "### ✅ Jenkins Build Success!"
-    note = "> ✨ 빌드 및 테스트가 정상적으로 통과했습니다.  "
-    link = f"> 🔗 [Jenkins 콘솔 로그 확인하기]({console})"
+    note = "> ✨ 빌드 및 테스트가 정상적으로 통과했습니다."
 else:
     title = "### 🚨 Jenkins Build Failed!"
-    note = ("> ⚠️ 빌드 도중 에러가 발생하여 배포가 중단되었습니다. 아래 로그를 확인하세요.  " if deploy
-            else "> ⚠️ 빌드 도중 에러가 발생했습니다. 아래 로그를 확인하세요.  ")
-    link = f"> 🔗 [Jenkins 에러 콘솔 바로가기]({console})"
+    note = ("> ⚠️ 빌드 도중 에러가 발생하여 배포가 중단되었습니다. Jenkins 콘솔 로그를 확인하세요." if deploy
+            else "> ⚠️ 빌드 도중 에러가 발생했습니다. Jenkins 콘솔 로그를 확인하세요.")
 
 text = chr(10).join([
     title,
@@ -43,7 +39,6 @@ text = chr(10).join([
     f"* **소요 시간:** {env.get('BUILD_DURATION') or '-'}",
     "",
     note,
-    link,
 ])
 payload = {"attachments": [{"color": "#28A745" if ok else "#DC3545", "text": text}]}
 request = urllib.request.Request(
