@@ -73,7 +73,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_RAW_TOPIC"
 
   mqtt-kafka-bridge:
-    image: ${REGISTRY:?REGISTRY required}/nilm-mqtt-kafka-bridge:${IMAGE_TAG:?IMAGE_TAG required}
+    image: ${MQTT_KAFKA_BRIDGE_IMAGE:?MQTT_KAFKA_BRIDGE_IMAGE required}
     restart: unless-stopped
     init: true
     stop_grace_period: 30s

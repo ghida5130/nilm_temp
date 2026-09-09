@@ -114,6 +114,8 @@ Bridge는 MQTT QoS 1을 Kafka 전달 확인 후 ACK한다. 재전달 시 중복 
 
 ## 운영 배포
 
+현재 Jenkins는 Docker Hub Private 저장소 `leejeongmin24/on-maum` 하나의 서비스별 태그를 사용하고, 실제 배포에는 digest를 주입한다. [단일 Private 실행 가이드](../docs/배포설정/DockerHub_단일_Private_실행_가이드.md)를 먼저 따른다. `nilm-a`, `nilm-b` Compose 프로젝트 이름은 유지한다. 아래 수동 명령은 이미지 인증과 Prepare가 끝난 서버 기준이며 최초 전체 배포 순서를 대체하지 않는다.
+
 각 EC2의 `/opt/nilm`에 해당 Compose·env·설정 파일을 준비한다. Jenkins의 `prepare.sh`가 비밀 파일을 제외한 설정을 복사하고 `CONFIG_ROOT=/opt/nilm`을 기록한다.
 
 ```bash
