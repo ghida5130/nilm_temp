@@ -1,6 +1,6 @@
-def notifyMattermost(String result) {
+def notifyDiscord(String result) {
     node('ci') {
-        withCredentials([string(credentialsId: 'mattermost-webhook', variable: 'MATTERMOST_WEBHOOK')]) {
+        withCredentials([string(credentialsId: 'discord-webhook', variable: 'DISCORD_WEBHOOK')]) {
             withEnv(["BUILD_RESULT=${result}",
                      "BUILD_DURATION=${currentBuild.durationString.replace(' and counting', '')}"]) {
                 sh '''
@@ -18,19 +18,17 @@ subject = env.get("GIT_COMMIT_SUBJECT") or "-"
 author = env.get("GIT_AUTHOR_NAME") or "-"
 
 if ok and deploy:
-    title = "### ✅ Jenkins Build & Deploy Success!"
+    title = "✅ Jenkins Build & Deploy Success!"
     note = "> ✨ 최신 변경 사항이 서버에 정상적으로 배포되었습니다."
 elif ok:
-    title = "### ✅ Jenkins Build Success!"
+    title = "✅ Jenkins Build Success!"
     note = "> ✨ 빌드 및 테스트가 정상적으로 통과했습니다."
 else:
-    title = "### 🚨 Jenkins Build Failed!"
+    title = "🚨 Jenkins Build Failed!"
     note = ("> ⚠️ 빌드 도중 에러가 발생하여 배포가 중단되었습니다. Jenkins 콘솔 로그를 확인하세요." if deploy
             else "> ⚠️ 빌드 도중 에러가 발생했습니다. Jenkins 콘솔 로그를 확인하세요.")
 
-text = chr(10).join([
-    title,
-    "",
+description = chr(10).join([
     f"* **서비스:** `{service}`",
     f"* **빌드 번호:** `#{env['BUILD_NUMBER']}`",
     f"* **브랜치:** `{env.get('BRANCH_NAME', '-')}`",
@@ -40,10 +38,11 @@ text = chr(10).join([
     "",
     note,
 ])
-payload = {"attachments": [{"color": "#28A745" if ok else "#DC3545", "text": text}]}
+payload = {"embeds": [{"title": title, "description": description,
+                       "color": 0x28A745 if ok else 0xDC3545}]}
 request = urllib.request.Request(
-    env["MATTERMOST_WEBHOOK"], data=json.dumps(payload).encode(),
-    headers={"Content-Type": "application/json"})
+    env["DISCORD_WEBHOOK"], data=json.dumps(payload).encode(),
+    headers={"Content-Type": "application/json", "User-Agent": "nilm-jenkins/1.0"})
 urllib.request.urlopen(request, timeout=20).read()
 EOF
                 '''
@@ -207,7 +206,7 @@ pipeline {
         }
     }
     post {
-        success { script { notifyMattermost('success') } }
-        failure { script { notifyMattermost('failure') } }
+        success { script { notifyDiscord('success') } }
+        failure { script { notifyDiscord('failure') } }
     }
 }
