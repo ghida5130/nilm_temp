@@ -36,8 +36,23 @@ class PowerMeasurement(BaseModel):
         return value
 
 
-class ApplianceState(BaseModel):
+class AppliancePrediction(BaseModel):  # AI 모델이 직접 반환한 원본 결과 
+    """One appliance ON probability returned by a Predictor."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
     appliance_type: str
+    probability: float = Field(ge=0, le=1)
+
+
+class ApplianceState(BaseModel):  # 분석 서브사 확률과 threshold를 비교해 만든 최종 판정 
+    """Thresholded appliance state with the evidence used for the decision."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    appliance_type: str
+    probability: float = Field(ge=0, le=1)
+    threshold: float = Field(ge=0, le=1)
     is_on: bool
 
 

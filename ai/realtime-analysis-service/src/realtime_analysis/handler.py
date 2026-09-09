@@ -9,6 +9,7 @@ from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.predictor import Predictor
 from realtime_analysis.schemas import PowerMeasurement
 from realtime_analysis.state_tracker import DailyActivityTracker
+from realtime_analysis.state_decider import ApplianceStateDecider
 
 # 실제 처리 순서를 담당하는 역할 
 class MeasurementHandler:
@@ -16,6 +17,7 @@ class MeasurementHandler:
         self,
         buffer: HouseholdBuffer,
         predictor: Predictor,
+        state_decider: ApplianceStateDecider,
         baseline_repository: BaselineRepository,
         tracker: DailyActivityTracker,
         detector: RoutineMissedDetector,
@@ -24,6 +26,7 @@ class MeasurementHandler:
     ) -> None:
         self._buffer = buffer
         self._predictor = predictor
+        self._state_decider = state_decider
         self._baseline_repository = baseline_repository
         self._tracker = tracker
         self._detector = detector
@@ -35,9 +38,10 @@ class MeasurementHandler:
         if not self._buffer.is_ready(measurement.household_id): # 버퍼가 준비 좼는지 확인
             return
 
-        states = self._predictor.predict(  # 가전 6종 판단
+        predictions = self._predictor.predict(  
             self._buffer.get_window(measurement.household_id)
         )
+        states = self._state_decider.decide(predictions)  # threshold로 ON/OFF 판정
         activity_date = measurement.measured_at.astimezone(self._timezone).date()
         # ON으로 판단된 가전을 오늘 사용한 것으로 기록 
         self._tracker.record_states(  

@@ -20,11 +20,11 @@ env를 읽는 시점이 다르다는 이유만으로 파일 분리가 기술적�
 
 | 실행 대상 | 서비스 |
 | --- | --- |
-| 로컬 | 개발에 필요한 PostgreSQL, Kafka, Mosquitto, Bridge, Keycloak, Redis, Backend. Frontend는 Vite 개발 서버 또는 별도 컨테이너로 실행 |
+| 로컬 | 개발에 필요한 PostgreSQL, Kafka, Mosquitto, Bridge, Keycloak, Redis, Backend, 실시간 분석 서비스. Frontend는 Vite 개발 서버 또는 별도 컨테이너로 실행 |
 | EC2-A | Frontend/Nginx, API Gateway, IoT Device Service, Monitoring Service, Keycloak, Mosquitto, Redis |
 | EC2-B | PostgreSQL, Kafka, MQTT–Kafka Bridge |
 
-첫 스켈레톤 배포에서는 Spark, Flink, S3 Archive Sink, AI 학습·추론 서비스는 포함하지 않는다. 기존 HDFS 작업은 별도 실험용으로 보존한다.
+운영 첫 스켈레톤 배포에서는 Spark, Flink, S3 Archive Sink, AI 학습·추론 서비스는 포함하지 않는다. 로컬 Compose에는 Kafka 연동 검증을 위해 `realtime-analysis-service`를 포함한다. 기존 HDFS 작업은 별도 실험용으로 보존한다.
 
 ## 3. 저장소 폴더 구조
 
@@ -181,7 +181,7 @@ services:
 | `ec2-a-runtime-env` | EC2-A의 `/opt/nilm/.env` | Compose 설정 해석 및 컨테이너 생성 시점 |
 | `ec2-b-runtime-env` | EC2-B의 `/opt/nilm/.env` | Compose 설정 해석 및 컨테이너 생성 시점 |
 
-`frontend-build.env`, `ec2-a-runtime.env`, `ec2-b-runtime.env`처럼 파일 이름을 구분해 준비하더라도 서버에는 각 운영 파일을 `.env`라는 이름으로 저장할 수 있다. 서로 다른 서버이므로 충돌하지 않는다. AI 설정은 실제 배포할 AI 서비스가 생길 때 추가한다.
+`frontend-build.env`, `ec2-a-runtime.env`, `ec2-b-runtime.env`처럼 파일 이름을 구분해 준비하더라도 서버에는 각 운영 파일을 `.env`라는 이름으로 저장할 수 있다. 서로 다른 서버이므로 충돌하지 않는다. AI 운영 설정은 실제 운영 배포 대상에 분석 서비스를 포함할 때 추가한다.
 
 ```text
 Jenkins Credential

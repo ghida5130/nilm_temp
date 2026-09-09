@@ -22,7 +22,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-포트: Keycloak 8090, Gateway 8080, Device 8081, Monitoring 8082, PostgreSQL 5432, Kafka 9092, MQTT 1883. 모두 `127.0.0.1`에만 바인딩됩니다. 프론트 컨테이너(3000)와 Kafka UI(8091)는 `--profile frontend --profile tools`를 붙였을 때만 뜹니다.
+포트: Keycloak 8090, Gateway 8080, Device 8081, Monitoring 8082, PostgreSQL 5432, Kafka 9092, MQTT 1883. 모두 `127.0.0.1`에만 바인딩됩니다. `realtime-analysis-service`는 외부 포트 없이 Kafka를 소비합니다. 프론트 컨테이너(3000)와 Kafka UI(8091)는 `--profile frontend --profile tools`를 붙였을 때만 뜹니다.
 
 ## `.env`를 바꿨을 때
 
@@ -48,12 +48,18 @@ docker compose up -d
 docker compose up -d --build api-gateway
 ```
 
-바뀐 서비스만 지정합니다(`api-gateway`, `iot-device-service`, `monitoring-service`, `mqtt-kafka-bridge`, `frontend`). 백엔드 Dockerfile은 이미지 안에서 `./gradlew test bootJar`를 실행하므로 로컬 사전 빌드는 필요 없지만, **테스트가 실패하면 이미지 빌드도 실패**합니다. 빌드 로그는 `docker compose build <service> --progress=plain`으로 확인합니다.
+바뀐 서비스만 지정합니다(`api-gateway`, `iot-device-service`, `monitoring-service`, `mqtt-kafka-bridge`, `realtime-analysis-service`, `frontend`). 백엔드 Dockerfile은 이미지 안에서 `./gradlew test bootJar`를 실행하므로 로컬 사전 빌드는 필요 없지만, **테스트가 실패하면 이미지 빌드도 실패**합니다. 빌드 로그는 `docker compose build <service> --progress=plain`으로 확인합니다.
 
 자주 수정할 때는 인프라만 Compose로 띄우고 백엔드는 IDE에서 실행하는 편이 빠릅니다. Compose의 `.env`는 IDE로 전달되지 않으니 환경변수를 별도로 설정합니다.
 
 ```powershell
 docker compose up -d postgres keycloak kafka mosquitto redis
+```
+
+분석 서비스 로그를 보려면 다음 명령을 사용합니다.
+
+```powershell
+docker compose logs -f realtime-analysis-service
 ```
 
 ## 전체 초기화

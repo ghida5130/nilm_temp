@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     kafka_auto_offset_reset: str = "earliest"
 
     model_window_size: int = Field(default=299, ge=1)
+    model_manifest_file: str = "config/model_manifest.json"
     fake_on_appliances: str = ""
     baseline_file: str = "config/baselines.json"
     analysis_score_threshold: int = Field(default=80, ge=0, le=100)

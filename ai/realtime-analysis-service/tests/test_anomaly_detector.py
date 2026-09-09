@@ -41,7 +41,14 @@ def test_skips_routine_missed_when_appliance_was_used() -> None:
     tracker.record_states(
         "H001",
         measured_at.date(),
-        [ApplianceState(appliance_type="MICROWAVE", is_on=True)],
+        [
+            ApplianceState(
+                appliance_type="MICROWAVE",
+                probability=0.9,
+                threshold=0.5,
+                is_on=True,
+            )
+        ],
     )
 
     anomalies = detector.detect("H001", measured_at, [make_baseline()])
