@@ -176,6 +176,14 @@ pipeline {
                 sh 'python3 infrastructure/scripts/verify-http.py'
             }
         }
+        stage('Deploy realtime analysis') {
+            when { beforeAgent true; allOf { branch 'master'; expression { params.ENABLE_CD } } }
+            agent { label 'ec2-a' }
+            steps {
+                unstash 'deploy-config'
+                sh 'bash infrastructure/scripts/deploy.sh a-analysis'
+            }
+        }
         stage('Deploy Bridge and verify pipeline') {
             when { beforeAgent true; allOf { branch 'master'; expression { params.ENABLE_CD } } }
             agent { label 'ec2-b' }

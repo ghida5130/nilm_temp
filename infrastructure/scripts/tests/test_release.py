@@ -124,11 +124,13 @@ class ReleaseTests(unittest.TestCase):
             release.check_images(self.data, "b", pull=True)
         run.assert_called_once_with(["docker", "pull", self.data["images"]["mqtt-kafka-bridge"]["reference"]], check=True)
 
-    def test_a_pulls_exactly_four_application_images(self):
+    def test_a_pulls_exactly_five_application_images(self):
         with patch.object(release, "docker_json", side_effect=self.docker_metadata), \
                 patch.object(release.subprocess, "run") as run:
             release.check_images(self.data, "a", pull=True)
-        self.assertEqual(run.call_count, 4)
+        self.assertEqual(run.call_count, 5)
+        self.assertIn(self.data["images"]["realtime-analysis-service"]["reference"],
+                      str(run.call_args_list))
         self.assertNotIn(self.data["images"]["mqtt-kafka-bridge"]["reference"], str(run.call_args_list))
 
     def test_platform_and_digest_mismatch_block_deployment(self):
@@ -151,12 +153,12 @@ class ReleaseTests(unittest.TestCase):
                 return 1 if fail else 0
         return Process()
 
-    def test_publish_creates_manifest_only_after_five_pushes(self):
+    def test_publish_creates_manifest_only_after_six_pushes(self):
         with patch.object(release.subprocess, "Popen", side_effect=self.push_process) as push, \
                 contextlib.redirect_stdout(io.StringIO()):
             release.publish(self.manifest)
-        self.assertEqual(push.call_count, 5)
-        self.assertEqual(len(release.load(self.manifest)["images"]), 5)
+        self.assertEqual(push.call_count, 6)
+        self.assertEqual(len(release.load(self.manifest)["images"]), 6)
         for call in push.call_args_list:
             self.assertTrue(call.args[0][2].startswith(self.data["repository"] + ":"))
 

@@ -3,11 +3,26 @@ import sys
 import json
 import math
 import time
+import uuid
 import random
 import asyncio
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import aiomqtt
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.append(CURRENT_DIR)
+
+from scenarios import (
+    KST,
+    PEAK_SCENARIO_SCHEDULE,
+    RoutineMissedScenario,
+    create_initial_house_environment,
+    update_standby_environment,
+    inject_peak_scenario_event as _inject_peak_scenario_event,
+    parse_simulation_start_time,
+)
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     try:
@@ -128,16 +143,8 @@ def init_simulation_states(houses: list[str]):
     device_states.clear()
 
     for house in houses:
-        # 1) 가구별 시계열 환경 상태 (전압 AR-1 드리프트, 기본 대기전력, 냉장고 컴프레서 주기)
-        house_states[house] = {
-            "voltage": round(random.gauss(220.0, 1.2), 1),
-            "base_nominal_w": random.uniform(40.0, 65.0),     # 상시 기저부하
-            "base_current_w": random.uniform(45.0, 60.0),
-            "fridge_active": random.random() < 0.4,            # 냉장고 컴프레서 초기 가동 여부
-            "fridge_remaining_sec": random.randint(300, 1200), # 컴프레서 가동/정지 주기 (5분 - 20분)
-            "fridge_nominal_w": random.uniform(55.0, 85.0),    # 냉장고 소비 전력 (EDA 실측 중앙: 63W)
-            "fridge_pf": random.uniform(0.76, 0.82),           # 냉장고 모터 지상 역률
-        }
+        # 1) 가구별 시계열 대기전력 환경 상태 (전압 AR-1 드리프트, 기본 대기전력, 냉장고 주기)
+        house_states[house] = create_initial_house_environment()
 
         # 2) 가구별 가전 상태 머신 객체
         device_states[house] = {}
@@ -155,42 +162,15 @@ def init_simulation_states(houses: list[str]):
 # 기본 10가구로 초기 상태 셋업
 init_simulation_states(DEFAULT_HOUSES)
 
+def inject_peak_scenario_event(cycle_sec: int, house: str) -> str | None:
+    """피크 시연 시나리오 타임라인 이벤트 주입 (scenarios 모듈 위임)"""
+    return _inject_peak_scenario_event(cycle_sec, house, device_states)
+
 def update_house_environment(house: str) -> tuple[float, float, float]:
-    """
-    가구별 전압(V)의 완만한 시계열 드리프트(AR-1) 및 냉장고 컴프레서 주기 반영
-    반환: (voltage, base_p, base_q)
-    """
-    env = house_states[house]
+    """가구별 전압(V) 드리프트 및 순수 대기전력 + 냉장고 컴프레서 주기 계산"""
+    return update_standby_environment(house_states[house])
 
-    # 1. 전압 AR(1) 완만 드리프트 (220V 기준 완만하게 변동)
-    env["voltage"] = 0.98 * env["voltage"] + 0.02 * 220.0 + random.gauss(0, 0.12)
-    voltage = round(max(212.0, min(228.0, env["voltage"])), 1)
-
-    # 2. 상시 대기전력의 완만한 변동 (Random Walk)
-    env["base_current_w"] = 0.96 * env["base_current_w"] + 0.04 * env["base_nominal_w"] + random.gauss(0, 0.2)
-    base_p = max(20.0, env["base_current_w"])
-    base_pf = 0.92
-
-    # 3. 냉장고 컴프레서 주기적 가동/정지 (자동 가전 주기성)
-    env["fridge_remaining_sec"] -= 1
-    if env["fridge_remaining_sec"] <= 0:
-        env["fridge_active"] = not env["fridge_active"]
-        # 가동 시간: 15~25분(900~1500초), 정지 시간: 20~35분(1200~2100초)
-        env["fridge_remaining_sec"] = random.randint(900, 1500) if env["fridge_active"] else random.randint(1200, 2100)
-
-    fridge_p = 0.0
-    fridge_q = 0.0
-    if env["fridge_active"]:
-        fridge_p = env["fridge_nominal_w"] + random.gauss(0, 0.8)
-        fridge_pf = env["fridge_pf"]
-        fridge_q = fridge_p * math.sqrt(1.0 - fridge_pf * fridge_pf) / fridge_pf
-
-    base_q = base_p * math.sqrt(1.0 - base_pf * base_pf) / base_pf + fridge_q
-    total_base_p = base_p + fridge_p
-
-    return voltage, total_base_p, base_q
-
-def update_and_generate_device_load(house: str, device: str) -> tuple[float, float, bool]:
+def update_and_generate_device_load(house: str, device: str, allow_random: bool = True) -> tuple[float, float, bool]:
     """
     가전 상태 머신 전이 및 파형 특성(돌입전류 오버슈트, 듀티사이클) 계산
     반환: (P, Q, is_active)
@@ -199,8 +179,8 @@ def update_and_generate_device_load(house: str, device: str) -> tuple[float, flo
     state = device_states[house][device]
 
     if state["state"] == "OFF":
-        # 가전 켜짐 트리거 확인
-        if random.random() < profile["turn_on_prob"]:
+        # 가전 켜짐 트리거 확인 (랜덤 트리거 허용 시에만 자동 켜짐)
+        if allow_random and random.random() < profile["turn_on_prob"]:
             dur_min, dur_max = profile["session_sec"]
             state["session_remaining"] = random.randint(dur_min, dur_max)
             state["nominal_w"] = random.uniform(*profile["nominal_w"])
@@ -272,7 +252,7 @@ def update_and_generate_device_load(house: str, device: str) -> tuple[float, flo
 
     return p, q, is_active
 
-def calculate_main_panel_metrics(house: str) -> dict:
+def calculate_main_panel_metrics(house: str, allow_random: bool = True) -> dict:
     """가구 내 메인 분전반의 다변량 교류 전력 특성(P, Q, S, PF, V, I) 계산"""
     # 1. 완만한 전압 및 기저 부하 획득
     voltage, base_p, base_q = update_house_environment(house)
@@ -283,7 +263,7 @@ def calculate_main_panel_metrics(house: str) -> dict:
 
     # 2. 6대 수동 가전 부하 합산 및 파형 생성
     for device in DEVICE_PROFILES:
-        dev_p, dev_q, is_active = update_and_generate_device_load(house, device)
+        dev_p, dev_q, is_active = update_and_generate_device_load(house, device, allow_random=allow_random)
         total_p += dev_p
         total_q += dev_q
         if is_active:
@@ -321,19 +301,26 @@ def calculate_main_panel_metrics(house: str) -> dict:
 # ==========================================
 # 3. 비동기 MQTT 전송 루프 & CLI
 # ==========================================
-async def publish_house_power(client: aiomqtt.Client, house: str, now_iso: str, qos: int = 1) -> dict:
+async def publish_house_power(client: aiomqtt.Client, house: str, now_iso: str, qos: int = 1, allow_random: bool = True) -> dict:
     """단일 가구의 메인 분전반 전력 계측 데이터(4특징 및 물리 특성) 발행"""
-    metrics = calculate_main_panel_metrics(house)
+    metrics = calculate_main_panel_metrics(house, allow_random=allow_random)
 
     payload = {
-        "house": house,
-        "device": "main",
-        "ts": now_iso,
-        "power_w": metrics["active_power"],         # 기존 bridge.py / loader.py 하위 호환 유지
+        # [신규 명세] realtime-analysis-service MVP 요구사항 명세서 6.1 규격 대응
+        "message_id": str(uuid.uuid4()),
+        "household_id": house,
+        "device_id": "main",
+        "measured_at": now_iso,
         "active_power": metrics["active_power"],     # AI 모델 입력 피처 1 (W)
         "reactive_power": metrics["reactive_power"], # AI 모델 입력 피처 2 (var)
         "power_factor": metrics["power_factor"],     # AI 모델 입력 피처 3 (역률)
         "current": metrics["current"],               # AI 모델 입력 피처 4 (A)
+
+        # [하위 호환] 기존 MQTT-Kafka Bridge, HDFS Loader 및 레거시 호환 필드
+        "house": house,
+        "device": "main",
+        "ts": now_iso,
+        "power_w": metrics["active_power"],
         "voltage": metrics["voltage"],               # 전압 (V)
         "apparent_power": metrics["apparent_power"]  # 피상전력 (VA)
     }
@@ -342,11 +329,19 @@ async def publish_house_power(client: aiomqtt.Client, house: str, now_iso: str, 
     await client.publish(topic, json.dumps(payload), qos=qos)
     return {"house": house, "power": metrics["active_power"], "devices": metrics["active_devices"]}
 
+
+
 def parse_args():
     """커맨드라인 실행 인자 파싱"""
     parser = argparse.ArgumentParser(
         description="NILM IoT 스마트홈 메인 분전반 전력 시뮬레이터 (MQTT 비동기 발행)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        "--scenario", "-s",
+        choices=["random", "peak", "routine_missed"],
+        default="random",
+        help="시뮬레이션 시나리오 모드 (random: 확률 기반 연속 시뮬레이션, peak: H001 단일 가구 10초 3,000W+ 피크 시연 모드, routine_missed: H001 08:10 루틴 누락 이상치 검증 모드)"
     )
     parser.add_argument(
         "--houses", "-n",
@@ -370,7 +365,12 @@ def parse_args():
         "--count", "-c",
         type=int,
         default=0,
-        help="전송 사이클 횟수 (0: 무한 연속 발행, N > 0: N회 전송 후 자동 종료)"
+        help="전송 사이클 횟수 (0: 무한 연속 발행, N > 0: N회 전송 후 자동 종료, peak 기본값: 60회, routine_missed 기본값: 300회)"
+    )
+    parser.add_argument(
+        "--start-time",
+        default=None,
+        help="시뮬레이션 시작 가상 시각 (예: '08:15:00' 또는 '2026-09-08T08:15:00'). routine_missed 모드는 기본값으로 오늘 아침 08:15:00 KST 적용"
     )
     parser.add_argument(
         "--host",
@@ -409,22 +409,65 @@ def parse_args():
 
 async def run_simulator(args):
     """시뮬레이터 메인 비동기 실행 루프"""
+    is_peak_mode = (args.scenario == "peak")
+    is_missed_mode = (args.scenario == "routine_missed")
+
     # 1. 가구 목록 동적 생성 및 상태 머신 초기화
-    houses = [f"H{i:03d}" for i in range(1, args.houses + 1)]
+    if (is_peak_mode or is_missed_mode) and args.houses == 10:
+        houses = ["H001"]  # peak 및 routine_missed 모드는 기본 단일 가구 H001 대상
+    else:
+        houses = [f"H{i:03d}" for i in range(1, args.houses + 1)]
+
     init_simulation_states(houses)
 
-    # 2. 발행 주기(interval) 계산
+    # 2. 발행 주기(interval) 및 목표 사이클 수 계산
     interval = (1.0 / args.hz) if args.hz and args.hz > 0 else max(0.001, args.interval)
+    if args.count > 0:
+        target_count = args.count
+    elif is_peak_mode:
+        target_count = 60
+    elif is_missed_mode:
+        target_count = 300  # 299개 슬라이딩 버퍼 완충 후 이상 검증
+    else:
+        target_count = 0
+
+    allow_random = not (is_peak_mode or is_missed_mode)
+    base_dt = parse_simulation_start_time(args.start_time, is_missed_mode)
 
     print(f"============================================================")
-    print(f" NILM IoT 전력 시뮬레이터 시작")
-    print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos})")
-    print(f" - 대상 가구: 총 {len(houses)}개 ({houses[0]} ~ {houses[-1]})")
-    print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
-    if args.count > 0:
-        print(f" - 목표 사이클: {args.count}회 발행 후 자동 종료 (총 {len(houses) * args.count}건)")
+    if is_peak_mode:
+        print(f" NILM IoT 전력 시뮬레이터 시작 [10초 3,000W+ 피크 시연 모드]")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos})")
+        print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
+        print(f" - 시연 타임라인:")
+        print(f"   * T+01s ~ T+09s: 평상시 대기 상태 (약 55~65W)")
+        print(f"   * T+10s ~ T+30s: [피크 경보] 전기포트(1,700W) + 인덕션(1,600W) 동시 기동 (3,300~3,500W 도달)")
+        print(f"   * T+31s ~ T+44s: [피크 해소] 전기포트 자동 정지, 인덕션 단독 가동 (약 1,600W)")
+        print(f"   * T+45s ~ T+60s: [정상 복귀] 인덕션 조리 완료, 대기전력 상태 복귀 (약 60W)")
+        print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
+        print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료")
+    elif is_missed_mode:
+        start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각'
+        print(f" NILM IoT 전력 시뮬레이터 시작 [루틴 누락(ROUTINE_MISSED) 이상치 검증 모드]")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos})")
+        print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
+        print(f" - 시작 가상 시각: {start_desc}")
+        print(f" - 시연 타임라인:")
+        print(f"   * 전자레인지 가동 없이 대기전력(약 45~65W) 및 냉장고 주기만 연속 유지")
+        print(f"   * T+001s ~ T+298s: 분석 서비스 입력 윈도우(299개) 슬라이딩 버퍼 적재")
+        print(f"   * T+299s: 299초 버퍼 충족 ➡️ Kafka 'analysis.event.v1' (score 86) 이상 이벤트 발행!")
+        print(f"   * T+300s: 검증 완료 후 자동 종료")
+        print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
+        print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료")
     else:
-        print(f" - 실행 모드: 무한 연속 발행 (종료: Ctrl+C)")
+        print(f" NILM IoT 전력 시뮬레이터 시작")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos})")
+        print(f" - 대상 가구: 총 {len(houses)}개 ({houses[0]} ~ {houses[-1]})")
+        print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
+        if target_count > 0:
+            print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료 (총 {len(houses) * target_count}건)")
+        else:
+            print(f" - 실행 모드: 무한 연속 발행 (종료: Ctrl+C)")
     print(f"============================================================", flush=True)
 
     total_sent = 0
@@ -446,23 +489,56 @@ async def run_simulator(args):
 
         while True:
             cycle_start = time.time()
-            now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            if base_dt is not None:
+                sim_dt = base_dt + timedelta(seconds=cycle)
+                now_iso = sim_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            else:
+                now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            cycle += 1
+
+            # 피크 시연 모드일 경우 타임라인 이벤트 주입
+            event_desc = None
+            if is_peak_mode:
+                event_desc = inject_peak_scenario_event(cycle, "H001")
 
             # N개 가구 동시 비동기 발행 (Concurrent Publish)
             results = await asyncio.gather(
-                *(publish_house_power(client, house, now_iso, qos=args.qos) for house in houses)
+                *(publish_house_power(client, house, now_iso, qos=args.qos, allow_random=allow_random) for house in houses)
             )
-            cycle += 1
             total_sent += len(houses)
 
             # 로그 출력 제어
-            if not args.quiet:
+            if is_peak_mode:
+                res = results[0]
+                power_w = res["power"]
+                devs = res["devices"]
+                dev_str = ", ".join(devs) if devs else "대기(기저부하)"
+
+                status_tag = "대기"
+                if power_w >= 3000.0:
+                    status_tag = "피크 경보 (3,000W+ 초과!)"
+                elif power_w >= 1000.0:
+                    status_tag = "가전 가동 중"
+
+                event_notice = f"  <== [{event_desc}]" if event_desc else ""
+                print(f"[{now_iso}] (T+{cycle:02d}s) 소비전력: {power_w:7.1f} W | 상태: {status_tag:<22} | 가전: {dev_str}{event_notice}", flush=True)
+            elif is_missed_mode:
+                res = results[0]
+                power_w = res["power"]
+                devs = res["devices"]
+                dev_str = ", ".join(devs) if devs else "대기전력(기저부하)"
+                sim_dt = base_dt + timedelta(seconds=cycle - 1) if base_dt else datetime.now(KST)
+                kst_str = sim_dt.astimezone(KST).strftime("%H:%M:%S")
+
+                status_tag, notice = RoutineMissedScenario.get_cycle_status(cycle)
+                print(f"[{now_iso} | KST {kst_str}] (T+{cycle:03d}s) 소비전력: {power_w:6.1f} W | 상태: {status_tag:<28} | 가전: {dev_str}{notice}", flush=True)
+            elif not args.quiet:
                 active_info = [f"{r['house']}:{','.join(r['devices'])}" for r in results if r["devices"]]
                 active_summary = f" [가전 ON: {'; '.join(active_info)}]" if active_info else ""
                 print(f"[{now_iso}] (사이클 {cycle:04d}) {len(houses)}개 가구 발행 완료{active_summary}", flush=True)
             else:
                 now = time.time()
-                if now - last_summary_time >= 5.0 or (args.count > 0 and cycle >= args.count):
+                if now - last_summary_time >= 5.0 or (target_count > 0 and cycle >= target_count):
                     elapsed = max(0.001, now - last_summary_time)
                     batch_sent = total_sent - last_summary_sent
                     tps = batch_sent / elapsed
@@ -470,8 +546,9 @@ async def run_simulator(args):
                     last_summary_time = now
                     last_summary_sent = total_sent
 
+
             # 목표 횟수 도달 시 종료
-            if args.count > 0 and cycle >= args.count:
+            if target_count > 0 and cycle >= target_count:
                 break
 
             # 주기 보정 대기 (실제 전송 소요시간 차감)

@@ -2,7 +2,7 @@
 set -euo pipefail
 phase=$1
 case "$phase" in
-  a) target=a ;;
+  a|a-analysis) target=a ;;
   b-base|b-bridge) target=b ;;
   *) echo "Unknown deployment phase" >&2; exit 2 ;;
 esac
@@ -18,6 +18,9 @@ case "$phase" in
     docker compose pull redis mosquitto keycloak
     docker compose up -d --wait --wait-timeout 360 redis mosquitto keycloak
     docker compose up -d --pull never --wait --wait-timeout 360 api-gateway iot-device-service monitoring-service frontend
+    ;;
+  a-analysis)
+    docker compose up -d --pull never --no-deps --wait --wait-timeout 180 realtime-analysis-service
     ;;
   b-bridge)
     docker compose up -d --pull never --no-deps --wait --wait-timeout 180 mqtt-kafka-bridge
