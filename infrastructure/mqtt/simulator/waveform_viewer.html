@@ -93,6 +93,19 @@
       box-shadow: 0 4px 16px rgba(239, 68, 68, 0.5);
     }
 
+    .btn-missed {
+      background: linear-gradient(135deg, #d97706, #b45309);
+      color: #ffffff;
+      border-color: rgba(245, 158, 11, 0.4);
+      box-shadow: 0 2px 10px rgba(217, 119, 6, 0.35);
+    }
+
+    .btn-missed:hover {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(245, 158, 11, 0.5);
+    }
+
     .btn-random {
       background: linear-gradient(135deg, #0284c7, #2563eb);
       color: #ffffff;
@@ -207,6 +220,12 @@
       border: 1px solid rgba(56, 189, 248, 0.3);
     }
 
+    .status-missed {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+
     @keyframes pulse {
 
       0%,
@@ -287,6 +306,20 @@
 
     .app-chip.active.peak-app .state {
       color: #f87171;
+    }
+
+    .app-chip.missed-target {
+      border-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.15);
+    }
+
+    .app-chip.missed-target .name {
+      color: #fde68a;
+    }
+
+    .app-chip.missed-target .state {
+      color: #f59e0b;
+      font-weight: 700;
     }
 
     .chart-container {
@@ -376,6 +409,9 @@
     <div class="controls">
       <button id="btnPeakDemo" class="btn btn-peak" onclick="startPeakDemo()">
         10초 피크 시연 시작 (3,000W+)
+      </button>
+      <button id="btnMissedDemo" class="btn btn-missed" onclick="startRoutineMissedDemo()">
+        루틴 누락 시연 시작 (08:10+)
       </button>
       <button id="btnRandomDemo" class="btn btn-random" onclick="startRandomSimulation()">
         연속 실시간 시뮬레이션
@@ -707,6 +743,35 @@
           eventNoticeText = "정상 복귀 (인덕션 정지 -> 평상시 대기전력 약 60W 복귀)";
           addEventRow(sec, "정상 복귀", "모든 가전 종료", "60W 수준", eventNoticeText);
         }
+      } else if (currentMode === 'routine_missed') {
+        // 모든 가전 OFF 유지 (기저부하 + 냉장고만 가동)
+        Object.keys(deviceStates).forEach(dev => {
+          deviceStates[dev].state = "OFF";
+          deviceStates[dev].p = 0;
+        });
+
+        const totalSecKst = 8 * 3600 + 10 * 60 + sec;
+        const curH = Math.floor(totalSecKst / 3600) % 24;
+        const curM = Math.floor((totalSecKst % 3600) / 60);
+        const curS = totalSecKst % 60;
+        const timeStr = `${String(curH).padStart(2, '0')}:${String(curM).padStart(2, '0')}:${String(curS).padStart(2, '0')}`;
+
+        if (sec === 1) {
+          eventNoticeText = "08:10 아침 루틴 검증 시작 (전자레인지 미가동 / 대기전력 유지)";
+          addEventRow(sec, "루틴 감시", "전자레인지 미가동", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
+        } else if (sec === 100) {
+          eventNoticeText = `대기전력 지속 중 (누적 100초, KST ${timeStr})`;
+          addEventRow(sec, "루틴 감시", "전자레인지 미가동", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
+        } else if (sec === 200) {
+          eventNoticeText = `대기전력 지속 중 (누적 200초, KST ${timeStr})`;
+          addEventRow(sec, "루틴 감시", "전자레인지 미가동", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
+        } else if (sec === 299) {
+          eventNoticeText = "299초 완충 (AI 이상치 감지 조건 도달 -> analysis.event.v1 발행!)";
+          addEventRow(sec, "이상치 감지", "ROUTINE_MISSED", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
+        } else if (sec === 300) {
+          eventNoticeText = "시연 완료 (300초 데이터 수집 완료)";
+          addEventRow(sec, "시연 완료", "전체 완주", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
+        }
       } else if (currentMode === 'random') {
         // 랜덤 가전 트리거
         Object.keys(DEVICE_PROFILES).forEach(dev => {
@@ -815,6 +880,27 @@
           timelineNotice.innerHTML = `<strong>[대기 중]</strong> T+${currentSec}s: 정상 대기전력 상태입니다. <strong>10초에 3,000W+ 피크 발생 예정!</strong> (카운트다운: ${10 - currentSec}초)`;
         } else if (currentMode === 'peak' && currentSec >= 45) {
           timelineNotice.innerHTML = `<strong>[시연 완료]</strong> T+${currentSec}s: 모든 가전이 종료되어 평상시 대기 상태로 복귀했습니다.`;
+        } else if (currentMode === 'routine_missed') {
+          badgeStatus.className = "badge-status status-missed";
+          const totalSecKst = 8 * 3600 + 10 * 60 + currentSec;
+          const curH = Math.floor(totalSecKst / 3600) % 24;
+          const curM = Math.floor((totalSecKst % 3600) / 60);
+          const curS = totalSecKst % 60;
+          const timeStr = `${String(curH).padStart(2, '0')}:${String(curM).padStart(2, '0')}:${String(curS).padStart(2, '0')}`;
+
+          if (currentSec < 299) {
+            badgeStatus.textContent = `루틴 누락 감시 (${currentSec}/299s)`;
+            timelineNotice.style.color = "#fbbf24";
+            timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
+            timelineNotice.innerHTML = `<strong>[루틴 누락 시연]</strong> KST <strong>${timeStr}</strong>: 08:10 경과 후 전자레인지 미사용 (대기전력 <strong>${metrics.totalP.toFixed(1)} W</strong> 유지 중 / AI 버퍼: ${currentSec}/299)`;
+          } else if (currentSec === 299) {
+            badgeStatus.textContent = "이상치 감지 트리거 (299s 완충)";
+            timelineNotice.style.color = "#ef4444";
+            timelineNotice.style.borderColor = "#ef4444";
+            timelineNotice.innerHTML = `<strong>[이상치 감지!]</strong> KST <strong>${timeStr}</strong>: 299초 버퍼 충족! <strong>ROUTINE_MISSED</strong> 이벤트가 Kafka로 발행됩니다!`;
+          } else {
+            badgeStatus.textContent = "이상치 감지 상태 지속";
+          }
         }
       }
 
@@ -828,6 +914,9 @@
           const isPeakApp = (dev === "kettle" || dev === "induction") && metrics.totalP >= 3000.0;
           chip.className = isPeakApp ? "app-chip active peak-app" : "app-chip active";
           stLabel.textContent = `ON (${deviceStates[dev].p.toFixed(0)}W)`;
+        } else if (currentMode === 'routine_missed' && dev === 'microwave') {
+          chip.className = "app-chip missed-target";
+          stLabel.textContent = "미가동 (루틴 누락)";
         } else {
           chip.className = "app-chip";
           stLabel.textContent = "대기";
@@ -847,12 +936,17 @@
       chartSecondary.data.datasets[1].data.push(metrics.pf);
       chartSecondary.update('none');
 
-      // 60초 도달 시 피크 시연 자동 완료
+      // 종료 조건 (피크: 60s, 루틴 누락: 300s)
       if (currentMode === 'peak' && currentSec >= 60) {
         clearInterval(timerId);
         timerId = null;
         document.getElementById('btnPause').disabled = true;
         badgeStatus.textContent = "시연 완료 (60s 완주)";
+      } else if (currentMode === 'routine_missed' && currentSec >= 300) {
+        clearInterval(timerId);
+        timerId = null;
+        document.getElementById('btnPause').disabled = true;
+        badgeStatus.textContent = "시연 완료 (300s 완주)";
       }
     }
 
@@ -931,6 +1025,25 @@
         timelineNotice.style.color = "#38bdf8";
         timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.3)";
         timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> T+${m.sec}s: 소비전력 ${m.totalP.toFixed(1)} W (가전: ${m.activeNames.join(', ')})`;
+      } else if (m.mode === 'routine_missed') {
+        cardPower.className = "stat-card";
+        badgeStatus.className = "badge-status status-missed";
+        const kstStr = m.simTimeKst ? ` [KST ${m.simTimeKst}]` : "";
+
+        if (m.sec < 299) {
+          badgeStatus.textContent = `루틴 누락 감시 (${m.sec}/299s)`;
+          timelineNotice.style.color = "#fbbf24";
+          timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
+          timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> T+${m.sec}s${kstStr}: 전자레인지 미사용 대기전력 <strong>${m.totalP.toFixed(1)} W</strong> (AI 버퍼 누적: ${m.sec}/299초)`;
+        } else if (m.sec === 299) {
+          badgeStatus.textContent = "이상치 감지 트리거 (299s)";
+          timelineNotice.style.color = "#ef4444";
+          timelineNotice.style.borderColor = "#ef4444";
+          timelineNotice.innerHTML = `<strong>[실제 이상치 발생!]</strong> T+${m.sec}s${kstStr}: 299초 버퍼 완충! 실시간 분석 서비스가 <strong>ROUTINE_MISSED</strong>를 Kafka 'analysis.event.v1'에 발행했습니다!`;
+        } else {
+          badgeStatus.textContent = "이상 상태 유지 (300s 완주)";
+          timelineNotice.innerHTML = `<strong>[시연 완료]</strong> T+${m.sec}s${kstStr}: 300초 데이터 전송 완료. Kafka UI에서 이상치 이벤트를 확인하세요.`;
+        }
       } else {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-normal";
@@ -940,10 +1053,13 @@
 
       // 이벤트 로그 기록
       if (m.eventNoticeText) {
-        let evType = "피크 경보";
-        if (m.eventNoticeText.includes("해소")) evType = "피크 해소";
-        else if (m.eventNoticeText.includes("복귀")) evType = "정상 복귀";
-        addEventRow(m.sec, evType, m.activeNames.join(', ') || '가전 정지', `${m.totalP.toFixed(0)} W`, m.eventNoticeText);
+        let evType = "상태 안내";
+        if (m.eventNoticeText.includes("피크 발생")) evType = "피크 경보";
+        else if (m.eventNoticeText.includes("피크 해소")) evType = "피크 해소";
+        else if (m.eventNoticeText.includes("정상 복귀")) evType = "정상 복귀";
+        else if (m.eventNoticeText.includes("이상치") || m.eventNoticeText.includes("버퍼 충족")) evType = "이상치 감지";
+        else if (m.eventNoticeText.includes("루틴 검증")) evType = "루틴 감시";
+        addEventRow(m.sec, evType, m.activeNames.join(', ') || (m.mode === 'routine_missed' ? '전자레인지 미가동' : '가전 정지'), `${m.totalP.toFixed(0)} W`, m.eventNoticeText);
       }
 
       // 6대 가전 칩 갱신
@@ -957,6 +1073,9 @@
           const isPeakApp = (dev === "kettle" || dev === "induction") && m.totalP >= 3000.0;
           chip.className = isPeakApp ? "app-chip active peak-app" : "app-chip active";
           stLabel.textContent = "ON (가동 중)";
+        } else if (m.mode === 'routine_missed' && dev === 'microwave') {
+          chip.className = "app-chip missed-target";
+          stLabel.textContent = "미가동 (이상 감시)";
         } else {
           chip.className = "app-chip";
           stLabel.textContent = "대기";
@@ -980,6 +1099,10 @@
         if (evtSource) { evtSource.close(); evtSource = null; }
         document.getElementById('btnPause').disabled = true;
         badgeStatus.textContent = "시연 완료 (60s 완주)";
+      } else if (currentMode === 'routine_missed' && m.sec >= 300) {
+        if (evtSource) { evtSource.close(); evtSource = null; }
+        document.getElementById('btnPause').disabled = true;
+        badgeStatus.textContent = "시연 완료 (300s 완주)";
       }
     }
 
@@ -1002,6 +1125,49 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ scenario: 'peak', house: 'H001' })
+          });
+
+          if (evtSource) evtSource.close();
+          evtSource = new EventSource('/api/stream');
+          evtSource.onmessage = (e) => {
+            if (e.data && e.data.startsWith('{')) {
+              processServerMetrics(JSON.parse(e.data));
+            }
+          };
+          return;
+        } catch (err) {
+          console.warn("서버 호출 실패, 로컬 모드로 폴백:", err);
+        }
+      }
+
+      // [로컬 모드]: 브라우저 단독 실행
+      tick();
+      timerId = setInterval(tick, intervalMs);
+    }
+
+    async function startRoutineMissedDemo() {
+      resetSimulation();
+      currentMode = 'routine_missed';
+      document.getElementById('btnPause').disabled = false;
+      document.getElementById('btnPause').textContent = "일시정지";
+      isPaused = false;
+      document.getElementById('badgeStatus').className = "badge-status status-missed";
+      document.getElementById('badgeStatus').textContent = "루틴 누락 시연 진행 중";
+
+      // 전자레인지 칩 강조
+      const mwChip = document.getElementById('chip_microwave');
+      const mwState = document.getElementById('state_microwave');
+      if (mwChip) {
+        mwChip.className = "app-chip missed-target";
+        mwState.textContent = "미가동 (루틴 누락 감시)";
+      }
+
+      if (isServerConnected) {
+        try {
+          await fetch('/api/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario: 'routine_missed', house: 'H001' })
           });
 
           if (evtSource) evtSource.close();
@@ -1145,7 +1311,7 @@
       });
 
       document.getElementById('eventTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">시뮬레이션을 시작하면 실시간 이벤트가 기록됩니다.</td></tr>';
-      document.getElementById('timelineNotice').innerHTML = '[초기화 완료] 상단의 <strong>[10초 피크 시연 시작 (3,000W+)]</strong> 버튼을 누르면 새로운 시연이 시작됩니다.';
+      document.getElementById('timelineNotice').innerHTML = '[초기화 완료] 상단의 버튼을 누르면 새로운 시연 시나리오가 시작됩니다.';
     }
 
     function changeSpeed(val) {
@@ -1166,8 +1332,9 @@
       }
 
       let badgeClass = 'status-normal';
-      if (type.includes('피크')) badgeClass = 'status-peak';
+      if (type.includes('피크') || type.includes('이상치')) badgeClass = 'status-peak';
       else if (type.includes('켜짐')) badgeClass = 'status-running';
+      else if (type.includes('루틴')) badgeClass = 'status-missed';
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
