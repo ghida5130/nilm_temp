@@ -12,26 +12,22 @@ import urllib.request
 env = os.environ
 ok = env["BUILD_RESULT"] == "success"
 deploy = env.get("ENABLE_CD") == "true" and env.get("BRANCH_NAME") == "master"
-service = env["JOB_NAME"].split("/")[0]
 sha = env.get("IMAGE_TAG", "")[:7] or "unknown"
 subject = env.get("GIT_COMMIT_SUBJECT") or "-"
 author = env.get("GIT_AUTHOR_NAME") or "-"
 
 if ok and deploy:
-    title = "✅ Jenkins Build & Deploy Success!"
+    title = "✅ 배포 성공"
     note = "> ✨ 최신 변경 사항이 서버에 정상적으로 배포되었습니다."
 elif ok:
-    title = "✅ Jenkins Build Success!"
+    title = "✅ 빌드 성공"
     note = "> ✨ 빌드 및 테스트가 정상적으로 통과했습니다."
 else:
-    title = "🚨 Jenkins Build Failed!"
+    title = "🚨 배포 실패" if deploy else "🚨 빌드 실패"
     note = ("> ⚠️ 빌드 도중 에러가 발생하여 배포가 중단되었습니다. Jenkins 콘솔 로그를 확인하세요." if deploy
             else "> ⚠️ 빌드 도중 에러가 발생했습니다. Jenkins 콘솔 로그를 확인하세요.")
 
 description = chr(10).join([
-    f"* **서비스:** `{service}`",
-    f"* **빌드 번호:** `#{env['BUILD_NUMBER']}`",
-    f"* **브랜치:** `{env.get('BRANCH_NAME', '-')}`",
     f"* **작업자:** `{author}`",
     f"* **커밋:** `{sha}` - {subject}",
     f"* **소요 시간:** {env.get('BUILD_DURATION') or '-'}",
