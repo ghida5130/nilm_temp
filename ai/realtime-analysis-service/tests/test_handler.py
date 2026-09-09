@@ -8,6 +8,7 @@ from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.predictor import APPLIANCE_ORDER, FakePredictor
 from realtime_analysis.schemas import AnalysisEvent, PowerMeasurement, RoutineBaseline
 from realtime_analysis.state_tracker import DailyActivityTracker
+from realtime_analysis.state_decider import ApplianceStateDecider
 
 
 class RecordingPublisher:
@@ -19,7 +20,7 @@ class RecordingPublisher:
 
 
 def test_fake_predictor_uses_ai_experiment_appliance_order() -> None:
-    states = FakePredictor(("KETTLE", "VACUUM_CLEANER")).predict(
+    predictions = FakePredictor(("KETTLE", "VACUUM_CLEANER")).predict(
         [(100.0, 10.0, 0.98, 0.5)]
     )
 
@@ -31,9 +32,13 @@ def test_fake_predictor_uses_ai_experiment_appliance_order() -> None:
         "HAIR_DRYER",
         "VACUUM_CLEANER",
     )
-    assert [state.appliance_type for state in states] == list(APPLIANCE_ORDER)
+    assert [
+        prediction.appliance_type for prediction in predictions
+    ] == list(APPLIANCE_ORDER)
     assert {
-        state.appliance_type for state in states if state.is_on
+        prediction.appliance_type
+        for prediction in predictions
+        if prediction.probability == 1.0
     } == {"KETTLE", "VACUUM_CLEANER"}
 
 
@@ -58,6 +63,9 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(window_size=3),
         predictor=FakePredictor(),   # 지금은 FakePredictor 사용
+        state_decider=ApplianceStateDecider(
+            {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
+        ),
         baseline_repository=BaselineRepository(
             [
                 RoutineBaseline(

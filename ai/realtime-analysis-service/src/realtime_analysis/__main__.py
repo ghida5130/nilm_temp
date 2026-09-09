@@ -12,8 +12,10 @@ from realtime_analysis.consumer import AnalysisConsumer
 from realtime_analysis.dlq import DlqPublisher
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
+from realtime_analysis.model_manifest import ModelManifest
 from realtime_analysis.predictor import FakePredictor
 from realtime_analysis.state_tracker import DailyActivityTracker
+from realtime_analysis.state_decider import ApplianceStateDecider
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,7 @@ def main() -> None:
 
     # 이상 탐지기 생성
     tracker = DailyActivityTracker()
+    manifest = ModelManifest.from_json_file(settings.model_manifest_file)
     # Fake Predictor 생성 
     detector = RoutineMissedDetector(
         tracker=tracker,
@@ -45,6 +48,7 @@ def main() -> None:
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(settings.model_window_size),
         predictor=FakePredictor(settings.fake_on_appliance_types),
+        state_decider=ApplianceStateDecider.from_manifest(manifest),
         baseline_repository=BaselineRepository.from_json_file(
             settings.baseline_file  
         ),

@@ -11,7 +11,8 @@ Kafka 전력 데이터를 검증하고, 가구별 입력 버퍼와 MVP용 가전
 ```text
 power.raw.v1
   -> 입력 검증 및 가구별 299개 버퍼
-  -> FakePredictor 가전 6종 ON/OFF 결과
+  -> FakePredictor 가전 6종 ON 확률
+  -> model_manifest.json의 threshold로 ON/OFF 판정
   -> JSON baseline과 일일 사용 상태 비교
   -> score가 임계치 이상이면 analysis.event.v1 발행
 ```
@@ -223,7 +224,8 @@ python -m realtime_analysis
 `config/baselines.json`에 있으며, 현재 예시는 `H001`의 `MICROWAVE` 루틴입니다.
 
 `FAKE_ON_APPLIANCES`에 쉼표로 가전명을 지정하면 FakePredictor가 해당 가전을 ON으로
-반환합니다.
+간주할 수 있도록 확률 `1.0`을 반환하고, 나머지는 `0.0`을 반환합니다. 최종 ON/OFF는
+`config/model_manifest.json`의 가전별 threshold를 적용해 판정합니다.
 
 ```env
 FAKE_ON_APPLIANCES=MICROWAVE,HAIR_DRYER
@@ -232,9 +234,14 @@ FAKE_ON_APPLIANCES=MICROWAVE,HAIR_DRYER
 빈 값이면 모든 가전을 OFF로 반환하므로 마감 시각 이후 `ROUTINE_MISSED` 흐름을 확인할
 수 있습니다.
 
+`MODEL_MANIFEST_FILE`로 Manifest 경로를 변경할 수 있습니다. 서비스 시작 시 입력 shape,
+Feature 순서, 출력 가전 순서, sigmoid 출력과 threshold 범위를 검증합니다. 현재
+Manifest의 `mean`, `std`와 `0.5` threshold는 실제 모델 전달 전까지 사용하는 임시값입니다.
+
 ## 현재 MVP 제약
 
 - 실제 AI 모델 대신 결정적인 FakePredictor를 사용합니다.
+- Manifest의 정규화 계약은 검증하지만 실제 정규화는 실제 Predictor 연동 시 적용합니다.
 - baseline과 당일 활동 상태는 각각 JSON과 메모리에 저장합니다.
 - 재시작하면 299개 버퍼와 당일 활동·발행 상태가 초기화됩니다.
 - HTTP API와 DB 연동은 포함하지 않습니다.
