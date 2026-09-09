@@ -16,6 +16,18 @@ power.raw.v1
   -> score가 임계치 이상이면 analysis.event.v1 발행
 ```
 
+MVP 대상 가전과 Predictor 출력 순서는 AI 실험 결과 및 모델 명세를 기준으로 다음과 같이
+고정합니다.
+
+```text
+KETTLE
+INDUCTION
+IRON
+MICROWAVE
+HAIR_DRYER
+VACUUM_CLEANER
+```
+
 잘못된 입력은 `dlq.analysis`로 발행합니다. Kafka offset은 정상 처리 또는 DLQ 전송이
 완료된 뒤에만 수동으로 commit합니다.
 
@@ -214,7 +226,7 @@ python -m realtime_analysis
 반환합니다.
 
 ```env
-FAKE_ON_APPLIANCES=MICROWAVE,TV
+FAKE_ON_APPLIANCES=MICROWAVE,HAIR_DRYER
 ```
 
 빈 값이면 모든 가전을 OFF로 반환하므로 마감 시각 이후 `ROUTINE_MISSED` 흐름을 확인할

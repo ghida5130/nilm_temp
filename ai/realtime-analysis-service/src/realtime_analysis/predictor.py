@@ -7,12 +7,12 @@ from realtime_analysis.buffer import FeatureRow
 from realtime_analysis.schemas import ApplianceState
 
 APPLIANCE_ORDER = (
-    "REFRIGERATOR",
+    "KETTLE",
+    "INDUCTION",
+    "IRON",
     "MICROWAVE",
-    "RICE_COOKER",
-    "WASHING_MACHINE",
-    "AIR_CONDITIONER",
-    "TV",
+    "HAIR_DRYER",
+    "VACUUM_CLEANER",
 )
 
 # 환경변수 FAKE_ON_APPLIANCES에 들어간 가전만 ON으로 반환 

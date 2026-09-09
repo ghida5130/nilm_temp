@@ -5,7 +5,7 @@ from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.handler import MeasurementHandler
-from realtime_analysis.predictor import FakePredictor
+from realtime_analysis.predictor import APPLIANCE_ORDER, FakePredictor
 from realtime_analysis.schemas import AnalysisEvent, PowerMeasurement, RoutineBaseline
 from realtime_analysis.state_tracker import DailyActivityTracker
 
@@ -16,6 +16,25 @@ class RecordingPublisher:
 
     def publish(self, event: AnalysisEvent) -> None:
         self.events.append(event)
+
+
+def test_fake_predictor_uses_ai_experiment_appliance_order() -> None:
+    states = FakePredictor(("KETTLE", "VACUUM_CLEANER")).predict(
+        [(100.0, 10.0, 0.98, 0.5)]
+    )
+
+    assert APPLIANCE_ORDER == (
+        "KETTLE",
+        "INDUCTION",
+        "IRON",
+        "MICROWAVE",
+        "HAIR_DRYER",
+        "VACUUM_CLEANER",
+    )
+    assert [state.appliance_type for state in states] == list(APPLIANCE_ORDER)
+    assert {
+        state.appliance_type for state in states if state.is_on
+    } == {"KETTLE", "VACUUM_CLEANER"}
 
 
 def measurement(second: int) -> PowerMeasurement:
