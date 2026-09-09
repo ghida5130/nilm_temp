@@ -1,4 +1,6 @@
 # Created by https://www.toptal.com/developers/gitignore/api/react,visualstudiocode,java,intellij,python,spark,apachehadoop
+/release.json
+/release.json.tmp
 # Edit at https://www.toptal.com/developers/gitignore?templates=react,visualstudiocode,java,intellij,python,spark,apachehadoop
 
 ### ApacheHadoop ###

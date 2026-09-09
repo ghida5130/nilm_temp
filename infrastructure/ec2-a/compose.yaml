@@ -49,7 +49,7 @@ services:
         max-file: "3"
 
   api-gateway:
-    image: ${REGISTRY:?REGISTRY required}/nilm-api-gateway:${IMAGE_TAG:?IMAGE_TAG required}
+    image: ${API_GATEWAY_IMAGE:?API_GATEWAY_IMAGE required}
     restart: unless-stopped
     environment:
       SERVER_PORT: 8080
@@ -79,7 +79,7 @@ services:
         max-file: "3"
 
   iot-device-service:
-    image: ${REGISTRY:?REGISTRY required}/nilm-iot-device-service:${IMAGE_TAG:?IMAGE_TAG required}
+    image: ${IOT_DEVICE_IMAGE:?IOT_DEVICE_IMAGE required}
     restart: unless-stopped
     environment:
       SERVER_PORT: 8081
@@ -105,7 +105,7 @@ services:
         max-file: "3"
 
   monitoring-service:
-    image: ${REGISTRY:?REGISTRY required}/nilm-monitoring-service:${IMAGE_TAG:?IMAGE_TAG required}
+    image: ${MONITORING_IMAGE:?MONITORING_IMAGE required}
     restart: unless-stopped
     environment:
       SERVER_PORT: 8082
@@ -152,7 +152,7 @@ services:
         max-file: "3"
 
   frontend:
-    image: ${REGISTRY:?REGISTRY required}/nilm-frontend:${IMAGE_TAG:?IMAGE_TAG required}
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE required}
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN required}

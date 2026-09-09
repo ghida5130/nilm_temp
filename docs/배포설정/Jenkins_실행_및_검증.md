@@ -1,5 +1,7 @@
 # Jenkins 설정 및 검증
 
+> 2026-09-09 변경: 운영 이미지 경로와 파라미터는 [Docker Hub 단일 Private 실행 가이드](DockerHub_단일_Private_실행_가이드.md)를 기준으로 한다. 아래의 REGISTRY/IMAGE_TAG 기반 배포 설명은 이전 구조이며, 현재는 IMAGE_REPOSITORY와 서비스별 digest manifest를 사용한다. ci Agent에도 Python 3.9 이상이 필요하다.
+
 ## 구현된 구성
 
 - 독립된 local/ec2-a/ec2-b Compose.
