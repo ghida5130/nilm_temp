@@ -17,7 +17,7 @@ import queue
 import asyncio
 import threading
 import webbrowser
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
@@ -31,6 +31,7 @@ if CURRENT_DIR not in sys.path:
 
 import aiomqtt
 import simulator
+import scenarios
 
 DEFAULT_PORT = 8085
 
@@ -104,11 +105,24 @@ class SimulatorManager:
 
     async def _worker_loop(self, scenario: str, house: str):
         is_peak = (scenario == "peak")
-        target_count = 60 if is_peak else 999999
+        is_routine_missed = (scenario == "routine_missed")
+        allow_random = not (is_peak or is_routine_missed)
+
+        if is_peak:
+            target_count = 60
+        elif is_routine_missed:
+            target_count = 300  # AI 299초 슬라이딩 윈도우 충족
+        else:
+            target_count = 999999
         interval = 1.0
 
         # 상태 초기화
         simulator.init_simulation_states([house])
+
+        base_dt = None
+        if is_routine_missed:
+            # 08:10:01 KST 시점 기준 타임스탬프 생성
+            base_dt = scenarios.parse_simulation_start_time("08:10:01", is_missed_mode=True)
 
         print(f"[WebSimulator] MQTT 브로커({simulator.DEFAULT_BROKER_HOST}:{simulator.DEFAULT_BROKER_PORT}) 연결 중...", flush=True)
 
@@ -120,37 +134,54 @@ class SimulatorManager:
             keepalive=60,
             timeout=5
         ) as client:
-            print(f"[WebSimulator] MQTT 연결 성공! 실시간 발행 시작 (시나리오: {scenario}, 대상: {house})", flush=True)
+            print(f"[WebSimulator] MQTT 연결 성공 실시간 발행 시작 (시나리오: {scenario}, 대상: {house})", flush=True)
 
             cycle = 0
             while not self.stop_event.is_set():
                 cycle_start = time.time()
-                now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                if base_dt is not None:
+                    sim_dt = base_dt + timedelta(seconds=cycle)
+                    now_iso = sim_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                    sim_time_kst = (base_dt + timedelta(seconds=cycle)).astimezone(scenarios.KST).strftime("%H:%M:%S")
+                else:
+                    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                    sim_time_kst = None
+
                 cycle += 1
                 self.cycle_count = cycle
 
-                # 1. 타임라인 이벤트 주입 (피크 시연 모드일 때)
+                # 1. 타임라인 이벤트 주입 및 안내 메시지
                 event_desc = None
                 if is_peak:
                     event_desc = simulator.inject_peak_scenario_event(cycle, house)
+                elif is_routine_missed:
+                    if cycle == 1:
+                        event_desc = "08:10 아침 루틴 검증 시작 (전자레인지 미가동 / 대기전력 유지)"
+                    elif cycle == 100:
+                        event_desc = "대기전력 지속 중 (누적 100초)"
+                    elif cycle == 200:
+                        event_desc = "대기전력 지속 중 (누적 200초)"
+                    elif cycle == scenarios.RoutineMissedScenario.BUFFER_WINDOW_SIZE:
+                        event_desc = "299초 버퍼 충족 (AI 이상치 감지 조건 도달 -> analysis.event.v1 발행!)"
+                    elif cycle == 300:
+                        event_desc = "시연 완료 (300초 데이터 전송 완료)"
 
-                # 2. 물리 계측 및 MQTT 발행 (allow_random: peak 모드는 False)
+                # 2. 물리 계측 및 MQTT 발행 (allow_random: peak 및 routine_missed 모드는 False)
                 res = await simulator.publish_house_power(
                     client=client,
                     house=house,
                     now_iso=now_iso,
                     qos=1,
-                    allow_random=(not is_peak)
+                    allow_random=allow_random
                 )
 
                 # 3. 실시간 UI 동기화용 패킷 생성 및 SSE 브로드캐스트
-                # simulator.calculate_main_panel_metrics 캐시된 값 조회
-                env = simulator.house_states[house]
-                metrics = simulator.calculate_main_panel_metrics(house, allow_random=(not is_peak))
+                metrics = simulator.calculate_main_panel_metrics(house, allow_random=allow_random)
 
                 broadcast_data = {
                     "sec": cycle,
                     "now_iso": now_iso,
+                    "simTimeKst": sim_time_kst,
                     "house": house,
                     "totalP": metrics["active_power"],
                     "totalQ": metrics["reactive_power"],
@@ -165,14 +196,21 @@ class SimulatorManager:
                 self.broadcast(broadcast_data)
 
                 # 터미널 콘솔 로그 출력
-                status_tag = "대기"
-                if metrics["active_power"] >= 3000.0:
-                    status_tag = "피크 경보 (3,000W+)"
-                elif metrics["active_power"] >= 1000.0:
-                    status_tag = "가전 가동 중"
-
-                notice_str = f" <== [{event_desc}]" if event_desc else ""
-                print(f"[WebSimulator] (T+{cycle:02d}s) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}{notice_str}", flush=True)
+                if is_peak:
+                    status_tag = "대기"
+                    if metrics["active_power"] >= 3000.0:
+                        status_tag = "피크 경보 (3,000W+)"
+                    elif metrics["active_power"] >= 1000.0:
+                        status_tag = "가전 가동 중"
+                    notice_str = f" <== [{event_desc}]" if event_desc else ""
+                    print(f"[WebSimulator] (T+{cycle:02d}s) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}{notice_str}", flush=True)
+                elif is_routine_missed:
+                    status_tag, notice = scenarios.RoutineMissedScenario.get_cycle_status(cycle)
+                    notice_str = f" <== [{event_desc}]" if event_desc else notice
+                    print(f"[WebSimulator] (T+{cycle:03d}s | KST {sim_time_kst}) {house} 전력: {metrics['active_power']:5.1f} W | {status_tag}{notice_str}", flush=True)
+                else:
+                    status_tag = "가전 가동 중" if metrics["active_power"] >= 500.0 else "대기"
+                    print(f"[WebSimulator] (T+{cycle:02d}s) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}", flush=True)
 
                 if target_count > 0 and cycle >= target_count:
                     print(f"[WebSimulator] 목표 사이클({target_count}회) 완주, 자동 정지합니다.", flush=True)
