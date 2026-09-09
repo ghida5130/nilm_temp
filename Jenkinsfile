@@ -1,3 +1,33 @@
+def notifyMattermost(String result) {
+    node('ci') {
+        withCredentials([string(credentialsId: 'mattermost-webhook', variable: 'MATTERMOST_WEBHOOK')]) {
+            withEnv(["BUILD_RESULT=${result}"]) {
+                sh '''
+                    python3 - <<'EOF'
+import json
+import os
+import urllib.request
+
+ok = os.environ["BUILD_RESULT"] == "success"
+deploy = os.environ.get("ENABLE_CD") == "true" and os.environ.get("BRANCH_NAME") == "master"
+mode = "배포" if deploy else "CI"
+sha = os.environ.get("IMAGE_TAG", "")[:8] or "unknown"
+text = "\\n".join([
+    ("✅" if ok else "❌") + f" **{mode} {'성공' if ok else '실패'}** `{os.environ['JOB_NAME']}` #{os.environ['BUILD_NUMBER']}",
+    f"브랜치 `{os.environ.get('BRANCH_NAME', '-')}` · 커밋 `{sha}`",
+    os.environ["BUILD_URL"],
+])
+request = urllib.request.Request(
+    os.environ["MATTERMOST_WEBHOOK"], data=json.dumps({"text": text}).encode(),
+    headers={"Content-Type": "application/json"})
+urllib.request.urlopen(request, timeout=20).read()
+EOF
+                '''
+            }
+        }
+    }
+}
+
 pipeline {
     agent none
     options {
@@ -149,5 +179,9 @@ pipeline {
                 sh 'python3 infrastructure/scripts/release.py success --manifest /opt/nilm/release.json'
             }
         }
+    }
+    post {
+        success { script { notifyMattermost('success') } }
+        failure { script { notifyMattermost('failure') } }
     }
 }
