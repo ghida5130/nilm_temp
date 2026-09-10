@@ -3,11 +3,14 @@ package com.nilm.monitoring.notification;
 import nl.martijndwars.webpush.PushService;
 import org.apache.http.HttpResponse;
 import org.apache.http.util.EntityUtils;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+
+import java.security.Security;
 
 @Component
 @ConditionalOnProperty(name = "app.web-push.enabled", havingValue = "true")
@@ -23,6 +26,9 @@ public class VapidWebPushClient implements WebPushClient {
             @Value("${app.web-push.subject}") String subject) throws Exception {
         if (publicKey.isBlank() || privateKey.isBlank() || subject.isBlank()) {
             throw new IllegalStateException("Web Push is enabled but VAPID configuration is incomplete");
+        }
+        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
+            Security.addProvider(new BouncyCastleProvider());
         }
         this.pushService = new PushService(publicKey, privateKey, subject);
     }
