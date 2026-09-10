@@ -223,6 +223,31 @@ python -m realtime_analysis
 실제 Kafka 환경에 맞게 `.env`의 접속 주소와 토픽을 수정합니다. 기본 baseline은
 `config/baselines.json`에 있으며, 현재 예시는 `H001`의 `MICROWAVE` 루틴입니다.
 
+## analysis_db 스키마
+
+`analysis_db` 접근에는 SQLAlchemy를 사용하고, 테이블 변경 이력은 Alembic으로 관리합니다.
+최초 마이그레이션은 다음 6개 테이블을 생성합니다.
+
+```text
+model_artifact
+routine_baseline
+analysis_policy
+household_observation_daily
+household_activity_daily
+appliance_usage_session
+```
+
+로컬 Python 실행 전 `.env`의 `DATABASE_*` 값을 맞춘 뒤 아래 명령으로 최신 스키마를
+적용합니다.
+
+```powershell
+alembic upgrade head
+```
+
+로컬 Compose에서는 `realtime-analysis-service` 컨테이너가 시작될 때 같은 명령을 먼저
+실행하므로 별도로 적용할 필요가 없습니다. 현재 단계에서는 테이블과 DB 연결 기반만
+추가했으며, Kafka 처리 결과를 Repository로 저장하는 연결은 다음 작업에서 진행합니다.
+
 `FAKE_ON_APPLIANCES`에 쉼표로 가전명을 지정하면 FakePredictor가 해당 가전을 ON으로
 간주할 수 있도록 확률 `1.0`을 반환하고, 나머지는 `0.0`을 반환합니다. 최종 ON/OFF는
 `config/model_manifest.json`의 가전별 threshold를 적용해 판정합니다.
@@ -238,10 +263,41 @@ FAKE_ON_APPLIANCES=MICROWAVE,HAIR_DRYER
 Feature 순서, 출력 가전 순서, sigmoid 출력과 threshold 범위를 검증합니다. 현재
 Manifest의 `mean`, `std`와 `0.5` threshold는 실제 모델 전달 전까지 사용하는 임시값입니다.
 
+## 전력 변화점 및 ON/OFF 상태 변화
+
+유효전력이 기본 500W 이상 변한 상태로 3개 샘플 연속 유지되면 전력 변화점으로
+확정합니다. 한 번만 튀었다가 돌아오는 값은 변화점으로 확정하지 않습니다.
+500W와 3개 샘플은 실제 모델 검증 전 사용하는 MVP 초기값입니다.
+
+모델 확률은 다음 순서로 안정화합니다.
+
+```text
+OFF 상태에서 probability >= threshold가 3회 연속 → TURNED_ON
+ON 상태에서 probability <= threshold - 0.05가 3회 연속 → TURNED_OFF
+threshold - 0.05 < probability < threshold → 기존 ON 상태 유지
+```
+
+마지막 구간은 히스테리시스 영역이다. 확률이 threshold 주변에서 흔들릴 때 ON/OFF가
+매초 반복되는 것을 방지한다. 변화가 처음 관측된 시각은 `occurred_at`, 연속 조건을
+만족한 시각은 `confirmed_at`으로 구분한다.
+
+| 환경변수 | 기본값 | 의미 |
+| --- | ---: | --- |
+| `POWER_CHANGE_MIN_DELTA_W` | 500 | 전력 변화 후보의 최소 절댓값 |
+| `POWER_CHANGE_CONFIRMATION_SAMPLES` | 3 | 전력 변화 확정에 필요한 연속 샘플 수 |
+| `APPLIANCE_ON_CONFIRMATION_SAMPLES` | 3 | ON 확정에 필요한 연속 예측 수 |
+| `APPLIANCE_OFF_CONFIRMATION_SAMPLES` | 3 | OFF 확정에 필요한 연속 예측 수 |
+| `APPLIANCE_OFF_THRESHOLD_MARGIN` | 0.05 | OFF 판정용 히스테리시스 폭 |
+
+전력 변화점은 현재 로그와 후속 분석 근거로 사용하며 Predictor 호출을 막는 조건으로는
+사용하지 않는다. 변화가 작아도 실제 가전 확률이 달라질 수 있기 때문이다.
+
 ## 현재 MVP 제약
 
 - 실제 AI 모델 대신 결정적인 FakePredictor를 사용합니다.
 - Manifest의 정규화 계약은 검증하지만 실제 정규화는 실제 Predictor 연동 시 적용합니다.
-- baseline과 당일 활동 상태는 각각 JSON과 메모리에 저장합니다.
+- baseline과 당일 활동 상태는 아직 각각 JSON과 메모리에 저장합니다.
 - 재시작하면 299개 버퍼와 당일 활동·발행 상태가 초기화됩니다.
-- HTTP API와 DB 연동은 포함하지 않습니다.
+- analysis_db 스키마는 생성되지만 Repository 저장 로직은 아직 연결하지 않았습니다.
+- 감지된 상태 변화는 메모리에 반영되며 사용 세션 DB 저장은 아직 연결하지 않았습니다.
+- HTTP API는 포함하지 않습니다.

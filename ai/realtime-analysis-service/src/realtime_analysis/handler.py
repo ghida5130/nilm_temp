@@ -1,23 +1,32 @@
 """Orchestration for buffering, prediction, detection, and event publication."""
 
+import logging
+
 from zoneinfo import ZoneInfo
 
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
+from realtime_analysis.change_point import PowerChangeDetector
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.predictor import Predictor
 from realtime_analysis.schemas import PowerMeasurement
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
+from realtime_analysis.state_transition import ApplianceStateTransitionDetector
+
+logger = logging.getLogger(__name__)
+
 
 # 실제 처리 순서를 담당하는 역할 
 class MeasurementHandler:
     def __init__(
         self,
         buffer: HouseholdBuffer,
+        power_change_detector: PowerChangeDetector,
         predictor: Predictor,
         state_decider: ApplianceStateDecider,
+        state_transition_detector: ApplianceStateTransitionDetector,
         baseline_repository: BaselineRepository,
         tracker: DailyActivityTracker,
         detector: RoutineMissedDetector,
@@ -25,8 +34,10 @@ class MeasurementHandler:
         timezone_name: str,
     ) -> None:
         self._buffer = buffer
+        self._power_change_detector = power_change_detector
         self._predictor = predictor
         self._state_decider = state_decider
+        self._state_transition_detector = state_transition_detector
         self._baseline_repository = baseline_repository
         self._tracker = tracker
         self._detector = detector
@@ -34,6 +45,15 @@ class MeasurementHandler:
         self._timezone = ZoneInfo(timezone_name)
 
     def __call__(self, measurement: PowerMeasurement) -> None:
+        power_change = self._power_change_detector.detect(measurement)
+        if power_change is not None:
+            logger.info(
+                "Power change detected: household=%s direction=%s delta_w=%.2f",
+                power_change.household_id,
+                power_change.direction,
+                power_change.delta_w,
+            )
+
         self._buffer.append(measurement)  # 입력값을 가구별 버퍼에 넣음 
         if not self._buffer.is_ready(measurement.household_id): # 버퍼가 준비 좼는지 확인
             return
@@ -43,12 +63,27 @@ class MeasurementHandler:
         )
         states = self._state_decider.decide(predictions)  # threshold로 ON/OFF 판정
         activity_date = measurement.measured_at.astimezone(self._timezone).date()
-        # ON으로 판단된 가전을 오늘 사용한 것으로 기록 
-        self._tracker.record_states(  
+        transitions = self._state_transition_detector.detect(
             measurement.household_id,
-            activity_date,
+            measurement.measured_at,
             states,
         )
+        self._tracker.record_transitions(
+            activity_date,
+            transitions,
+        )
+        for transition in transitions:
+            logger.info(
+                "Appliance state changed: household=%s appliance=%s transition=%s "
+                "probability=%.4f threshold=%.4f occurred_at=%s confirmed_at=%s",
+                transition.household_id,
+                transition.appliance_type,
+                transition.transition_type,
+                transition.probability,
+                transition.threshold,
+                transition.occurred_at.isoformat(),
+                transition.confirmed_at.isoformat(),
+            )
 
         # 가구 ID로 baseline을 찾음 
         baselines = self._baseline_repository.find_by_household(

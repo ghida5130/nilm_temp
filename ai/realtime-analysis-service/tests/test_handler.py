@@ -4,11 +4,13 @@ from uuid import UUID
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
+from realtime_analysis.change_point import PowerChangeDetector
 from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.predictor import APPLIANCE_ORDER, FakePredictor
 from realtime_analysis.schemas import AnalysisEvent, PowerMeasurement, RoutineBaseline
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
+from realtime_analysis.state_transition import ApplianceStateTransitionDetector
 
 
 class RecordingPublisher:
@@ -62,10 +64,12 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     publisher = RecordingPublisher()
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(window_size=3),
+        power_change_detector=PowerChangeDetector(500.0, 3),
         predictor=FakePredictor(),   # 지금은 FakePredictor 사용
         state_decider=ApplianceStateDecider(
             {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
         ),
+        state_transition_detector=ApplianceStateTransitionDetector(3, 3, 0.05),
         baseline_repository=BaselineRepository(
             [
                 RoutineBaseline(
@@ -94,3 +98,29 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     assert len(publisher.events) == 1
     assert publisher.events[0].household_id == "H001"
     assert publisher.events[0].score == 86
+
+
+def test_pipeline_records_usage_only_after_confirmed_on_transition() -> None:
+    tracker = DailyActivityTracker()
+    handler = MeasurementHandler(
+        buffer=HouseholdBuffer(window_size=1),
+        power_change_detector=PowerChangeDetector(500.0, 3),
+        predictor=FakePredictor(("MICROWAVE",)),
+        state_decider=ApplianceStateDecider(
+            {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
+        ),
+        state_transition_detector=ApplianceStateTransitionDetector(3, 3, 0.05),
+        baseline_repository=BaselineRepository([]),
+        tracker=tracker,
+        detector=RoutineMissedDetector(tracker, 80, "Asia/Seoul"),
+        event_publisher=RecordingPublisher(),  # type: ignore[arg-type]
+        timezone_name="Asia/Seoul",
+    )
+
+    handler(measurement(0))
+    handler(measurement(1))
+    assert tracker.was_used("H001", measurement(1).measured_at.date(), "MICROWAVE") is False
+
+    handler(measurement(2))
+
+    assert tracker.was_used("H001", measurement(2).measured_at.date(), "MICROWAVE") is True
