@@ -1,0 +1,303 @@
+"""가전 사용 세션과 일일 활동을 트랜잭션으로 저장한다."""
+
+from collections.abc import Sequence
+from datetime import date, datetime
+from decimal import Decimal
+from typing import AbstractSet, Protocol
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
+
+from realtime_analysis.models import (
+    ApplianceUsageSession,
+    HouseholdActivityDaily,
+    HouseholdObservationDaily,
+)
+from realtime_analysis.schemas import (
+    ApplianceState,
+    ApplianceStateTransition,
+    ApplianceTransitionType,
+)
+
+# SQLAlchemy 기반 저장 Repository
+
+EXPECTED_SAMPLES_PER_DAY = 86_400
+PROBABILITY_QUANTUM = Decimal("0.0001")
+
+
+class ApplianceActivityRepository(Protocol):
+    """Handler와 DB 구현을 분리하기 위한 저장소 인터페이스."""
+
+    def record(
+        self,
+        household_id: str,
+        observed_at: datetime,
+        states: Sequence[ApplianceState],
+        transitions: Sequence[ApplianceStateTransition],
+        active_appliance_types: AbstractSet[str],
+    ) -> None: ...
+
+
+class SqlAlchemyApplianceActivityRepository:
+    """상태 변화와 세션 확률을 SQLAlchemy로 원자적으로 저장한다."""
+
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        timezone_name: str,
+    ) -> None:
+        self._session_factory = session_factory
+        self._timezone = ZoneInfo(timezone_name)
+
+    def record(
+        self,
+        household_id: str,
+        observed_at: datetime,
+        states: Sequence[ApplianceState],
+        transitions: Sequence[ApplianceStateTransition],
+        active_appliance_types: AbstractSet[str],
+    ) -> None:
+        if not transitions and not active_appliance_types:
+            return
+
+        state_by_appliance = {state.appliance_type: state for state in states}
+
+        # 이 블록 안의 INSERT/UPDATE는 모두 같은 DB 트랜잭션에 포함된다.
+        # 정상 종료하면 한 번에 COMMIT하고, 하나라도 실패하면 전부 ROLLBACK한다.
+        with self._session_factory.begin() as session:
+            # OFF → ON: 일일 관측/활동 행을 준비하고 새 사용 세션을 생성한다.
+            for transition in transitions:
+                if transition.transition_type == ApplianceTransitionType.TURNED_ON:
+                    self._start_session(session, transition)
+
+            # 확정 상태가 ON인 동안 열린 세션의 최대 모델 확률을 갱신한다.
+            # 히스테리시스 구간이어도 확정 상태가 ON이면 이 처리에 포함된다.
+            for appliance_type in active_appliance_types:
+                state = state_by_appliance.get(appliance_type)
+                if state is not None:
+                    self._update_max_probability(
+                        session,
+                        household_id,
+                        appliance_type,
+                        state.probability,
+                        observed_at,
+                    )
+
+            # ON → OFF: 해당 가구·가전의 열린 세션에 종료 시각을 기록한다.
+            for transition in transitions:
+                if transition.transition_type == ApplianceTransitionType.TURNED_OFF:
+                    self._finish_session(session, transition)
+
+    # OFF -> ON
+    def _start_session(
+        self,
+        session: Session,
+        transition: ApplianceStateTransition,
+    ) -> None:
+        probability = _as_probability(transition.probability)
+
+        # 서비스 재처리 등으로 이미 열린 세션이 있으면 새 세션을 만들지 않는다.
+        existing_open = self._find_open_session(
+            session,
+            transition.household_id,
+            transition.appliance_type,
+        )
+        if existing_open is not None:
+            self._set_max_probability(
+                existing_open,
+                probability,
+                transition.confirmed_at,
+            )
+            return
+
+        # 세션이 시작된 시각을 서비스 기준 시간대로 변환해 일일 집계 날짜를 정한다.
+        activity_date = transition.occurred_at.astimezone(self._timezone).date()
+        observation = self._get_or_create_observation(
+            session,
+            transition.household_id,
+            activity_date,
+            transition.confirmed_at,
+        )
+        activity = self._get_or_create_activity(
+            session,
+            observation,
+            transition.appliance_type,
+            transition.confirmed_at,
+        )
+
+        # 동일한 세션 시작 이벤트가 Kafka에서 다시 전달돼도 중복 INSERT하지 않는다.
+        existing = session.scalar(
+            select(ApplianceUsageSession).where(
+                ApplianceUsageSession.activity_daily_id == activity.id,
+                ApplianceUsageSession.started_at == transition.occurred_at,
+            )
+        )
+        if existing is not None:
+            self._set_max_probability(
+                existing,
+                probability,
+                transition.confirmed_at,
+            )
+            return
+
+        usage_session = ApplianceUsageSession(
+            activity_daily_id=activity.id,
+            started_at=transition.occurred_at,
+            ended_at=None,
+            max_probability=probability,
+            decision_threshold=_as_probability(transition.threshold),
+            updated_at=transition.confirmed_at,
+        )
+        session.add(usage_session)
+        session.flush()
+
+        # 세션 INSERT가 성공한 경우에만 사용 횟수를 증가시킨다.
+        # 아래 변경도 같은 트랜잭션이므로 이후 오류가 나면 세션과 함께 롤백된다.
+        activity.event_count += 1
+        activity.updated_at = transition.confirmed_at
+
+    # ON 유지
+    def _update_max_probability(
+        self,
+        session: Session,
+        household_id: str,
+        appliance_type: str,
+        probability: float,
+        observed_at: datetime,
+    ) -> None:
+        usage_session = self._find_open_session(
+            session,
+            household_id,
+            appliance_type,
+        )
+        # 열린 세션이 없으면 갱신할 대상이 없으므로 아무 작업도 하지 않는다.
+        if usage_session is None:
+            return
+        self._set_max_probability(
+            usage_session,
+            _as_probability(probability),
+            observed_at,
+        )
+
+    # ON -> OFF
+    def _finish_session(
+        self,
+        session: Session,
+        transition: ApplianceStateTransition,
+    ) -> None:
+        usage_session = self._find_open_session(
+            session,
+            transition.household_id,
+            transition.appliance_type,
+        )
+        if usage_session is None:
+            return
+
+        # 연속 OFF 판정이 시작된 시각을 실제 사용 종료 시각으로 저장한다.
+        usage_session.ended_at = transition.occurred_at
+        usage_session.updated_at = transition.confirmed_at
+
+    @staticmethod
+    def _get_or_create_observation(
+        session: Session,
+        household_id: str,
+        activity_date: date,
+        updated_at: datetime,
+    ) -> HouseholdObservationDaily:
+        # 가구와 날짜의 UNIQUE 조건을 기준으로 기존 일일 관측 행을 조회한다.
+        observation = session.scalar(
+            select(HouseholdObservationDaily).where(
+                HouseholdObservationDaily.household_id == household_id,
+                HouseholdObservationDaily.observation_date == activity_date,
+            )
+        )
+        if observation is not None:
+            return observation
+
+        # 일일 샘플 수와 수집률 확정은 별도 일일 관측 집계 작업의 책임이다.
+        # 여기서는 세션이 참조할 수 있도록 COLLECTING 상태의 부모 행을 생성한다.
+        observation = HouseholdObservationDaily(
+            household_id=household_id,
+            observation_date=activity_date,
+            sample_count=0,
+            expected_sample_count=EXPECTED_SAMPLES_PER_DAY,
+            coverage_ratio=Decimal("0.0000"),
+            observation_status="COLLECTING",
+            updated_at=updated_at,
+        )
+        session.add(observation)
+        session.flush()
+        return observation
+
+    @staticmethod
+    def _get_or_create_activity(
+        session: Session,
+        observation: HouseholdObservationDaily,
+        appliance_type: str,
+        updated_at: datetime,
+    ) -> HouseholdActivityDaily:
+        # 같은 일일 관측 결과와 가전 조합은 하나의 활동 행만 사용한다.
+        activity = session.scalar(
+            select(HouseholdActivityDaily).where(
+                HouseholdActivityDaily.observation_daily_id == observation.id,
+                HouseholdActivityDaily.appliance_type == appliance_type,
+            )
+        )
+        if activity is not None:
+            return activity
+
+        activity = HouseholdActivityDaily(
+            observation_daily_id=observation.id,
+            appliance_type=appliance_type,
+            event_count=0,
+            updated_at=updated_at,
+        )
+        session.add(activity)
+        session.flush()
+        return activity
+
+    @staticmethod
+    def _find_open_session(
+        session: Session,
+        household_id: str,
+        appliance_type: str,
+    ) -> ApplianceUsageSession | None:
+        # 부모 테이블을 JOIN해 가구·가전 기준의 종료되지 않은 세션을 찾는다.
+        # FOR UPDATE로 조회해 현재 트랜잭션이 끝날 때까지 갱신 대상을 잠근다.
+        return session.scalar(
+            select(ApplianceUsageSession)
+            .join(
+                HouseholdActivityDaily,
+                HouseholdActivityDaily.id
+                == ApplianceUsageSession.activity_daily_id,
+            )
+            .join(
+                HouseholdObservationDaily,
+                HouseholdObservationDaily.id
+                == HouseholdActivityDaily.observation_daily_id,
+            )
+            .where(
+                HouseholdObservationDaily.household_id == household_id,
+                HouseholdActivityDaily.appliance_type == appliance_type,
+                ApplianceUsageSession.ended_at.is_(None),
+            )
+            .order_by(ApplianceUsageSession.started_at.desc())
+            .with_for_update()
+        )
+
+    @staticmethod
+    def _set_max_probability(
+        usage_session: ApplianceUsageSession,
+        probability: Decimal,
+        updated_at: datetime,
+    ) -> None:
+        # max_probability이므로 기존 값보다 큰 확률만 저장한다.
+        if probability > usage_session.max_probability:
+            usage_session.max_probability = probability
+            usage_session.updated_at = updated_at
+
+
+def _as_probability(value: float) -> Decimal:
+    # DB의 NUMERIC(5, 4)에 맞춰 부동소수점 값을 소수점 넷째 자리로 변환한다.
+    return Decimal(str(value)).quantize(PROBABILITY_QUANTUM)

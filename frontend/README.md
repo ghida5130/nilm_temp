@@ -1,75 +1,29 @@
-# React + TypeScript + Vite
+# On:마음 PWA 알림
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+스마트폰에 설치하고 Web Push 알림을 받을 수 있는 React PWA입니다. 백엔드의 기존 구독·응답 API 계약에 맞춰 동작합니다.
 
-Currently, two official plugins are available:
+## 공개키 설정
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+백엔드 `WEB_PUSH_VAPID_PUBLIC_KEY`와 같은 공개키를 `frontend/.env.local`에 설정합니다.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```env
+VITE_WEB_PUSH_PUBLIC_KEY=...
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+환경변수가 없으면 화면의 공개키 입력란을 이용할 수 있습니다. VAPID 비밀키는 `WEB_PUSH_VAPID_PRIVATE_KEY`로 백엔드에만 보관해야 합니다.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 연결 API
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- 구독 등록: `POST /api/monitoring/push-subscriptions`
+- 알림 응답: `PUT /api/monitoring/notifications/{notificationId}/responses`
 
+서비스 워커는 백엔드 push payload의 `notificationId`, `incidentId`, `householdId`, `title`, `expiresAt`을 사용합니다. 알림의 `예` 또는 `아니오` 버튼을 누르면 `{ answer, source: "user", respondedAt }` 형식으로 응답 API를 호출합니다.
+
+## 로컬 실행
+
+```powershell
+npm ci
+npm run dev
 ```
+
+웹 푸시는 보안 컨텍스트에서만 동작합니다. 로컬에서는 `http://localhost:5173`, 스마트폰에서는 유효한 HTTPS 주소를 사용해야 합니다. iPhone/iPad는 Safari에서 홈 화면에 추가한 뒤 해당 앱에서 알림을 등록해야 합니다.
