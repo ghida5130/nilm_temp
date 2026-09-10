@@ -36,8 +36,6 @@ class Settings(BaseSettings):
     baseline_file: str = "config/baselines.json"
     analysis_score_threshold: int = Field(default=80, ge=0, le=100)
     analysis_timezone: str = "Asia/Seoul"
-    power_change_min_delta_w: float = Field(default=500.0, gt=0)
-    power_change_confirmation_samples: int = Field(default=3, ge=1)
     appliance_on_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_threshold_margin: float = Field(default=0.05, ge=0, le=1)

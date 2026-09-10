@@ -263,11 +263,7 @@ FAKE_ON_APPLIANCES=MICROWAVE,HAIR_DRYER
 Feature 순서, 출력 가전 순서, sigmoid 출력과 threshold 범위를 검증합니다. 현재
 Manifest의 `mean`, `std`와 `0.5` threshold는 실제 모델 전달 전까지 사용하는 임시값입니다.
 
-## 전력 변화점 및 ON/OFF 상태 변화
-
-유효전력이 기본 500W 이상 변한 상태로 3개 샘플 연속 유지되면 전력 변화점으로
-확정합니다. 한 번만 튀었다가 돌아오는 값은 변화점으로 확정하지 않습니다.
-500W와 3개 샘플은 실제 모델 검증 전 사용하는 MVP 초기값입니다.
+## ON/OFF 상태 변화
 
 모델 확률은 다음 순서로 안정화합니다.
 
@@ -283,14 +279,9 @@ threshold - 0.05 < probability < threshold → 기존 ON 상태 유지
 
 | 환경변수 | 기본값 | 의미 |
 | --- | ---: | --- |
-| `POWER_CHANGE_MIN_DELTA_W` | 500 | 전력 변화 후보의 최소 절댓값 |
-| `POWER_CHANGE_CONFIRMATION_SAMPLES` | 3 | 전력 변화 확정에 필요한 연속 샘플 수 |
 | `APPLIANCE_ON_CONFIRMATION_SAMPLES` | 3 | ON 확정에 필요한 연속 예측 수 |
 | `APPLIANCE_OFF_CONFIRMATION_SAMPLES` | 3 | OFF 확정에 필요한 연속 예측 수 |
 | `APPLIANCE_OFF_THRESHOLD_MARGIN` | 0.05 | OFF 판정용 히스테리시스 폭 |
-
-전력 변화점은 현재 로그와 후속 분석 근거로 사용하며 Predictor 호출을 막는 조건으로는
-사용하지 않는다. 변화가 작아도 실제 가전 확률이 달라질 수 있기 때문이다.
 
 ## 현재 MVP 제약
 

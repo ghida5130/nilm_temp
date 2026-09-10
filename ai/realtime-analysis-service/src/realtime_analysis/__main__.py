@@ -7,7 +7,6 @@ from threading import Event
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
-from realtime_analysis.change_point import PowerChangeDetector
 from realtime_analysis.config import get_settings
 from realtime_analysis.consumer import AnalysisConsumer
 from realtime_analysis.dlq import DlqPublisher
@@ -49,10 +48,6 @@ def main() -> None:
     )
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(settings.model_window_size),
-        power_change_detector=PowerChangeDetector(
-            min_delta_w=settings.power_change_min_delta_w,
-            confirmation_samples=settings.power_change_confirmation_samples,
-        ),
         predictor=FakePredictor(settings.fake_on_appliance_types),
         state_decider=ApplianceStateDecider.from_manifest(manifest),
         state_transition_detector=ApplianceStateTransitionDetector(

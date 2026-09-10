@@ -57,25 +57,6 @@ class ApplianceState(BaseModel):  # 분석 서브사 확률과 threshold를 비�
     is_on: bool
 
 
-class PowerChangeDirection(StrEnum):
-    RISE = "RISE"
-    FALL = "FALL"
-
-
-class PowerChange(BaseModel):
-    """A sustained active-power step detected for one household."""
-
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
-
-    household_id: str = Field(min_length=1, max_length=50)
-    direction: PowerChangeDirection
-    started_at: datetime
-    confirmed_at: datetime
-    baseline_active_power: float = Field(ge=0)
-    current_active_power: float = Field(ge=0)
-    delta_w: float
-
-
 class ApplianceTransitionType(StrEnum):
     TURNED_ON = "TURNED_ON"
     TURNED_OFF = "TURNED_OFF"

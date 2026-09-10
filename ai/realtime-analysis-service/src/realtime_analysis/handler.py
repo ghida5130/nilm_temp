@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
-from realtime_analysis.change_point import PowerChangeDetector
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.predictor import Predictor
 from realtime_analysis.schemas import PowerMeasurement
@@ -23,7 +22,6 @@ class MeasurementHandler:
     def __init__(
         self,
         buffer: HouseholdBuffer,
-        power_change_detector: PowerChangeDetector,
         predictor: Predictor,
         state_decider: ApplianceStateDecider,
         state_transition_detector: ApplianceStateTransitionDetector,
@@ -34,7 +32,6 @@ class MeasurementHandler:
         timezone_name: str,
     ) -> None:
         self._buffer = buffer
-        self._power_change_detector = power_change_detector
         self._predictor = predictor
         self._state_decider = state_decider
         self._state_transition_detector = state_transition_detector
@@ -45,15 +42,6 @@ class MeasurementHandler:
         self._timezone = ZoneInfo(timezone_name)
 
     def __call__(self, measurement: PowerMeasurement) -> None:
-        power_change = self._power_change_detector.detect(measurement)
-        if power_change is not None:
-            logger.info(
-                "Power change detected: household=%s direction=%s delta_w=%.2f",
-                power_change.household_id,
-                power_change.direction,
-                power_change.delta_w,
-            )
-
         self._buffer.append(measurement)  # 입력값을 가구별 버퍼에 넣음 
         if not self._buffer.is_ready(measurement.household_id): # 버퍼가 준비 좼는지 확인
             return
