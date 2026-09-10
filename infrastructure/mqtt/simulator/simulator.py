@@ -43,7 +43,14 @@ from engine.config import (
     DEFAULT_BROKER_PORT,
     DEFAULT_BROKER_USER,
     DEFAULT_BROKER_PASS,
+    DEFAULT_TLS_ENABLED,
+    DEFAULT_CA_FILE,
     DEFAULT_HOUSES,
+)
+from engine.tls import (
+    resolve_mqtt_port,
+    get_mqtt_tls_context,
+    resolve_mqtt_config,
 )
 from engine.profiles import DEVICE_PROFILES
 from engine.state import (
@@ -64,7 +71,7 @@ from engine.publisher import publish_house_power
 init_simulation_states(DEFAULT_HOUSES)
 
 
-def parse_args():
+def parse_args(args=None):
     """커맨드라인 실행 인자 파싱"""
     parser = argparse.ArgumentParser(
         description="NILM IoT 스마트홈 메인 분전반 전력 시뮬레이터 (MQTT 비동기 발행)",
@@ -107,24 +114,35 @@ def parse_args():
     )
     parser.add_argument(
         "--host",
-        default=DEFAULT_BROKER_HOST,
-        help="MQTT 브로커 호스트 주소"
+        default=None,
+        help="MQTT 브로커 호스트 주소 (미지정 시 MQTT_HOST 환경변수 또는 localhost. TLS 시 인증서 SAN과 일치 필수)"
     )
     parser.add_argument(
         "--port", "-p",
         type=int,
-        default=DEFAULT_BROKER_PORT,
-        help="MQTT 브로커 포트 번호"
+        default=None,
+        help="MQTT 브로커 포트 번호 (미지정 시 MQTT_PORT 환경변수 또는 TLS 여부에 따라 8883/1883 자동 결정)"
     )
     parser.add_argument(
         "--user", "-u",
-        default=DEFAULT_BROKER_USER,
-        help="MQTT 인증 사용자명"
+        default=None,
+        help="MQTT 인증 사용자명 (미지정 시 MQTT_USER 환경변수 또는 simulator_user)"
     )
     parser.add_argument(
         "--password",
-        default=DEFAULT_BROKER_PASS,
-        help="MQTT 인증 비밀번호"
+        default=None,
+        help="MQTT 인증 비밀번호 (미지정 시 MQTT_PASS 환경변수 또는 test1234. 프로세스 노출 방지를 위해 환경변수/입력 권장)"
+    )
+    parser.add_argument(
+        "--tls",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="MQTT TLS 암호화 연결 활성화 여부 (--tls 또는 --no-tls, 미지정 시 MQTT_TLS_ENABLED 환경변수)"
+    )
+    parser.add_argument(
+        "--ca-file",
+        default=None,
+        help="MQTT TLS 브로커 인증서 검증에 사용할 CA 파일 경로 (PEM 형식, 미지정 시 MQTT_CA_FILE 환경변수)"
     )
     parser.add_argument(
         "--qos",
@@ -138,13 +156,34 @@ def parse_args():
         action="store_true",
         help="요약 모드 (매초 상세 로그 생략 및 5초 주기 통계/TPS 출력)"
     )
-    return parser.parse_args()
+    parsed = parser.parse_args(args)
+
+    # CLI 인자 > 환경변수 > TLS 기본값 우선순위로 설정 단일 해석
+    cfg = resolve_mqtt_config(
+        host=parsed.host,
+        port=parsed.port,
+        username=parsed.user,
+        password=parsed.password,
+        tls_enabled=parsed.tls,
+        ca_file=parsed.ca_file,
+    )
+    parsed.host = cfg["host"]
+    parsed.port = cfg["port"]
+    parsed.user = cfg["username"]
+    parsed.password = cfg["password"]
+    parsed.tls = cfg["tls_enabled"]
+    parsed.ca_file = cfg["ca_file"]
+    return parsed
 
 
 async def run_simulator(args):
     """시뮬레이터 메인 비동기 실행 루프"""
     is_peak_mode = (args.scenario == "peak")
     is_missed_mode = (args.scenario == "routine_missed")
+
+    # TLS 컨텍스트 생성 및 사전 검증 (CA 파일 누락/오류 시 연결 전 즉각 실패)
+    tls_context = get_mqtt_tls_context(tls_enabled=args.tls, ca_file=args.ca_file)
+    tls_desc = f" [TLS ON | CA: {args.ca_file}]" if args.tls else " [TLS OFF (평문)]"
 
     # 1. 가구 목록 동적 생성 및 상태 머신 초기화
     if (is_peak_mode or is_missed_mode) and args.houses == 10:
@@ -171,7 +210,7 @@ async def run_simulator(args):
     print(f"============================================================")
     if is_peak_mode:
         print(f" NILM IoT 전력 시뮬레이터 시작 [10초 3,000W+ 피크 시연 모드]")
-        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos})")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
         print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
         print(f" - 시연 타임라인:")
         print(f"   * T+01s ~ T+09s: 평상시 대기 상태 (약 55~65W)")
@@ -183,7 +222,7 @@ async def run_simulator(args):
     elif is_missed_mode:
         start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각'
         print(f" NILM IoT 전력 시뮬레이터 시작 [루틴 누락(ROUTINE_MISSED) 이상치 검증 모드]")
-        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos})")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
         print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
         print(f" - 시작 가상 시각: {start_desc}")
         print(f" - 시연 타임라인:")
@@ -195,7 +234,7 @@ async def run_simulator(args):
         print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료")
     else:
         print(f" NILM IoT 전력 시뮬레이터 시작")
-        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos})")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
         print(f" - 대상 가구: 총 {len(houses)}개 ({houses[0]} ~ {houses[-1]})")
         print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
         if target_count > 0:
@@ -215,6 +254,7 @@ async def run_simulator(args):
         port=args.port,
         username=args.user,
         password=args.password,
+        tls_context=tls_context,
         keepalive=60,
         timeout=5
     ) as client:
