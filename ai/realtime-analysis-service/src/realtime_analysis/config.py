@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     kafka_input_topic: str = "power.raw.v1"
     kafka_dlq_topic: str = "dlq.analysis"
     kafka_analysis_event_topic: str = "analysis.event.v1"
+    kafka_analysis_snapshot_topic: str = "analysis.snapshot.v1"
     kafka_group_id: str = "realtime-analysis-service-v1"
     kafka_auto_offset_reset: str = "earliest"
 

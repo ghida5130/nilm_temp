@@ -7,7 +7,12 @@ from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.predictor import APPLIANCE_ORDER, FakePredictor
-from realtime_analysis.schemas import AnalysisEvent, PowerMeasurement, RoutineBaseline
+from realtime_analysis.schemas import (
+    AnalysisEvent,
+    AnalysisSnapshot,
+    PowerMeasurement,
+    RoutineBaseline,
+)
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
 from realtime_analysis.state_transition import ApplianceStateTransitionDetector
@@ -19,6 +24,14 @@ class RecordingPublisher:
 
     def publish(self, event: AnalysisEvent) -> None:
         self.events.append(event)
+
+
+class RecordingSnapshotPublisher:
+    def __init__(self) -> None:
+        self.snapshots: list[AnalysisSnapshot] = []
+
+    def publish(self, snapshot: AnalysisSnapshot) -> None:
+        self.snapshots.append(snapshot)
 
 
 def test_fake_predictor_uses_ai_experiment_appliance_order() -> None:
@@ -62,6 +75,7 @@ def measurement(second: int) -> PowerMeasurement:
 def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     tracker = DailyActivityTracker()
     publisher = RecordingPublisher()
+    snapshot_publisher = RecordingSnapshotPublisher()
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(window_size=3),
         predictor=FakePredictor(),   # 지금은 FakePredictor 사용
@@ -85,6 +99,7 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
         tracker=tracker,
         detector=RoutineMissedDetector(tracker, 80, "Asia/Seoul"),
         event_publisher=publisher,  # type: ignore[arg-type]
+        snapshot_publisher=snapshot_publisher,  # type: ignore[arg-type]
         timezone_name="Asia/Seoul",
     )
 
@@ -98,10 +113,13 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     assert len(publisher.events) == 1
     assert publisher.events[0].household_id == "H001"
     assert publisher.events[0].score == 86
+    assert len(snapshot_publisher.snapshots) == 2
+    assert snapshot_publisher.snapshots[0].snapshot_id == measurement(2).message_id
 
 
 def test_pipeline_records_usage_only_after_confirmed_on_transition() -> None:
     tracker = DailyActivityTracker()
+    snapshot_publisher = RecordingSnapshotPublisher()
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(window_size=1),
         predictor=FakePredictor(("MICROWAVE",)),
@@ -114,6 +132,7 @@ def test_pipeline_records_usage_only_after_confirmed_on_transition() -> None:
         tracker=tracker,
         detector=RoutineMissedDetector(tracker, 80, "Asia/Seoul"),
         event_publisher=RecordingPublisher(),  # type: ignore[arg-type]
+        snapshot_publisher=snapshot_publisher,  # type: ignore[arg-type]
         timezone_name="Asia/Seoul",
     )
 
@@ -124,3 +143,12 @@ def test_pipeline_records_usage_only_after_confirmed_on_transition() -> None:
     handler(measurement(2))
 
     assert tracker.was_used("H001", measurement(2).measured_at.date(), "MICROWAVE") is True
+    microwave_states = [
+        next(
+            appliance
+            for appliance in snapshot.appliances
+            if appliance.appliance_type == "MICROWAVE"
+        ).is_on
+        for snapshot in snapshot_publisher.snapshots
+    ]
+    assert microwave_states == [False, False, True]

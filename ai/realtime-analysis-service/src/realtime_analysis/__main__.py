@@ -18,6 +18,7 @@ from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.model_manifest import ModelManifest
 from realtime_analysis.predictor import FakePredictor
+from realtime_analysis.snapshot_publisher import AnalysisSnapshotPublisher
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
 from realtime_analysis.state_transition import ApplianceStateTransitionDetector
@@ -71,6 +72,7 @@ def main() -> None:
         tracker=tracker,
         detector=detector,
         event_publisher=AnalysisEventPublisher(settings),
+        snapshot_publisher=AnalysisSnapshotPublisher(settings),
         timezone_name=settings.analysis_timezone,
     )
     consumer = AnalysisConsumer(

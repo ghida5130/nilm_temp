@@ -13,6 +13,7 @@ power.raw.v1
   -> 입력 검증 및 가구별 299개 버퍼
   -> FakePredictor 가전 6종 ON 확률
   -> model_manifest.json의 threshold로 ON/OFF 판정
+  -> 연속 판정과 히스테리시스로 확정한 상태를 analysis.snapshot.v1로 발행
   -> JSON baseline과 일일 사용 상태 비교
   -> score가 임계치 이상이면 analysis.event.v1 발행
 ```
@@ -31,6 +32,53 @@ VACUUM_CLEANER
 
 잘못된 입력은 `dlq.analysis`로 발행합니다. Kafka offset은 정상 처리 또는 DLQ 전송이
 완료된 뒤에만 수동으로 commit합니다.
+
+## 실시간 Snapshot 수신 담당자 전달 사항
+
+### 수신 대상
+
+| 항목 | 값 |
+| --- | --- |
+| Kafka 토픽 | `analysis.snapshot.v1` |
+| Kafka Record Key | `household_id` |
+| Value 형식 | UTF-8 JSON Object |
+| 발행 시점 | 입력 윈도우가 완성된 뒤 매 추론 시점 |
+
+기본 입력이 가구별 1Hz이고 모델 윈도우 크기가 299이면, 최초 299개 입력이 쌓인 뒤부터
+가구별로 약 1초마다 Snapshot 한 건을 발행합니다. `appliances[].is_on`은 모델 확률을
+단순 비교한 값이 아니라 연속 판정과 히스테리시스를 모두 적용한 최종 확정 상태입니다.
+
+### Snapshot 출력 계약
+
+```json
+{
+  "schema_version": 1,
+  "snapshot_id": "8f3b2a19-d6e-4c72-9b12-a1b2c3d4e5f6",
+  "household_id": "H001",
+  "observed_at": "2026-09-10T00:10:00Z",
+  "published_at": "2026-09-10T00:10:00.125Z",
+  "measurement": {
+    "active_power": 1789.47,
+    "reactive_power": 340.01,
+    "power_factor": 0.982,
+    "current": 8.279
+  },
+  "appliances": [
+    {"appliance_type": "KETTLE", "is_on": false},
+    {"appliance_type": "INDUCTION", "is_on": false},
+    {"appliance_type": "IRON", "is_on": false},
+    {"appliance_type": "MICROWAVE", "is_on": true},
+    {"appliance_type": "HAIR_DRYER", "is_on": false},
+    {"appliance_type": "VACUUM_CLEANER", "is_on": false}
+  ]
+}
+```
+
+- `snapshot_id`는 원본 입력의 `message_id`를 사용하므로 동일 입력 재처리 시에도 같습니다.
+- `observed_at`은 원본 측정 시각, `published_at`은 Snapshot 발행 직전 시각이며 UTC로 냅니다.
+- `measurement`는 해당 추론 시점에 수신한 최신 원본 전력값 네 개를 그대로 담습니다.
+- `appliances`는 계약에 정한 6종을 고정 순서로 모두 포함하며 확률은 노출하지 않습니다.
+- 같은 가구의 Kafka 레코드 순서를 유지할 수 있도록 Key로 `household_id`를 사용합니다.
 
 ## 시뮬레이터 담당자 전달 사항
 

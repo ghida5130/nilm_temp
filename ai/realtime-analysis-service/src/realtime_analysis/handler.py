@@ -11,6 +11,8 @@ from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.predictor import Predictor
 from realtime_analysis.schemas import PowerMeasurement
+from realtime_analysis.snapshot import create_analysis_snapshot
+from realtime_analysis.snapshot_publisher import AnalysisSnapshotPublisher
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
 from realtime_analysis.state_transition import ApplianceStateTransitionDetector
@@ -31,6 +33,7 @@ class MeasurementHandler:
         tracker: DailyActivityTracker,
         detector: RoutineMissedDetector,
         event_publisher: AnalysisEventPublisher,
+        snapshot_publisher: AnalysisSnapshotPublisher,
         timezone_name: str,
     ) -> None:
         self._buffer = buffer
@@ -42,6 +45,7 @@ class MeasurementHandler:
         self._tracker = tracker
         self._detector = detector
         self._event_publisher = event_publisher
+        self._snapshot_publisher = snapshot_publisher
         self._timezone = ZoneInfo(timezone_name)
 
     def __call__(self, measurement: PowerMeasurement) -> None:
@@ -76,6 +80,14 @@ class MeasurementHandler:
             states=states,
             transitions=transitions,
             active_appliance_types=active_appliance_types,
+        )
+        # DB 저장이 끝난 최신 측정값과 확정 가전 상태를 매 추론마다 발행한다.
+        self._snapshot_publisher.publish(
+            create_analysis_snapshot(
+                measurement=measurement,
+                states=states,
+                active_appliance_types=active_appliance_types,
+            )
         )
         self._tracker.record_transitions(
             activity_date,

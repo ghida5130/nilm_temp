@@ -2,7 +2,7 @@
 
 from datetime import datetime, time
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -76,6 +76,67 @@ class ApplianceStateTransition(BaseModel):
     confirmed_at: datetime
     probability: float = Field(ge=0, le=1)
     threshold: float = Field(ge=0, le=1)
+
+
+SNAPSHOT_APPLIANCE_ORDER = (
+    "KETTLE",
+    "INDUCTION",
+    "IRON",
+    "MICROWAVE",
+    "HAIR_DRYER",
+    "VACUUM_CLEANER",
+)
+
+
+class SnapshotMeasurement(BaseModel):
+    """Snapshot에 포함하는 최신 원본 전력 측정값."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    active_power: float = Field(ge=0)
+    reactive_power: float
+    power_factor: float = Field(ge=-1, le=1)
+    current: float = Field(ge=0)
+
+
+class SnapshotApplianceState(BaseModel):
+    """연속 판정과 히스테리시스를 적용한 가전의 최종 상태."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    appliance_type: str
+    is_on: bool
+
+
+class AnalysisSnapshot(BaseModel):
+    """analysis.snapshot.v1으로 발행하는 가구별 최신 상태."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    schema_version: Literal[1] = 1
+    snapshot_id: UUID
+    household_id: str = Field(min_length=1, max_length=50)
+    observed_at: datetime
+    published_at: datetime
+    measurement: SnapshotMeasurement
+    appliances: list[SnapshotApplianceState]
+
+    @field_validator("observed_at", "published_at")
+    @classmethod
+    def snapshot_times_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("snapshot timestamps must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def snapshot_must_contain_six_appliances(self) -> "AnalysisSnapshot":
+        actual = tuple(appliance.appliance_type for appliance in self.appliances)
+        if actual != SNAPSHOT_APPLIANCE_ORDER:
+            raise ValueError(
+                "snapshot appliances must contain the six agreed appliance types "
+                "in contract order"
+            )
+        return self
 
 
 class RoutineBaseline(BaseModel):
