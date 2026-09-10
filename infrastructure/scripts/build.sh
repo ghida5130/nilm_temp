@@ -4,6 +4,8 @@ set -euo pipefail
 for service in api-gateway iot-device-service monitoring-service; do
   docker build -t "$IMAGE_REPOSITORY:$service-$RELEASE_ID" "backend/$service"
 done
+docker build --target test ai/realtime-analysis-service
+docker build --target runtime -t "$IMAGE_REPOSITORY:realtime-analysis-service-$RELEASE_ID" ai/realtime-analysis-service
 docker build -t "$IMAGE_REPOSITORY:mqtt-kafka-bridge-$RELEASE_ID" infrastructure/mqtt-kafka-bridge
 frontend_args=()
 if [[ -n "${FRONTEND_ENV:-}" ]]; then
