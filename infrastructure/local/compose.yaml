@@ -70,6 +70,7 @@ services:
       KAFKA_RAW_TOPIC: ${KAFKA_RAW_TOPIC:-power.raw.v1}
       KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
       KAFKA_ANALYSIS_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
+      KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
       KAFKA_PARTITIONS: ${KAFKA_PARTITIONS:-24}
     entrypoint: ["/bin/bash", "-ec"]
     command:
@@ -77,9 +78,11 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_RAW_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_DLQ_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_MONITORING_DLQ_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_RAW_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_DLQ_TOPIC"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_MONITORING_DLQ_TOPIC"
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
@@ -282,6 +285,16 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_HEALTH_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
+      KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
+      MONITORING_KAFKA_GROUP_ID: ${MONITORING_KAFKA_GROUP_ID:-monitoring-service-analysis-event-v1}
+      KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET:-earliest}
+      KAFKA_CONSUMER_ENABLED: "${KAFKA_CONSUMER_ENABLED:-true}"
+      WEB_PUSH_ENABLED: "${WEB_PUSH_ENABLED:-false}"
+      WEB_PUSH_VAPID_PUBLIC_KEY: "${WEB_PUSH_VAPID_PUBLIC_KEY:-}"
+      WEB_PUSH_VAPID_PRIVATE_KEY: "${WEB_PUSH_VAPID_PRIVATE_KEY:-}"
+      WEB_PUSH_SUBJECT: "${WEB_PUSH_SUBJECT:-mailto:admin@example.com}"
     ports:
       - "127.0.0.1:8082:8082"
     depends_on:
@@ -289,6 +302,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8082/actuator/health/readiness >/dev/null"]
       interval: 10s

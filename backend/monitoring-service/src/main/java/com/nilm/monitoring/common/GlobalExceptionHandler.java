@@ -47,6 +47,30 @@ public class GlobalExceptionHandler {
                 "요청한 리소스를 찾을 수 없습니다.", request.getRequestURI(), List.of()));
     }
 
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(
+            ResourceNotFoundException e, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.of(
+                HttpStatus.NOT_FOUND.value(), "NOT_FOUND", e.getMessage(),
+                request.getRequestURI(), List.of()));
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbidden(
+            ForbiddenException e, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ErrorResponse.of(
+                HttpStatus.FORBIDDEN.value(), "FORBIDDEN", e.getMessage(),
+                request.getRequestURI(), List.of()));
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ErrorResponse> handleConflict(
+            ConflictException e, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
+                HttpStatus.CONFLICT.value(), "CONFLICT", e.getMessage(),
+                request.getRequestURI(), List.of()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception e, HttpServletRequest request) {
         log.error("Unexpected error at {}", request.getRequestURI(), e);
