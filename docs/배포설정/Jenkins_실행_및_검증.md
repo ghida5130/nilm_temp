@@ -42,9 +42,9 @@ Jenkins 파라미터:
 
 - `REGISTRY`: 예를 들어 `registry.example.com/team/nilm`. 스킴 없이 Registry와 namespace를 지정한다.
 - `FRONTEND_ENV_CREDENTIAL`: 필요하면 `frontend-build-env`, 현재 프론트에는 비워도 된다.
-- `ENABLE_CD`: 기본 false. 최초 EC2·인증서·Credentials 준비 후 master에서 활성화한다.
+- `ENABLE_CD`: 기본 true. master 푸시로 시작된 자동 빌드는 항상 배포하며, 수동 Build with Parameters에서 해제하면 CI만 수행한다.
 
-모든 브랜치는 CI를 수행한다. master이면서 ENABLE_CD=true인 경우에만 Registry 업로드와 운영 배포를 수행한다. IMAGE_TAG는 전체 커밋 SHA이며 Jenkins가 env 파일에 기록한다.
+모든 브랜치는 CI를 수행한다. master 자동 빌드와 ENABLE_CD=true인 master 수동 빌드에서만 Registry 업로드와 운영 배포를 수행한다. IMAGE_TAG는 전체 커밋 SHA이며 Jenkins가 env 파일에 기록한다.
 
 ## EC2 최초 준비
 

@@ -55,7 +55,7 @@ A/B의 기존 Compose 프로젝트 이름, 서버 역할, 서비스 이름은 �
 
 | 목표 파라미터 | 값/의미 |
 |---|---|
-| ENABLE_CD | 기본 false, 최초 운영 준비 후 명시적으로 true |
+| ENABLE_CD | 기본 true. master 자동 빌드는 항상 배포, 수동 빌드에서만 해제 가능 |
 | IMAGE_REPOSITORY | docker.io/<계정>/<Private 저장소>, 스킴·끝 슬래시·태그 없음 |
 | FRONTEND_ENV_CREDENTIAL | 기존 선택적 공개 Vite 빌드 설정 |
 

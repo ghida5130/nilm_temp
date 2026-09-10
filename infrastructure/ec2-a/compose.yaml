@@ -53,7 +53,7 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: 8080
-      APP_SECURITY_ENABLED: "true"
+      APP_SECURITY_ENABLED: "${APP_SECURITY_ENABLED:-true}"
       JWT_ISSUER_URI: ${JWT_ISSUER_URI:?JWT_ISSUER_URI required}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://keycloak:8080/realms/nilm/protocol/openid-connect/certs
       IOT_DEVICE_SERVICE_URL: http://iot-device-service:8081
@@ -83,7 +83,7 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: 8081
-      APP_SECURITY_ENABLED: "true"
+      APP_SECURITY_ENABLED: "${APP_SECURITY_ENABLED:-true}"
       JWT_ISSUER_URI: ${JWT_ISSUER_URI:?JWT_ISSUER_URI required}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://keycloak:8080/realms/nilm/protocol/openid-connect/certs
       POSTGRES_URL: jdbc:postgresql://${POSTGRES_HOST:?POSTGRES_HOST required}:5432/device_db
@@ -109,7 +109,7 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: 8082
-      APP_SECURITY_ENABLED: "true"
+      APP_SECURITY_ENABLED: "${APP_SECURITY_ENABLED:-true}"
       JWT_ISSUER_URI: ${JWT_ISSUER_URI:?JWT_ISSUER_URI required}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://keycloak:8080/realms/nilm/protocol/openid-connect/certs
       POSTGRES_URL: jdbc:postgresql://${POSTGRES_HOST:?POSTGRES_HOST required}:5432/monitoring_db
