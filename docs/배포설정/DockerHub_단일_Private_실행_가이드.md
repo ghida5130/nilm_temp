@@ -21,12 +21,12 @@
 변경 파일을 검토·커밋하고 팀의 master 반영 절차를 따른다. Jenkins가 읽는 브랜치에 코드가 반영돼야 한다.
 
 ```text
-ENABLE_CD = false
+ENABLE_CD = false   (CI만 확인할 때: 수동 Build with Parameters에서 해제)
 IMAGE_REPOSITORY = docker.io/leejeongmin24/on-maum
 FRONTEND_ENV_CREDENTIAL = 비움 또는 기존 Credential ID
 ```
 
-REGISTRY 입력란은 IMAGE_REPOSITORY로 바뀐다. 최초 전환 시 이전 파라미터 화면이 남을 수 있으므로 Scan/CI 실행 후 새 화면을 확인한다. IMAGE_REPOSITORY 파라미터가 아직 없으면 코드의 기본 Private 경로를 사용한다. ENABLE_CD는 기본 false다.
+REGISTRY 입력란은 IMAGE_REPOSITORY로 바뀐다. 최초 전환 시 이전 파라미터 화면이 남을 수 있으므로 Scan/CI 실행 후 새 화면을 확인한다. IMAGE_REPOSITORY 파라미터가 아직 없으면 코드의 기본 Private 경로를 사용한다. ENABLE_CD 기본값은 true이며, master 푸시로 시작된 자동 빌드는 이 값과 무관하게 항상 배포한다. 운영 준비가 끝나기 전에는 master에 푸시하지 않고, CI만 확인하려면 수동 Build with Parameters에서 ENABLE_CD를 해제해 실행한다.
 
 이전 계정 경로가 IMAGE_REPOSITORY에 남아 있으면 명시적으로 `docker.io/leejeongmin24/on-maum`을 입력한다. 코드 기본값 변경만으로 이미 전달된 파라미터가 덮어써지지는 않는다. `registry-login`이 이전 계정 토큰이라면 새 저장소 접근 권한이 있는 `leejeongmin24` 계정과 PAT로 갱신한다.
 
@@ -46,7 +46,7 @@ docker.io/leejeongmin24/on-maum:mqtt-kafka-bridge-<40자리SHA>-b<빌드번호>
 
 ## 3. 최초 CD
 
-CI 성공과 운영 준비를 확인한 뒤 master에서 ENABLE_CD=true로 실행한다.
+CI 성공과 운영 준비를 확인한 뒤 master에 푸시하거나 master에서 ENABLE_CD=true로 수동 실행한다. 이후에는 master 푸시마다 자동으로 배포된다.
 
 1. CI 테스트·빌드 → 5개 태그 push → `release.json` 생성·Jenkins artifact 보관.
 2. Pull A images: A용 4개를 digest로 pull하고 플랫폼/digest 검사.
