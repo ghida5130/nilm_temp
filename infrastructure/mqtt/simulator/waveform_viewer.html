@@ -118,6 +118,26 @@
       transform: translateY(-1px);
     }
 
+    .btn-manual {
+      background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+      color: #ffffff;
+      border-color: rgba(139, 92, 246, 0.4);
+      box-shadow: 0 2px 10px rgba(139, 92, 246, 0.35);
+    }
+
+    .btn-manual:hover:not(:disabled) {
+      background: linear-gradient(135deg, #a78bfa, #7c3aed);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
     .btn-secondary {
       background: #334155;
       color: #f8fafc;
@@ -322,6 +342,64 @@
       font-weight: 700;
     }
 
+    button.app-chip {
+      font-family: inherit;
+      font-size: inherit;
+      width: 100%;
+      text-align: left;
+      outline: none;
+      user-select: none;
+      -webkit-appearance: none;
+      cursor: not-allowed;
+    }
+
+    button.app-chip:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    button.app-chip:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    button.app-chip:not(:disabled) {
+      cursor: pointer;
+    }
+
+    button.app-chip:not(:disabled):hover {
+      border-color: #64748b;
+      transform: translateY(-1px);
+    }
+
+    .app-chip.starting {
+      border-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.15);
+    }
+
+    .app-chip.starting .name {
+      color: #fde68a;
+    }
+
+    .app-chip.starting .state {
+      color: #fbbf24;
+      animation: pulse 1s infinite;
+    }
+
+    .app-chip.active.manual-hold {
+      border-color: #8b5cf6;
+      background: rgba(139, 92, 246, 0.18);
+    }
+
+    .app-chip.active.manual-hold .name {
+      color: #f8fafc;
+    }
+
+    .app-chip.active.manual-hold .state {
+      color: #c084fc;
+    }
+
+
     .chart-container {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -416,6 +494,9 @@
       <button id="btnRandomDemo" class="btn btn-random" onclick="startRandomSimulation()">
         연속 실시간 시뮬레이션
       </button>
+      <button id="btnManualDemo" class="btn btn-manual" onclick="startManualDemo()" disabled>
+        가전 수동 제어
+      </button>
       <button id="btnPause" class="btn btn-secondary" onclick="togglePause()" disabled>
         일시정지
       </button>
@@ -464,32 +545,32 @@
 
   <!-- 3. 실시간 가전 기동 상태 칩 패널 -->
   <div class="appliance-bar">
-    <div class="appliance-bar-title">6대 타겟 가전 실시간 동작 상태</div>
+    <div class="appliance-bar-title">6대 타겟 가전 실시간 동작 상태 (수동 제어 모드 시 클릭하여 ON/OFF)</div>
     <div class="appliance-grid">
-      <div class="app-chip" id="chip_kettle">
+      <button type="button" class="app-chip" id="chip_kettle" aria-pressed="false" disabled onclick="toggleDevice('kettle')">
         <span class="name">전기포트</span>
-        <span class="state" id="state_kettle">대기</span>
-      </div>
-      <div class="app-chip" id="chip_induction">
+        <span class="state" id="state_kettle">OFF</span>
+      </button>
+      <button type="button" class="app-chip" id="chip_induction" aria-pressed="false" disabled onclick="toggleDevice('induction')">
         <span class="name">인덕션</span>
-        <span class="state" id="state_induction">대기</span>
-      </div>
-      <div class="app-chip" id="chip_microwave">
+        <span class="state" id="state_induction">OFF</span>
+      </button>
+      <button type="button" class="app-chip" id="chip_microwave" aria-pressed="false" disabled onclick="toggleDevice('microwave')">
         <span class="name">전자레인지</span>
-        <span class="state" id="state_microwave">대기</span>
-      </div>
-      <div class="app-chip" id="chip_hair_dryer">
+        <span class="state" id="state_microwave">OFF</span>
+      </button>
+      <button type="button" class="app-chip" id="chip_hair_dryer" aria-pressed="false" disabled onclick="toggleDevice('hair_dryer')">
         <span class="name">헤어드라이기</span>
-        <span class="state" id="state_hair_dryer">대기</span>
-      </div>
-      <div class="app-chip" id="chip_vacuum_cleaner">
+        <span class="state" id="state_hair_dryer">OFF</span>
+      </button>
+      <button type="button" class="app-chip" id="chip_vacuum_cleaner" aria-pressed="false" disabled onclick="toggleDevice('vacuum_cleaner')">
         <span class="name">진공청소기</span>
-        <span class="state" id="state_vacuum_cleaner">대기</span>
-      </div>
-      <div class="app-chip" id="chip_iron">
+        <span class="state" id="state_vacuum_cleaner">OFF</span>
+      </button>
+      <button type="button" class="app-chip" id="chip_iron" aria-pressed="false" disabled onclick="toggleDevice('iron')">
         <span class="name">전기다리미</span>
-        <span class="state" id="state_iron">대기</span>
-      </div>
+        <span class="state" id="state_iron">OFF</span>
+      </button>
     </div>
   </div>
 
@@ -570,11 +651,182 @@
 
     // 시뮬레이션 제어 변수
     let timerId = null;
-    let currentMode = null; // 'peak' or 'random'
+    let currentMode = null; // 'peak', 'routine_missed', 'random', 'manual'
     let currentSec = 0;
     let intervalMs = 1000;
     let isPaused = false;
     let maxPowerRecorded = 0.0;
+
+    // 수동 제어 모드 및 디바이스 상태 관리 (Map 기반 pending 추적)
+    let latestDeviceStates = {};
+    const pendingDeviceRequests = new Map(); // device -> { enabled: boolean, timeoutId: number }
+    let hasReceivedManualSse = false;
+    const PENDING_TIMEOUT_MS = 5000;
+
+    function clearAllPendingRequests() {
+      pendingDeviceRequests.forEach((info) => {
+        if (info && info.timeoutId) {
+          clearTimeout(info.timeoutId);
+        }
+      });
+      pendingDeviceRequests.clear();
+    }
+
+    function clearPendingRequest(device) {
+      const info = pendingDeviceRequests.get(device);
+      if (info) {
+        if (info.timeoutId) {
+          clearTimeout(info.timeoutId);
+        }
+        pendingDeviceRequests.delete(device);
+      }
+    }
+
+    function isDeviceControllable(device) {
+      return isServerConnected &&
+             currentMode === "manual" &&
+             !isPaused &&
+             hasReceivedManualSse &&
+             !pendingDeviceRequests.has(device);
+    }
+
+    function updateApplianceButtonsState() {
+      Object.keys(DEVICE_PROFILES).forEach(dev => {
+        const chip = document.getElementById(`chip_${dev}`);
+        if (chip) {
+          const controllable = isDeviceControllable(dev);
+          chip.disabled = !controllable;
+          chip.style.cursor = controllable ? "pointer" : "not-allowed";
+        }
+      });
+    }
+
+    function renderDeviceState(dev, mode = currentMode, totalP = 0) {
+      const chip = document.getElementById(`chip_${dev}`);
+      const stLabel = document.getElementById(`state_${dev}`);
+      if (!chip || !stLabel) return;
+
+      const devInfo = (latestDeviceStates && latestDeviceStates[dev]) || {};
+      const stState = devInfo.state || "OFF";
+      const manualHold = !!devInfo.manualHold;
+      const isPending = pendingDeviceRequests.has(dev);
+
+      let chipClass = "app-chip";
+      let stateText = "OFF";
+      let ariaPressed = "false";
+
+      if (stState === "STARTING") {
+        chipClass = "app-chip starting";
+        stateText = isPending ? "처리 중..." : "기동 중";
+        ariaPressed = "true";
+      } else if (stState === "RUNNING") {
+        if (manualHold) {
+          chipClass = "app-chip active manual-hold";
+          stateText = isPending ? "처리 중..." : "ON · 수동 유지";
+        } else {
+          const isPeakApp = (dev === "kettle" || dev === "induction") && totalP >= 3000.0;
+          chipClass = isPeakApp ? "app-chip active peak-app" : "app-chip active";
+          stateText = isPending ? "처리 중..." : "ON";
+        }
+        ariaPressed = "true";
+      } else {
+        // OFF
+        chipClass = "app-chip";
+        stateText = isPending ? "처리 중..." : "OFF";
+        ariaPressed = "false";
+      }
+
+      if (mode === 'routine_missed' && dev === 'microwave' && stState === "OFF") {
+        chipClass = "app-chip missed-target";
+        stateText = "미가동 (이상 감시)";
+      }
+
+      chip.className = chipClass;
+      chip.setAttribute("aria-pressed", ariaPressed);
+      stLabel.textContent = stateText;
+    }
+
+    function toggleDevice(device) {
+      if (!isDeviceControllable(device)) return Promise.resolve();
+      const curState = (latestDeviceStates && latestDeviceStates[device]) ? latestDeviceStates[device] : {};
+      const currentEnabled = !!curState.enabled;
+      const targetEnabled = !currentEnabled;
+      return setDeviceEnabled(device, targetEnabled);
+    }
+
+    async function setDeviceEnabled(device, enabled) {
+      if (pendingDeviceRequests.has(device)) return;
+
+      // 5초 타임아웃 타이머 등록
+      const timeoutId = setTimeout(() => {
+        if (pendingDeviceRequests.has(device)) {
+          clearPendingRequest(device);
+          updateApplianceButtonsState();
+          renderDeviceState(device);
+          const devKo = (DEVICE_PROFILES[device] && DEVICE_PROFILES[device].name_ko) || device;
+          showNoticeError(`[타임아웃] '${devKo}' 상태 변경 SSE 응답이 5초 내에 수신되지 않아 취소되었습니다.`);
+        }
+      }, PENDING_TIMEOUT_MS);
+
+      // pending으로 등록하고 버튼 즉시 비활성화 및 처리 중 표시
+      pendingDeviceRequests.set(device, {
+        enabled: enabled,
+        timeoutId: timeoutId
+      });
+      updateApplianceButtonsState();
+
+      const stLabel = document.getElementById(`state_${device}`);
+      if (stLabel) stLabel.textContent = "처리 중...";
+
+      try {
+        const res = await fetch('/api/device', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            house: 'H001',
+            device: device,
+            enabled: enabled
+          })
+        });
+
+        if (!res.ok) {
+          let errMsg = `가전 제어 실패 (${res.status})`;
+          try {
+            const errData = await res.json();
+            if (errData && errData.message) errMsg = errData.message;
+          } catch (_) {}
+          // HTTP 오류 시 즉시 pending 제거하고 마지막 SSE 상태로 복원
+          clearPendingRequest(device);
+          updateApplianceButtonsState();
+          renderDeviceState(device);
+          showNoticeError(`[가전 제어 오류] ${errMsg}`);
+        }
+        // 중요: HTTP 200 성공 응답만으로는 pending을 제거하지 않으며, 상태 UI를 확정하지 않음!
+        // 목표 상태의 SSE 패킷이 도착할 때 processServerMetrics()에서 pending이 완료 처리됨.
+      } catch (err) {
+        // 네트워크 오류 시 즉시 pending 제거하고 마지막 SSE 상태로 복원
+        clearPendingRequest(device);
+        updateApplianceButtonsState();
+        renderDeviceState(device);
+        showNoticeError(`[가전 제어 네트워크 오류] ${err.message || err}`);
+      }
+    }
+
+    // XSS 방지: textContent 및 안전한 DOM 조립 사용
+    function showNoticeError(msg) {
+      const notice = document.getElementById('timelineNotice');
+      if (notice) {
+        notice.style.color = "#f87171";
+        notice.style.borderColor = "#ef4444";
+        notice.replaceChildren();
+        const strong = document.createElement('strong');
+        strong.textContent = "[오류 안내] ";
+        const span = document.createElement('span');
+        span.textContent = String(msg);
+        notice.appendChild(strong);
+        notice.appendChild(span);
+      }
+    }
 
     // 시계열 데이터 버퍼
     const historyData = {
@@ -956,26 +1208,69 @@
     let isServerConnected = false;
     let evtSource = null;
 
+    function connectServerStream() {
+      if (evtSource) {
+        evtSource.close();
+        evtSource = null;
+      }
+      evtSource = new EventSource('/api/stream');
+      evtSource.onmessage = (e) => {
+        try {
+          if (e.data && e.data.startsWith('{')) {
+            const m = JSON.parse(e.data);
+            processServerMetrics(m);
+          }
+        } catch (err) {
+          console.warn("SSE JSON 파싱 오류:", err);
+        }
+      };
+      evtSource.onerror = (e) => {
+        if (currentMode === 'manual') {
+          hasReceivedManualSse = false;
+          updateApplianceButtonsState();
+          document.getElementById('badgeStatus').textContent = "수동 제어 재연결 중...";
+          const notice = document.getElementById('timelineNotice');
+          if (notice) {
+            notice.style.color = "#fbbf24";
+            notice.style.borderColor = "rgba(245, 158, 11, 0.4)";
+            notice.replaceChildren();
+            const strong = document.createElement('strong');
+            strong.textContent = "[연결 재시도] ";
+            const span = document.createElement('span');
+            span.textContent = "서버 스트림(SSE) 연결이 끊어져 자동 재연결 중입니다. 가전 제어 버튼이 일시 비활성화됩니다.";
+            notice.appendChild(strong);
+            notice.appendChild(span);
+          }
+        }
+      };
+    }
+
     async function checkServerConnection() {
+      const btnManual = document.getElementById('btnManualDemo');
       try {
         const res = await fetch('/api/status', { method: 'GET' });
         if (res.ok) {
           const data = await res.json();
           isServerConnected = true;
+          if (btnManual) btnManual.disabled = false;
           const indicator = document.getElementById('serverIndicator');
           if (indicator) {
             indicator.className = "badge-status status-normal";
             indicator.innerHTML = `MQTT 브로커 연동 모드 (${data.broker}) - 실제 발행 활성화`;
           }
+        } else {
+          throw new Error("서버 상태 응답 실패");
         }
       } catch (e) {
         isServerConnected = false;
+        if (btnManual) btnManual.disabled = true;
         const indicator = document.getElementById('serverIndicator');
         if (indicator) {
           indicator.className = "badge-status status-running";
           indicator.innerHTML = "브라우저 단독 시각화 모드 (로컬 엔진)";
         }
       }
+      updateApplianceButtonsState();
     }
 
     // 서버에서 날아온 실제 MQTT 계측치 렌더링
@@ -990,7 +1285,8 @@
       historyData.currents.push(m.currentA.toFixed(2));
       historyData.pfs.push(m.pf.toFixed(3));
       historyData.voltages.push(m.voltage.toFixed(1));
-      historyData.activeLabels.push(m.activeNames.join(', ') || '대기');
+      const activeLabelsStr = (m.activeNames && Array.isArray(m.activeNames)) ? m.activeNames.join(', ') : '';
+      historyData.activeLabels.push(activeLabelsStr || '대기');
 
       if (m.totalP > maxPowerRecorded) {
         maxPowerRecorded = m.totalP;
@@ -1011,6 +1307,10 @@
       const badgeStatus = document.getElementById('badgeStatus');
       const timelineNotice = document.getElementById('timelineNotice');
 
+      if (m.mode === 'manual') {
+        hasReceivedManualSse = true;
+      }
+
       if (m.totalP >= 3000.0) {
         cardPower.className = "stat-card alert-card";
         badgeStatus.className = "badge-status status-peak";
@@ -1018,6 +1318,14 @@
         timelineNotice.style.color = "#f87171";
         timelineNotice.style.borderColor = "#ef4444";
         timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> T+${m.sec}s: 소비전력 <strong>${m.totalP.toFixed(1)} W</strong> - Mosquitto 및 Kafka로 피크 데이터가 실시간 전송 중입니다!`;
+      } else if (m.mode === 'manual') {
+        cardPower.className = "stat-card";
+        badgeStatus.className = "badge-status status-running";
+        badgeStatus.textContent = "수동 제어 모드 (MQTT 발행)";
+        timelineNotice.style.color = "#a78bfa";
+        timelineNotice.style.borderColor = "rgba(167, 139, 250, 0.4)";
+        const actDevs = (m.activeNames && m.activeNames.length > 0) ? m.activeNames.join(', ') : "가전 대기(OFF)";
+        timelineNotice.innerHTML = `<strong>[가전 수동 제어]</strong> T+${m.sec}s: 총 전력 <strong>${m.totalP.toFixed(1)} W</strong> (가전: ${actDevs}) - 가전 버튼을 클릭하여 ON/OFF를 제어하세요.`;
       } else if (m.totalP >= 1000.0) {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-running";
@@ -1062,25 +1370,49 @@
         addEventRow(m.sec, evType, m.activeNames.join(', ') || (m.mode === 'routine_missed' ? '전자레인지 미가동' : '가전 정지'), `${m.totalP.toFixed(0)} W`, m.eventNoticeText);
       }
 
-      // 6대 가전 칩 갱신
-      Object.keys(DEVICE_PROFILES).forEach(dev => {
-        const chip = document.getElementById(`chip_${dev}`);
-        const stLabel = document.getElementById(`state_${dev}`);
-        const devKo = DEVICE_PROFILES[dev].name_ko;
-        const isRunning = m.activeNames.includes(devKo);
+      // 6대 가전 칩/버튼 갱신 (SSE로 pending 완료 처리)
+      if (m.devices && typeof m.devices === 'object') {
+        latestDeviceStates = m.devices;
+        Object.keys(DEVICE_PROFILES).forEach(dev => {
+          const devInfo = m.devices[dev] || {};
+          const pendingInfo = pendingDeviceRequests.get(dev);
 
-        if (isRunning) {
-          const isPeakApp = (dev === "kettle" || dev === "induction") && m.totalP >= 3000.0;
-          chip.className = isPeakApp ? "app-chip active peak-app" : "app-chip active";
-          stLabel.textContent = "ON (가동 중)";
-        } else if (m.mode === 'routine_missed' && dev === 'microwave') {
-          chip.className = "app-chip missed-target";
-          stLabel.textContent = "미가동 (이상 감시)";
-        } else {
-          chip.className = "app-chip";
-          stLabel.textContent = "대기";
-        }
-      });
+          // SSE의 enabled 상태가 요청했던 목표 enabled와 일치하면 pending 제거 및 타임아웃 해제
+          if (pendingInfo && devInfo.enabled === pendingInfo.enabled) {
+            clearPendingRequest(dev);
+          }
+
+          // 동일 렌더링 사이클에서 최종 상태 표시
+          renderDeviceState(dev, m.mode, m.totalP);
+        });
+      } else {
+        // Fallback: 기존 activeNames 한글 비교 방식
+        Object.keys(DEVICE_PROFILES).forEach(dev => {
+          const chip = document.getElementById(`chip_${dev}`);
+          const stLabel = document.getElementById(`state_${dev}`);
+          if (!chip || !stLabel) return;
+
+          const devKo = DEVICE_PROFILES[dev].name_ko;
+          const isRunning = (m.activeNames || []).some(name => name.includes(devKo));
+
+          if (isRunning) {
+            const isPeakApp = (dev === "kettle" || dev === "induction") && m.totalP >= 3000.0;
+            chip.className = isPeakApp ? "app-chip active peak-app" : "app-chip active";
+            chip.setAttribute("aria-pressed", "true");
+            stLabel.textContent = "ON (가동 중)";
+          } else if (m.mode === 'routine_missed' && dev === 'microwave') {
+            chip.className = "app-chip missed-target";
+            chip.setAttribute("aria-pressed", "false");
+            stLabel.textContent = "미가동 (이상 감시)";
+          } else {
+            chip.className = "app-chip";
+            chip.setAttribute("aria-pressed", "false");
+            stLabel.textContent = "OFF";
+          }
+        });
+      }
+
+      updateApplianceButtonsState();
 
       // Chart.js 갱신
       const label = `${m.sec}s`;
@@ -1109,9 +1441,62 @@
     // ==========================================
     // 5. 버튼 컨트롤 핸들러 (서버 연동 지원)
     // ==========================================
+    async function startManualDemo() {
+      if (!isServerConnected) {
+        showNoticeError("가전 수동 제어는 서버 및 MQTT 브로커 연결 상태에서만 지원됩니다.");
+        return;
+      }
+
+      await resetSimulation();
+      currentMode = "manual";
+      isPaused = false;
+      hasReceivedManualSse = false;
+      clearAllPendingRequests();
+      updateApplianceButtonsState();
+
+      document.getElementById('btnPause').disabled = false;
+      document.getElementById('btnPause').textContent = "일시정지";
+      document.getElementById('badgeStatus').className = "badge-status status-running";
+      document.getElementById('badgeStatus').textContent = "수동 제어 준비 중";
+      document.getElementById('timelineNotice').style.color = "#a78bfa";
+      document.getElementById('timelineNotice').style.borderColor = "rgba(167, 139, 250, 0.4)";
+      document.getElementById('timelineNotice').innerHTML = `<strong>[수동 제어 준비]</strong> 서버에 manual 시뮬레이터 시작을 요청하고 있습니다...`;
+
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario: 'manual', house: 'H001' })
+        });
+
+        if (!res.ok) {
+          let errMsg = `서버 응답 오류 (${res.status})`;
+          try {
+            const errData = await res.json();
+            if (errData && errData.message) errMsg = errData.message;
+          } catch (_) {}
+          showNoticeError(`수동 제어 시작 실패: ${errMsg}`);
+          currentMode = null;
+          document.getElementById('btnPause').disabled = true;
+          document.getElementById('badgeStatus').className = "badge-status status-normal";
+          document.getElementById('badgeStatus').textContent = "시작 실패";
+          updateApplianceButtonsState();
+          return;
+        }
+
+        connectServerStream();
+      } catch (err) {
+        showNoticeError(`수동 제어 요청 네트워크 오류: ${err.message || err}`);
+        currentMode = null;
+        document.getElementById('btnPause').disabled = true;
+        updateApplianceButtonsState();
+      }
+    }
+
     async function startPeakDemo() {
-      resetSimulation();
+      await resetSimulation();
       currentMode = 'peak';
+      clearAllPendingRequests();
       document.getElementById('btnPause').disabled = false;
       document.getElementById('btnPause').textContent = "일시정지";
       isPaused = false;
@@ -1121,20 +1506,15 @@
       if (isServerConnected) {
         // [서버 모드]: 실제 MQTT 발행 API 호출 + SSE 스트림 수신
         try {
-          await fetch('/api/start', {
+          const res = await fetch('/api/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ scenario: 'peak', house: 'H001' })
           });
-
-          if (evtSource) evtSource.close();
-          evtSource = new EventSource('/api/stream');
-          evtSource.onmessage = (e) => {
-            if (e.data && e.data.startsWith('{')) {
-              processServerMetrics(JSON.parse(e.data));
-            }
-          };
-          return;
+          if (res.ok) {
+            connectServerStream();
+            return;
+          }
         } catch (err) {
           console.warn("서버 호출 실패, 로컬 모드로 폴백:", err);
         }
@@ -1146,8 +1526,9 @@
     }
 
     async function startRoutineMissedDemo() {
-      resetSimulation();
+      await resetSimulation();
       currentMode = 'routine_missed';
+      clearAllPendingRequests();
       document.getElementById('btnPause').disabled = false;
       document.getElementById('btnPause').textContent = "일시정지";
       isPaused = false;
@@ -1164,20 +1545,15 @@
 
       if (isServerConnected) {
         try {
-          await fetch('/api/start', {
+          const res = await fetch('/api/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ scenario: 'routine_missed', house: 'H001' })
           });
-
-          if (evtSource) evtSource.close();
-          evtSource = new EventSource('/api/stream');
-          evtSource.onmessage = (e) => {
-            if (e.data && e.data.startsWith('{')) {
-              processServerMetrics(JSON.parse(e.data));
-            }
-          };
-          return;
+          if (res.ok) {
+            connectServerStream();
+            return;
+          }
         } catch (err) {
           console.warn("서버 호출 실패, 로컬 모드로 폴백:", err);
         }
@@ -1189,8 +1565,9 @@
     }
 
     async function startRandomSimulation() {
-      resetSimulation();
+      await resetSimulation();
       currentMode = 'random';
+      clearAllPendingRequests();
       document.getElementById('btnPause').disabled = false;
       document.getElementById('btnPause').textContent = "일시정지";
       isPaused = false;
@@ -1199,20 +1576,15 @@
 
       if (isServerConnected) {
         try {
-          await fetch('/api/start', {
+          const res = await fetch('/api/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ scenario: 'random', house: 'H001' })
           });
-
-          if (evtSource) evtSource.close();
-          evtSource = new EventSource('/api/stream');
-          evtSource.onmessage = (e) => {
-            if (e.data && e.data.startsWith('{')) {
-              processServerMetrics(JSON.parse(e.data));
-            }
-          };
-          return;
+          if (res.ok) {
+            connectServerStream();
+            return;
+          }
         } catch (err) {
           console.warn("서버 호출 실패, 로컬 모드로 폴백:", err);
         }
@@ -1224,6 +1596,69 @@
 
     async function togglePause() {
       if (isServerConnected) {
+        if (currentMode === 'manual') {
+          if (!isPaused) {
+            // manual 모드 일시정지: /api/stop 응답 검증
+            try {
+              const res = await fetch('/api/stop', { method: 'POST' });
+              if (!res.ok) {
+                let errMsg = `일시정지 실패 (${res.status})`;
+                try {
+                  const errData = await res.json();
+                  if (errData && errData.message) errMsg = errData.message;
+                } catch (_) {}
+                showNoticeError(errMsg);
+                return; // stop 실패 시 기존 실행 상태 유지
+              }
+            } catch (err) {
+              showNoticeError(`일시정지 네트워크 오류: ${err.message || err}`);
+              return; // 네트워크 오류 삼키지 않음
+            }
+
+            // stop 성공 후에만 SSE 닫고 일시정지 상태로 전이
+            if (evtSource) { evtSource.close(); evtSource = null; }
+            isPaused = true;
+            hasReceivedManualSse = false;
+            clearAllPendingRequests();
+            updateApplianceButtonsState();
+            document.getElementById('btnPause').textContent = "재생";
+            document.getElementById('badgeStatus').textContent = "일시정지됨";
+          } else {
+            // manual 모드 재생: /api/start 응답 검증
+            try {
+              const res = await fetch('/api/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scenario: 'manual', house: 'H001' })
+              });
+              if (!res.ok) {
+                let errMsg = `재생 시작 실패 (${res.status})`;
+                try {
+                  const errData = await res.json();
+                  if (errData && errData.message) errMsg = errData.message;
+                } catch (_) {}
+                showNoticeError(errMsg);
+                // 400/409/500 실패 시 paused 상태 유지, 버튼 '재생' 유지, SSE 미생성
+                return;
+              }
+            } catch (err) {
+              showNoticeError(`재생 요청 네트워크 오류: ${err.message || err}`);
+              return;
+            }
+
+            // start 성공 후에만 isPaused=false로 변경하고 SSE 스트림 연결
+            isPaused = false;
+            hasReceivedManualSse = false;
+            clearAllPendingRequests();
+            updateApplianceButtonsState();
+            document.getElementById('btnPause').textContent = "일시정지";
+            document.getElementById('badgeStatus').textContent = "수동 제어 재개 중...";
+            connectServerStream();
+          }
+          return;
+        }
+
+        // 기존 peak, random, routine_missed 모드
         if (!isPaused) {
           if (evtSource) { evtSource.close(); evtSource = null; }
           await fetch('/api/stop', { method: 'POST' }).catch(() => { });
@@ -1238,12 +1673,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ scenario: currentMode, house: 'H001' })
           }).catch(() => { });
-          evtSource = new EventSource('/api/stream');
-          evtSource.onmessage = (e) => {
-            if (e.data && e.data.startsWith('{')) {
-              processServerMetrics(JSON.parse(e.data));
-            }
-          };
+          connectServerStream();
         }
         return;
       }
@@ -1305,10 +1735,24 @@
       document.getElementById('btnPause').disabled = true;
       document.getElementById('btnPause').textContent = "일시정지";
 
+      currentMode = null;
+      latestDeviceStates = {};
+      clearAllPendingRequests();
+      hasReceivedManualSse = false;
+
       Object.keys(DEVICE_PROFILES).forEach(dev => {
-        document.getElementById(`chip_${dev}`).className = "app-chip";
-        document.getElementById(`state_${dev}`).textContent = "대기";
+        const chip = document.getElementById(`chip_${dev}`);
+        const stLabel = document.getElementById(`state_${dev}`);
+        if (chip) {
+          chip.className = "app-chip";
+          chip.setAttribute("aria-pressed", "false");
+          chip.disabled = true;
+        }
+        if (stLabel) {
+          stLabel.textContent = "OFF";
+        }
       });
+      updateApplianceButtonsState();
 
       document.getElementById('eventTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">시뮬레이션을 시작하면 실시간 이벤트가 기록됩니다.</td></tr>';
       document.getElementById('timelineNotice').innerHTML = '[초기화 완료] 상단의 버튼을 누르면 새로운 시연 시나리오가 시작됩니다.';

@@ -17,10 +17,16 @@ infrastructure/mqtt/
 │   └── mosquitto.conf             # 레거시 호환용 설정
 │
 ├── simulator/
-│   ├── simulator.py               # 비동기 MQTT 전력 데이터 시뮬레이터 (CLI, 피크, 루틴 누락)
-│   ├── scenarios.py               # [신규] 대기전력 물리 모델, 루틴 누락/피크 시나리오 모듈
-│   ├── web_server.py              # 인터랙티브 웹 컨트롤러 서버 (브라우저 조작 ↔ 실제 MQTT 발행)
-│   ├── waveform_viewer.html       # 브라우저 기반 실시간 시각화 대시보드
+│   ├── simulator.py               # 전력 시뮬레이터 호환 Facade & CLI 진입점
+│   ├── engine/                    # [신규] 핵심 엔진 패키지 (config, profiles, state, power_model, publisher)
+│   ├── web_server.py              # 인터랙티브 웹 서버 진입점 (CLI 인자 처리 및 초기화)
+│   ├── server/                    # [신규] 웹 서버 모듈 패키지 (config, manager, request_handler)
+│   ├── scenarios.py               # 대기전력 물리 모델, 루틴 누락/피크 시나리오 모듈
+│   ├── waveform_viewer.html       # 브라우저 기반 실시간 인터랙티브 시각화 대시보드
+│   ├── tests/                     # [신규] 단위 및 실시간 라이브 통합 테스트 스위트
+│   │   ├── fixtures/              # 회귀 검증용 기준선 데이터 (simulator_seed42_baseline.json)
+│   │   ├── test_simulator_compatibility.py # 비네트워크 초고속 단위/호환성 테스트
+│   │   └── test_manual_live_integration.py # 브로커 연동 실시간 라이브 통합 테스트
 │   ├── visualize_waveform.py      # 정적 파형 생성 및 CSV/HTML 리포트 출력 도구
 │   ├── requirements.txt           # 시뮬레이터 실행 의존성 (aiomqtt)
 │   └── README.md                  # 시뮬레이터 상세 매뉴얼
@@ -91,8 +97,11 @@ docker exec -it mosquitto-broker mosquitto_sub -t "v1/power/sim/#" -u "kafka_bri
   * **전압 AR-1 드리프트**: 220V 기준 212V ~ 228V 사이를 완만하게 변동
   * **6대 수동 가전 FSM**: 전기포트(1,700W), 인덕션(1,600W 서모스탯), 다리미(1,400W), 전자레인지(950W 마그네트론 돌입), 드라이기(950W), 청소기(820W 직권모터)
 * **모듈 분리 구조**:
+  * [simulator.py](file:///c:/Users/SSAFY/Desktop/S15P21D201/infrastructure/mqtt/simulator/simulator.py): CLI 인자 처리 및 하위 호환 Facade
+  * [engine/](file:///c:/Users/SSAFY/Desktop/S15P21D201/infrastructure/mqtt/simulator/engine): 시뮬레이터 핵심 엔진 (`profiles`, `state`, `power_model`, `publisher`, `config`)
   * [scenarios.py](file:///c:/Users/SSAFY/Desktop/S15P21D201/infrastructure/mqtt/simulator/scenarios.py): 대기전력 물리 계산 및 이상치/피크 시나리오 스케줄 전담
-  * [simulator.py](file:///c:/Users/SSAFY/Desktop/S15P21D201/infrastructure/mqtt/simulator/simulator.py): MQTT 비동기 스트리밍, 가전 상태 전이, CLI 제어 전담
+  * [server/](file:///c:/Users/SSAFY/Desktop/S15P21D201/infrastructure/mqtt/simulator/server): 인터랙티브 웹 서버 비즈니스 로직, REST API, SSE 스트리밍, 동시성 락
+  * [web_server.py](file:///c:/Users/SSAFY/Desktop/S15P21D201/infrastructure/mqtt/simulator/web_server.py): 경량 웹 서버 실행 진입점
 
 ### (2) 커맨드라인 옵션 상세 (`python simulator.py --help`)
 
@@ -146,13 +155,34 @@ python infrastructure/mqtt/simulator/web_server.py
 # 브라우저 자동 접속: http://localhost:8085
 ```
 * **[10초 피크 시연 시작 (3,000W+)] 버튼 (빨간색)**: 클릭 즉시 실제 MQTT 발행 시작, 10초 정각에 3,400~3,500W 치솟으며 피크 경보 배지 점멸
+* **[루틴 누락 시연 시작 (08:10+)] 버튼 (주황색)**: 08:10 아침 루틴 미가동 대기전력 데이터를 300초간 실시간 발행하여 AI 이상치 감지 윈도우 검증
 * **[연속 실시간 시뮬레이션] 버튼 (파란색)**: 6대 가전 무한 연속 동작 및 실시간 MQTT 발행
+* **실시간 6대 수동 가전 제어 패널**: 화면 스위치를 클릭해 전기포트, 인덕션, 다리미, 전자레인지 등을 실시간으로 켜고 끄며 실제 MQTT 발행 및 파형 변화 동기화
 * **실시간 제어 바**: 일시정지, 재생, 리셋, 재생 속도 조절(1x, 2x, 5x)
 * **CSV 내보내기**: 시뮬레이션 시계열 데이터를 엑셀 호환 UTF-8 BOM CSV 파일로 즉시 저장
 
 ---
 
-## 6. 전체 데이터 파이프라인 연동 구조 (E2E Data Flow)
+## 6. 테스트 스위트 (`infrastructure/mqtt/simulator/tests`)
+
+시뮬레이터의 물리 엔진과 웹 서버의 신뢰성을 보장하기 위해 단위 테스트와 통합 테스트를 제공합니다.
+
+| 테스트 스크립트 | 유형 | 소요 시간 | 주요 검증 내용 |
+| :--- | :--- | :--- | :--- |
+| **`test_simulator_compatibility.py`** | 단위 테스트 (비네트워크) | **~0.01초** | 물리 계측 수식, 가전 FSM 전이, bcc5bdd 커밋 기준선 데이터 48스텝 100% 일치 검증 |
+| **`test_manual_live_integration.py`** | 라이브 E2E 통합 테스트 | **~85초** | 실제 Mosquitto 브로커 연동, MQTT ↔ SSE 6개 물리량 일치, 인덕션 전체 듀티사이클 실시간 검증 |
+
+```powershell
+# 1. 고속 단위 테스트 실행
+python -u infrastructure/mqtt/simulator/tests/test_simulator_compatibility.py
+
+# 2. 브로커 연동 라이브 통합 테스트 실행
+python -u infrastructure/mqtt/simulator/tests/test_manual_live_integration.py
+```
+
+---
+
+## 7. 전체 데이터 파이프라인 연동 구조 (E2E Data Flow)
 
 스마트홈 분전반부터 실시간 분석 서비스 및 대시보드까지의 전체 전달 흐름입니다.
 

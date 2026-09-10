@@ -1,0 +1,4173 @@
+{
+  "metadata": {
+    "source_commit": "bcc5bdd",
+    "random_seed": 42,
+    "python_version": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+    "step_count": 48
+  },
+  "steps": [
+    {
+      "step_name": "init",
+      "house_states": {
+        "H001": {
+          "voltage": 219.8,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.348161072232344,
+          "fridge_active": false,
+          "fridge_remaining_sec": 992,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "standby_tick_1",
+      "metrics": {
+        "active_power": 52.29,
+        "reactive_power": 21.14,
+        "apparent_power": 56.4,
+        "power_factor": 0.927,
+        "voltage": 219.8,
+        "current": 0.257,
+        "active_devices": []
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.7832515679602,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.246429523190265,
+          "fridge_active": false,
+          "fridge_remaining_sec": 991,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "standby_tick_2",
+      "metrics": {
+        "active_power": 53.46,
+        "reactive_power": 22.34,
+        "apparent_power": 57.94,
+        "power_factor": 0.923,
+        "voltage": 219.9,
+        "current": 0.263,
+        "active_devices": []
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.85107064086603,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.120509114912146,
+          "fridge_active": false,
+          "fridge_remaining_sec": 990,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "standby_tick_3",
+      "metrics": {
+        "active_power": 51.38,
+        "reactive_power": 21.05,
+        "apparent_power": 55.53,
+        "power_factor": 0.925,
+        "voltage": 219.9,
+        "current": 0.253,
+        "active_devices": []
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.92431980887528,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.95457387758886,
+          "fridge_active": false,
+          "fridge_remaining_sec": 989,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "standby_tick_4",
+      "metrics": {
+        "active_power": 51.9,
+        "reactive_power": 22.39,
+        "apparent_power": 56.53,
+        "power_factor": 0.918,
+        "voltage": 220.1,
+        "current": 0.257,
+        "active_devices": []
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 220.08856023325148,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.05391617959725,
+          "fridge_active": false,
+          "fridge_remaining_sec": 988,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "standby_tick_5",
+      "metrics": {
+        "active_power": 52.43,
+        "reactive_power": 21.03,
+        "apparent_power": 56.5,
+        "power_factor": 0.928,
+        "voltage": 220.0,
+        "current": 0.257,
+        "active_devices": []
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.9994835513182,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.64381882863555,
+          "fridge_active": false,
+          "fridge_remaining_sec": 987,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "kettle_on",
+      "resp": {
+        "state": "STARTING",
+        "manual_hold": true,
+        "session_remaining": 124,
+        "inrush_remaining": 1,
+        "nominal_w": 1573.443277545428,
+        "nominal_pf": 0.9892452042370223,
+        "is_heating": false,
+        "duty_remaining": 0
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.9994835513182,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.64381882863555,
+          "fridge_active": false,
+          "fridge_remaining_sec": 987,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "STARTING",
+            "manual_hold": true,
+            "session_remaining": 124,
+            "inrush_remaining": 1,
+            "nominal_w": 1573.443277545428,
+            "nominal_pf": 0.9892452042370223,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "kettle_dup_on",
+      "resp": {
+        "state": "STARTING",
+        "manual_hold": true,
+        "session_remaining": 124,
+        "inrush_remaining": 1,
+        "nominal_w": 1573.443277545428,
+        "nominal_pf": 0.9892452042370223,
+        "is_heating": false,
+        "duty_remaining": 0
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.9994835513182,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.64381882863555,
+          "fridge_active": false,
+          "fridge_remaining_sec": 987,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "STARTING",
+            "manual_hold": true,
+            "session_remaining": 124,
+            "inrush_remaining": 1,
+            "nominal_w": 1573.443277545428,
+            "nominal_pf": 0.9892452042370223,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "kettle_tick_1",
+      "metrics": {
+        "active_power": 1658.3,
+        "reactive_power": 756.84,
+        "apparent_power": 1822.84,
+        "power_factor": 0.91,
+        "voltage": 219.9,
+        "current": 8.289,
+        "active_devices": [
+          "전기포트"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.88824919683853,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.898364389347684,
+          "fridge_active": false,
+          "fridge_remaining_sec": 986,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 124,
+            "inrush_remaining": 0,
+            "nominal_w": 1573.443277545428,
+            "nominal_pf": 0.9892452042370223,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "kettle_tick_2",
+      "metrics": {
+        "active_power": 1627.64,
+        "reactive_power": 278.01,
+        "apparent_power": 1651.21,
+        "power_factor": 0.986,
+        "voltage": 219.9,
+        "current": 7.509,
+        "active_devices": [
+          "전기포트"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.88129463526744,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.994290409252095,
+          "fridge_active": false,
+          "fridge_remaining_sec": 985,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 124,
+            "inrush_remaining": 0,
+            "nominal_w": 1573.443277545428,
+            "nominal_pf": 0.9892452042370223,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "kettle_tick_3",
+      "metrics": {
+        "active_power": 1624.05,
+        "reactive_power": 287.73,
+        "apparent_power": 1649.34,
+        "power_factor": 0.985,
+        "voltage": 219.8,
+        "current": 7.504,
+        "active_devices": [
+          "전기포트"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.79685318368394,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.890816518527586,
+          "fridge_active": false,
+          "fridge_remaining_sec": 984,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 124,
+            "inrush_remaining": 0,
+            "nominal_w": 1573.443277545428,
+            "nominal_pf": 0.9892452042370223,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "kettle_tick_4",
+      "metrics": {
+        "active_power": 1626.61,
+        "reactive_power": 248.82,
+        "apparent_power": 1645.53,
+        "power_factor": 0.989,
+        "voltage": 219.7,
+        "current": 7.49,
+        "active_devices": [
+          "전기포트"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.65285685520757,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.59574368194504,
+          "fridge_active": false,
+          "fridge_remaining_sec": 983,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 124,
+            "inrush_remaining": 0,
+            "nominal_w": 1573.443277545428,
+            "nominal_pf": 0.9892452042370223,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "kettle_tick_5",
+      "metrics": {
+        "active_power": 1624.27,
+        "reactive_power": 202.39,
+        "apparent_power": 1636.83,
+        "power_factor": 0.992,
+        "voltage": 219.6,
+        "current": 7.454,
+        "active_devices": [
+          "전기포트"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.59784743699396,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.34125367847788,
+          "fridge_active": false,
+          "fridge_remaining_sec": 982,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 124,
+            "inrush_remaining": 0,
+            "nominal_w": 1573.443277545428,
+            "nominal_pf": 0.9892452042370223,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "kettle_off",
+      "resp": {
+        "state": "OFF",
+        "manual_hold": false,
+        "session_remaining": 0,
+        "inrush_remaining": 0,
+        "nominal_w": 0.0,
+        "nominal_pf": 0.0,
+        "is_heating": false,
+        "duty_remaining": 0
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.59784743699396,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.34125367847788,
+          "fridge_active": false,
+          "fridge_remaining_sec": 982,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_on",
+      "resp": {
+        "state": "STARTING",
+        "manual_hold": true,
+        "session_remaining": 332,
+        "inrush_remaining": 1,
+        "nominal_w": 1380.3933462385592,
+        "nominal_pf": 0.9465051135737927,
+        "is_heating": true,
+        "duty_remaining": 22
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.59784743699396,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.34125367847788,
+          "fridge_active": false,
+          "fridge_remaining_sec": 982,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "STARTING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 1,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 22
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_1",
+      "metrics": {
+        "active_power": 1536.09,
+        "reactive_power": 879.03,
+        "apparent_power": 1769.82,
+        "power_factor": 0.868,
+        "voltage": 219.6,
+        "current": 8.059,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.55235239232277,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.24978255453569,
+          "fridge_active": false,
+          "fridge_remaining_sec": 981,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 22
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_2",
+      "metrics": {
+        "active_power": 1430.97,
+        "reactive_power": 491.98,
+        "apparent_power": 1513.18,
+        "power_factor": 0.946,
+        "voltage": 219.5,
+        "current": 6.894,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.45509254954882,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.31898823394115,
+          "fridge_active": false,
+          "fridge_remaining_sec": 980,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 21
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_3",
+      "metrics": {
+        "active_power": 1428.9,
+        "reactive_power": 491.12,
+        "apparent_power": 1510.94,
+        "power_factor": 0.946,
+        "voltage": 219.5,
+        "current": 6.884,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.4722392407703,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.196928092868994,
+          "fridge_active": false,
+          "fridge_remaining_sec": 979,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 20
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_4",
+      "metrics": {
+        "active_power": 1433.76,
+        "reactive_power": 493.86,
+        "apparent_power": 1516.43,
+        "power_factor": 0.945,
+        "voltage": 219.4,
+        "current": 6.912,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.4030091034894,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 46.937195771123825,
+          "fridge_active": false,
+          "fridge_remaining_sec": 978,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 19
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_5",
+      "metrics": {
+        "active_power": 1429.22,
+        "reactive_power": 491.09,
+        "apparent_power": 1511.24,
+        "power_factor": 0.946,
+        "voltage": 219.4,
+        "current": 6.888,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.42549643072817,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.07470218299119,
+          "fridge_active": false,
+          "fridge_remaining_sec": 977,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 18
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_6",
+      "metrics": {
+        "active_power": 1434.02,
+        "reactive_power": 493.11,
+        "apparent_power": 1516.44,
+        "power_factor": 0.946,
+        "voltage": 219.4,
+        "current": 6.912,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.36422433415981,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.38232441276761,
+          "fridge_active": false,
+          "fridge_remaining_sec": 976,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 17
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_7",
+      "metrics": {
+        "active_power": 1426.33,
+        "reactive_power": 490.94,
+        "apparent_power": 1508.46,
+        "power_factor": 0.946,
+        "voltage": 219.3,
+        "current": 6.879,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.25754075688468,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.46570444343027,
+          "fridge_active": false,
+          "fridge_remaining_sec": 975,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 16
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_8",
+      "metrics": {
+        "active_power": 1431.06,
+        "reactive_power": 491.84,
+        "apparent_power": 1513.22,
+        "power_factor": 0.946,
+        "voltage": 219.4,
+        "current": 6.897,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.35033711257387,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.2435487539199,
+          "fridge_active": false,
+          "fridge_remaining_sec": 974,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 15
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_9",
+      "metrics": {
+        "active_power": 1432.07,
+        "reactive_power": 493.14,
+        "apparent_power": 1514.6,
+        "power_factor": 0.946,
+        "voltage": 219.6,
+        "current": 6.897,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.59152104748838,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.22712149188007,
+          "fridge_active": false,
+          "fridge_remaining_sec": 973,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 14
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_10",
+      "metrics": {
+        "active_power": 1429.4,
+        "reactive_power": 491.29,
+        "apparent_power": 1511.47,
+        "power_factor": 0.946,
+        "voltage": 219.6,
+        "current": 6.883,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.64187424154247,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.36940988175126,
+          "fridge_active": false,
+          "fridge_remaining_sec": 972,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 13
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_11",
+      "metrics": {
+        "active_power": 1428.07,
+        "reactive_power": 491.32,
+        "apparent_power": 1510.22,
+        "power_factor": 0.946,
+        "voltage": 219.7,
+        "current": 6.874,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.70573536799031,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.48833081286259,
+          "fridge_active": false,
+          "fridge_remaining_sec": 971,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 12
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_12",
+      "metrics": {
+        "active_power": 1430.76,
+        "reactive_power": 491.19,
+        "apparent_power": 1512.73,
+        "power_factor": 0.946,
+        "voltage": 219.7,
+        "current": 6.885,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.65551007892762,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.54309026991802,
+          "fridge_active": false,
+          "fridge_remaining_sec": 970,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 11
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_13",
+      "metrics": {
+        "active_power": 1427.93,
+        "reactive_power": 490.04,
+        "apparent_power": 1509.68,
+        "power_factor": 0.946,
+        "voltage": 219.5,
+        "current": 6.878,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.52416680993824,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.360839609270435,
+          "fridge_active": false,
+          "fridge_remaining_sec": 969,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 10
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_14",
+      "metrics": {
+        "active_power": 1432.22,
+        "reactive_power": 492.33,
+        "apparent_power": 1514.48,
+        "power_factor": 0.946,
+        "voltage": 219.6,
+        "current": 6.897,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.64275599283897,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.28755542997658,
+          "fridge_active": false,
+          "fridge_remaining_sec": 968,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 9
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_15",
+      "metrics": {
+        "active_power": 1431.86,
+        "reactive_power": 493.5,
+        "apparent_power": 1514.52,
+        "power_factor": 0.945,
+        "voltage": 219.6,
+        "current": 6.897,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.62327459016728,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 47.734316800700945,
+          "fridge_active": false,
+          "fridge_remaining_sec": 967,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 8
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_16",
+      "metrics": {
+        "active_power": 1432.37,
+        "reactive_power": 492.72,
+        "apparent_power": 1514.74,
+        "power_factor": 0.946,
+        "voltage": 219.6,
+        "current": 6.898,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.61680015444924,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.06818393486614,
+          "fridge_active": false,
+          "fridge_remaining_sec": 966,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 7
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_17",
+      "metrics": {
+        "active_power": 1433.21,
+        "reactive_power": 493.02,
+        "apparent_power": 1515.64,
+        "power_factor": 0.946,
+        "voltage": 219.6,
+        "current": 6.902,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.60157828164782,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.29033808839131,
+          "fridge_active": false,
+          "fridge_remaining_sec": 965,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 6
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_18",
+      "metrics": {
+        "active_power": 1431.17,
+        "reactive_power": 492.08,
+        "apparent_power": 1513.4,
+        "power_factor": 0.946,
+        "voltage": 219.7,
+        "current": 6.888,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.67856897419583,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.230941242955765,
+          "fridge_active": false,
+          "fridge_remaining_sec": 964,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 5
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_19",
+      "metrics": {
+        "active_power": 1427.75,
+        "reactive_power": 492.13,
+        "apparent_power": 1510.18,
+        "power_factor": 0.945,
+        "voltage": 219.9,
+        "current": 6.868,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.90635903724385,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.36542766442933,
+          "fridge_active": false,
+          "fridge_remaining_sec": 963,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 4
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_20",
+      "metrics": {
+        "active_power": 1427.56,
+        "reactive_power": 491.74,
+        "apparent_power": 1509.88,
+        "power_factor": 0.945,
+        "voltage": 219.8,
+        "current": 6.869,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.78133661884155,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.58023555067253,
+          "fridge_active": false,
+          "fridge_remaining_sec": 962,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 3
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_21",
+      "metrics": {
+        "active_power": 1434.0,
+        "reactive_power": 494.4,
+        "apparent_power": 1516.83,
+        "power_factor": 0.945,
+        "voltage": 219.9,
+        "current": 6.898,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.94185439637224,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.892686024347256,
+          "fridge_active": false,
+          "fridge_remaining_sec": 961,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 2
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_22",
+      "metrics": {
+        "active_power": 1429.93,
+        "reactive_power": 493.01,
+        "apparent_power": 1512.53,
+        "power_factor": 0.945,
+        "voltage": 219.9,
+        "current": 6.878,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.85203310359984,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 49.05172710087822,
+          "fridge_active": false,
+          "fridge_remaining_sec": 960,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 1
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_23",
+      "metrics": {
+        "active_power": 1432.03,
+        "reactive_power": 491.73,
+        "apparent_power": 1514.11,
+        "power_factor": 0.946,
+        "voltage": 219.8,
+        "current": 6.889,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.75575720565143,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 49.00681707042386,
+          "fridge_active": false,
+          "fridge_remaining_sec": 959,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 9
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_24",
+      "metrics": {
+        "active_power": 58.24,
+        "reactive_power": 26.2,
+        "apparent_power": 63.86,
+        "power_factor": 0.912,
+        "voltage": 219.9,
+        "current": 0.29,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.8758934994289,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.75646486725584,
+          "fridge_active": false,
+          "fridge_remaining_sec": 958,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 8
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_25",
+      "metrics": {
+        "active_power": 70.17,
+        "reactive_power": 28.21,
+        "apparent_power": 75.63,
+        "power_factor": 0.928,
+        "voltage": 219.9,
+        "current": 0.344,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.9168687625177,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.482450002072774,
+          "fridge_active": false,
+          "fridge_remaining_sec": 957,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 7
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_26",
+      "metrics": {
+        "active_power": 65.62,
+        "reactive_power": 27.28,
+        "apparent_power": 71.06,
+        "power_factor": 0.923,
+        "voltage": 220.0,
+        "current": 0.323,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.97537850514388,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.5241376039438,
+          "fridge_active": false,
+          "fridge_remaining_sec": 956,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 6
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_27",
+      "metrics": {
+        "active_power": 67.31,
+        "reactive_power": 27.47,
+        "apparent_power": 72.7,
+        "power_factor": 0.926,
+        "voltage": 219.9,
+        "current": 0.331,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.85211454731154,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.76243141418756,
+          "fridge_active": false,
+          "fridge_remaining_sec": 955,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 5
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_28",
+      "metrics": {
+        "active_power": 62.84,
+        "reactive_power": 26.16,
+        "apparent_power": 68.07,
+        "power_factor": 0.923,
+        "voltage": 219.8,
+        "current": 0.31,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.75424943749792,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.6855139271528,
+          "fridge_active": false,
+          "fridge_remaining_sec": 954,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 4
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_29",
+      "metrics": {
+        "active_power": 67.81,
+        "reactive_power": 27.83,
+        "apparent_power": 73.3,
+        "power_factor": 0.925,
+        "voltage": 219.7,
+        "current": 0.334,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.69342366982522,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.332860718714,
+          "fridge_active": false,
+          "fridge_remaining_sec": 953,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 3
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_30",
+      "metrics": {
+        "active_power": 63.12,
+        "reactive_power": 25.16,
+        "apparent_power": 67.95,
+        "power_factor": 0.929,
+        "voltage": 219.6,
+        "current": 0.309,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.55662890463748,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.68500764848509,
+          "fridge_active": false,
+          "fridge_remaining_sec": 952,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 2
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_31",
+      "metrics": {
+        "active_power": 66.31,
+        "reactive_power": 29.04,
+        "apparent_power": 72.39,
+        "power_factor": 0.916,
+        "voltage": 219.4,
+        "current": 0.33,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.43338678672836,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.21197008422467,
+          "fridge_active": false,
+          "fridge_remaining_sec": 951,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": false,
+            "duty_remaining": 1
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_tick_32",
+      "metrics": {
+        "active_power": 65.97,
+        "reactive_power": 28.83,
+        "apparent_power": 71.99,
+        "power_factor": 0.916,
+        "voltage": 219.3,
+        "current": 0.328,
+        "active_devices": [
+          "인덕션(전기레인지)"
+        ]
+      },
+      "house_states": {
+        "H001": {
+          "voltage": 219.29600501581555,
+          "base_nominal_w": 46.87573295922798,
+          "base_current_w": 48.419640051367935,
+          "fridge_active": false,
+          "fridge_remaining_sec": 950,
+          "fridge_nominal_w": 77.22003234003027,
+          "fridge_pf": 0.792721992024901
+        }
+      },
+      "device_states": {
+        "H001": {
+          "kettle": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "induction": {
+            "state": "RUNNING",
+            "manual_hold": true,
+            "session_remaining": 332,
+            "inrush_remaining": 0,
+            "nominal_w": 1380.3933462385592,
+            "nominal_pf": 0.9465051135737927,
+            "is_heating": true,
+            "duty_remaining": 22
+          },
+          "iron": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "microwave": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "hair_dryer": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          },
+          "vacuum_cleaner": {
+            "state": "OFF",
+            "manual_hold": false,
+            "session_remaining": 0,
+            "inrush_remaining": 0,
+            "nominal_w": 0.0,
+            "nominal_pf": 0.0,
+            "is_heating": false,
+            "duty_remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "step_name": "induction_duty_cycle_completed",
+      "final_phase": "COMPLETED",
+      "total_induction_ticks": 32
+    }
+  ]
+}
