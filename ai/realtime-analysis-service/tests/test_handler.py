@@ -1,4 +1,5 @@
 from datetime import datetime
+from unittest.mock import Mock
 from uuid import UUID
 
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
@@ -68,6 +69,7 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
             {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
         ),
         state_transition_detector=ApplianceStateTransitionDetector(3, 3, 0.05),
+        activity_repository=Mock(),  # 단위 테스트에서는 실제 DB 저장을 대체
         baseline_repository=BaselineRepository(
             [
                 RoutineBaseline(
@@ -107,6 +109,7 @@ def test_pipeline_records_usage_only_after_confirmed_on_transition() -> None:
             {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
         ),
         state_transition_detector=ApplianceStateTransitionDetector(3, 3, 0.05),
+        activity_repository=Mock(),  # 단위 테스트에서는 실제 DB 저장을 대체
         baseline_repository=BaselineRepository([]),
         tracker=tracker,
         detector=RoutineMissedDetector(tracker, 80, "Asia/Seoul"),

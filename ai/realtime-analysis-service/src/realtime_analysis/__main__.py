@@ -1,14 +1,18 @@
-"""Service entry point."""
+"""실시간 분석 서비스의 실행 진입점."""
 
 import logging
 import signal
 from threading import Event
 
+from realtime_analysis.activity_repository import (
+    SqlAlchemyApplianceActivityRepository,
+)
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.config import get_settings
 from realtime_analysis.consumer import AnalysisConsumer
+from realtime_analysis.database import create_session_factory
 from realtime_analysis.dlq import DlqPublisher
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
@@ -54,6 +58,12 @@ def main() -> None:
             on_confirmation_samples=settings.appliance_on_confirmation_samples,
             off_confirmation_samples=settings.appliance_off_confirmation_samples,
             off_threshold_margin=settings.appliance_off_threshold_margin,
+        ),
+        # 환경변수의 analysis_db 접속 정보로 SessionFactory를 만들고
+        # 실제 SQLAlchemy Repository를 Handler에 주입한다.
+        activity_repository=SqlAlchemyApplianceActivityRepository(
+            session_factory=create_session_factory(settings),
+            timezone_name=settings.analysis_timezone,
         ),
         baseline_repository=BaselineRepository.from_json_file(
             settings.baseline_file  

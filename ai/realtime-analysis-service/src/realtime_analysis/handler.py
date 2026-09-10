@@ -1,9 +1,10 @@
-"""Orchestration for buffering, prediction, detection, and event publication."""
+"""버퍼링, 추론, 상태 감지, DB 저장과 이벤트 발행 순서를 조정한다."""
 
 import logging
 
 from zoneinfo import ZoneInfo
 
+from realtime_analysis.activity_repository import ApplianceActivityRepository
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
@@ -25,6 +26,7 @@ class MeasurementHandler:
         predictor: Predictor,
         state_decider: ApplianceStateDecider,
         state_transition_detector: ApplianceStateTransitionDetector,
+        activity_repository: ApplianceActivityRepository,
         baseline_repository: BaselineRepository,
         tracker: DailyActivityTracker,
         detector: RoutineMissedDetector,
@@ -35,6 +37,7 @@ class MeasurementHandler:
         self._predictor = predictor
         self._state_decider = state_decider
         self._state_transition_detector = state_transition_detector
+        self._activity_repository = activity_repository
         self._baseline_repository = baseline_repository
         self._tracker = tracker
         self._detector = detector
@@ -43,7 +46,7 @@ class MeasurementHandler:
 
     def __call__(self, measurement: PowerMeasurement) -> None:
         self._buffer.append(measurement)  # 입력값을 가구별 버퍼에 넣음 
-        if not self._buffer.is_ready(measurement.household_id): # 버퍼가 준비 좼는지 확인
+        if not self._buffer.is_ready(measurement.household_id): # 버퍼가 준비됐는지 확인
             return
 
         predictions = self._predictor.predict(  
@@ -55,6 +58,24 @@ class MeasurementHandler:
             measurement.household_id,
             measurement.measured_at,
             states,
+        )
+        # 단순 threshold 결과가 아니라 히스테리시스까지 적용된 확정 ON 상태를 구한다.
+        active_appliance_types = {
+            state.appliance_type
+            for state in states
+            if self._state_transition_detector.is_on(
+                measurement.household_id,
+                state.appliance_type,
+            )
+        }
+        # 상태 변화와 ON 유지 확률을 DB에 저장한다.
+        # Repository 내부에서 세션 INSERT와 event_count 증가를 한 트랜잭션으로 처리한다.
+        self._activity_repository.record(
+            household_id=measurement.household_id,
+            observed_at=measurement.measured_at,
+            states=states,
+            transitions=transitions,
+            active_appliance_types=active_appliance_types,
         )
         self._tracker.record_transitions(
             activity_date,

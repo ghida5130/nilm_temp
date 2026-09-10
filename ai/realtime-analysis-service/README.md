@@ -245,8 +245,18 @@ alembic upgrade head
 ```
 
 로컬 Compose에서는 `realtime-analysis-service` 컨테이너가 시작될 때 같은 명령을 먼저
-실행하므로 별도로 적용할 필요가 없습니다. 현재 단계에서는 테이블과 DB 연결 기반만
-추가했으며, Kafka 처리 결과를 Repository로 저장하는 연결은 다음 작업에서 진행합니다.
+실행하므로 별도로 적용할 필요가 없습니다. ON/OFF 상태 변화와 ON 유지 중 확률은
+Repository를 통해 `household_observation_daily`, `household_activity_daily`,
+`appliance_usage_session`에 저장합니다.
+
+```text
+TURNED_ON → 일일 관측/활동 UPSERT + 세션 INSERT + event_count 증가
+ON 유지   → 열린 세션의 max_probability 갱신
+TURNED_OFF → 열린 세션의 ended_at 갱신
+```
+
+세션 INSERT와 `event_count` 증가는 하나의 DB 트랜잭션으로 처리하며, 동일한 세션 시작이
+재처리되면 기존 세션을 사용해 `event_count`가 중복 증가하지 않도록 합니다.
 
 `FAKE_ON_APPLIANCES`에 쉼표로 가전명을 지정하면 FakePredictor가 해당 가전을 ON으로
 간주할 수 있도록 확률 `1.0`을 반환하고, 나머지는 `0.0`을 반환합니다. 최종 ON/OFF는
