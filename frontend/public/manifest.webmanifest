@@ -1,0 +1,17 @@
+{
+  "name": "On:마음 안심 알림",
+  "short_name": "On:마음",
+  "description": "가족의 평온한 일상을 연결하는 안심 알림 서비스",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f5ee",
+  "theme_color": "#f7f5ee",
+  "lang": "ko-KR",
+  "icons": [{
+    "src": "/app-icon.svg",
+    "sizes": "any",
+    "type": "image/svg+xml",
+    "purpose": "any maskable"
+  }]
+}
