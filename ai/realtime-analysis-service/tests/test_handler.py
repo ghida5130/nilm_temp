@@ -76,6 +76,7 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     tracker = DailyActivityTracker()
     publisher = RecordingPublisher()
     snapshot_publisher = RecordingSnapshotPublisher()
+    activity_repository = Mock()
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(window_size=3),
         predictor=FakePredictor(),   # 지금은 FakePredictor 사용
@@ -83,7 +84,7 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
             {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
         ),
         state_transition_detector=ApplianceStateTransitionDetector(3, 3, 0.05),
-        activity_repository=Mock(),  # 단위 테스트에서는 실제 DB 저장을 대체
+        activity_repository=activity_repository,  # 단위 테스트에서는 실제 DB 저장을 대체
         baseline_repository=BaselineRepository(
             [
                 RoutineBaseline(
@@ -113,6 +114,8 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     assert len(publisher.events) == 1
     assert publisher.events[0].household_id == "H001"
     assert publisher.events[0].score == 86
+    # 모델 버퍼 준비 여부와 관계없이 검증된 원본 샘플은 모두 관측 집계로 전달한다.
+    assert activity_repository.record_observation.call_count == 4
     assert len(snapshot_publisher.snapshots) == 2
     assert snapshot_publisher.snapshots[0].snapshot_id == measurement(2).message_id
 

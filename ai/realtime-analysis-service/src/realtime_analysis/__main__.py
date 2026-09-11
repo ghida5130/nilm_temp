@@ -18,6 +18,7 @@ from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.model_manifest import ModelManifest
 from realtime_analysis.predictor import FakePredictor
+from realtime_analysis.preprocessing import StandardizingPredictor
 from realtime_analysis.snapshot_publisher import AnalysisSnapshotPublisher
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
@@ -53,7 +54,11 @@ def main() -> None:
     )
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(settings.model_window_size),
-        predictor=FakePredictor(settings.fake_on_appliance_types),
+        # 실제 모델 Predictor로 교체해도 동일하게 Manifest의 mean/std를 적용한다.
+        predictor=StandardizingPredictor(
+            FakePredictor(settings.fake_on_appliance_types),
+            manifest,
+        ),
         state_decider=ApplianceStateDecider.from_manifest(manifest),
         state_transition_detector=ApplianceStateTransitionDetector(
             on_confirmation_samples=settings.appliance_on_confirmation_samples,
@@ -65,6 +70,10 @@ def main() -> None:
         activity_repository=SqlAlchemyApplianceActivityRepository(
             session_factory=create_session_factory(settings),
             timezone_name=settings.analysis_timezone,
+            expected_samples_per_day=settings.analysis_expected_samples_per_day,
+            valid_coverage_ratio=(
+                settings.analysis_observation_valid_coverage_ratio
+            ),
         ),
         baseline_repository=BaselineRepository.from_json_file(
             settings.baseline_file  

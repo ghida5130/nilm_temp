@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     baseline_file: str = "config/baselines.json"
     analysis_score_threshold: int = Field(default=80, ge=0, le=100)
     analysis_timezone: str = "Asia/Seoul"
+    analysis_expected_samples_per_day: int = Field(default=86_400, ge=1)
+    analysis_observation_valid_coverage_ratio: float = Field(
+        default=0.95,
+        ge=0,
+        le=1,
+    )
     appliance_on_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_threshold_margin: float = Field(default=0.05, ge=0, le=1)

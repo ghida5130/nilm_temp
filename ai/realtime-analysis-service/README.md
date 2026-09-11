@@ -318,8 +318,37 @@ FAKE_ON_APPLIANCES=MICROWAVE,HAIR_DRYER
 수 있습니다.
 
 `MODEL_MANIFEST_FILE`로 Manifest 경로를 변경할 수 있습니다. 서비스 시작 시 입력 shape,
-Feature 순서, 출력 가전 순서, sigmoid 출력과 threshold 범위를 검증합니다. 현재
-Manifest의 `mean`, `std`와 `0.5` threshold는 실제 모델 전달 전까지 사용하는 임시값입니다.
+Feature 순서, 출력 가전 순서, sigmoid 출력, `mean`, 양수 `std`와 threshold 범위를
+검증합니다. Predictor 호출 직전에 Feature별 `(x - mean) / std`를 적용하고, Predictor가
+반환한 확률에는 Manifest의 가전별 threshold를 적용합니다. Snapshot에는 정규화 전 최신
+원본 측정값을 담습니다. 현재 Manifest의 `mean=0`, `std=1`과 `0.5` threshold는 실제 모델
+전달 전까지 사용하는 중립 임시값입니다.
+
+## 일일 관측 집계
+
+입력 검증을 통과한 가구별 샘플을 `household_observation_daily`에 즉시 누적합니다.
+
+```text
+sample_count += 1
+coverage_ratio = min(sample_count / expected_sample_count, 1.0)
+```
+
+기본 1Hz 전일 수집의 `expected_sample_count`는 86,400이며, 수집 중에는 상태를
+`COLLECTING`으로 유지합니다. 다음 날짜의 첫 입력이 들어오면 이전의 `COLLECTING` 행을
+다음 기준으로 마감합니다.
+
+```text
+sample_count = 0                 → SENSOR_GAP
+coverage_ratio >= 유효 기준값   → VALID
+그 외                           → INSUFFICIENT_DATA
+```
+
+| 환경변수 | 기본값 | 의미 |
+| --- | ---: | --- |
+| `ANALYSIS_EXPECTED_SAMPLES_PER_DAY` | 86400 | 하루 예상 샘플 수 |
+| `ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO` | 0.95 | `VALID` 최소 수집률 |
+
+현재 유효 수집률 `0.95`는 요구사항의 TBD 값을 설정으로 분리한 임시 운영값입니다.
 
 ## ON/OFF 상태 변화
 
@@ -344,9 +373,9 @@ threshold - 0.05 < probability < threshold → 기존 ON 상태 유지
 ## 현재 MVP 제약
 
 - 실제 AI 모델 대신 결정적인 FakePredictor를 사용합니다.
-- Manifest의 정규화 계약은 검증하지만 실제 정규화는 실제 Predictor 연동 시 적용합니다.
+- 실제 학습 `mean`, `std`와 가전별 Validation threshold는 AI 모델 전달 후 교체해야 합니다.
 - baseline과 당일 활동 상태는 아직 각각 JSON과 메모리에 저장합니다.
 - 재시작하면 299개 버퍼와 당일 활동·발행 상태가 초기화됩니다.
-- analysis_db 스키마는 생성되지만 Repository 저장 로직은 아직 연결하지 않았습니다.
-- 감지된 상태 변화는 메모리에 반영되며 사용 세션 DB 저장은 아직 연결하지 않았습니다.
+- 완전히 데이터가 들어오지 않은 가구의 `SENSOR_GAP` 판정에는 별도 가구 목록 기반 마감
+  스케줄러가 추가로 필요합니다.
 - HTTP API는 포함하지 않습니다.

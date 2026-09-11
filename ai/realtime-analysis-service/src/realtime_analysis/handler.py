@@ -49,6 +49,11 @@ class MeasurementHandler:
         self._timezone = ZoneInfo(timezone_name)
 
     def __call__(self, measurement: PowerMeasurement) -> None:
+        # 모델 버퍼가 아직 차지 않았더라도 검증을 통과한 원본 샘플은 일일 관측에 집계한다.
+        self._activity_repository.record_observation(
+            measurement.household_id,
+            measurement.measured_at,
+        )
         self._buffer.append(measurement)  # 입력값을 가구별 버퍼에 넣음 
         if not self._buffer.is_ready(measurement.household_id): # 버퍼가 준비됐는지 확인
             return
