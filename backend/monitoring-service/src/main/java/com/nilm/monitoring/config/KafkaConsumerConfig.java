@@ -1,7 +1,7 @@
 package com.nilm.monitoring.config;
 
-import com.nilm.monitoring.event.AnalysisEventMessage;
-import com.nilm.monitoring.event.InvalidAnalysisEventException;
+import com.nilm.monitoring.common.InvalidAnalysisEventException;
+import com.nilm.monitoring.incident.dto.AnalysisEventMessage;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -45,7 +45,7 @@ public class KafkaConsumerConfig {
         properties.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
         properties.put(JsonDeserializer.VALUE_DEFAULT_TYPE, AnalysisEventMessage.class.getName());
         properties.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
-        properties.put(JsonDeserializer.TRUSTED_PACKAGES, "com.nilm.monitoring.event");
+        properties.put(JsonDeserializer.TRUSTED_PACKAGES, "com.nilm.monitoring.incident.dto");
         return new DefaultKafkaConsumerFactory<>(properties);
     }
 
