@@ -35,17 +35,20 @@ public class DeviceService {
     private final InstallHistoryRepository historyRepository;
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private final SecureRandom random = new SecureRandom();
+    private final MosquittoPasswordHasher mosquittoHasher;
 
     public DeviceService(DeviceRepository deviceRepository,
                          HouseholdRepository householdRepository,
                          DeviceCredentialRepository credentialRepository,
                          DeviceAclRepository aclRepository,
-                         InstallHistoryRepository historyRepository) {
+                         InstallHistoryRepository historyRepository,
+                         MosquittoPasswordHasher mosquittoHasher) {
         this.deviceRepository = deviceRepository;
         this.householdRepository = householdRepository;
         this.credentialRepository = credentialRepository;
         this.aclRepository = aclRepository;
         this.historyRepository = historyRepository;
+        this.mosquittoHasher = mosquittoHasher;
     }
 
     /** 기기 등록 = 기기 저장 + MQTT 계정 발급 + ACL 생성 + 설치 이력 기록 (한 트랜잭션). */
@@ -64,7 +67,9 @@ public class DeviceService {
                 device.getDeviceId());
         String plainPassword = generatePassword();
         credentialRepository.save(new DeviceCredential(
-                device.getDeviceId(), username, passwordEncoder.encode(plainPassword)));
+                device.getDeviceId(), username,
+                passwordEncoder.encode(plainPassword),
+                mosquittoHasher.hash(plainPassword)));
 
         // ACL: 자기 가구 토픽에만 발행 가능
         String topic = TOPIC_PATTERN.formatted(request.houseId());

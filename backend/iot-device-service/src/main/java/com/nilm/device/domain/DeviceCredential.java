@@ -20,6 +20,10 @@ public class DeviceCredential {
     @Column(name = "secret_hash", nullable = false, length = 200)
     private String secretHash;
 
+    /** Mosquitto passwd 파일용 브로커 호환 해시 ($7$...) — 동기화 시 파일에 기록됨 */
+    @Column(name = "mosquitto_hash", length = 300)
+    private String mosquittoHash;
+
     @Column(name = "issued_at", nullable = false, updatable = false, insertable = false)
     private OffsetDateTime issuedAt;
 
@@ -32,10 +36,11 @@ public class DeviceCredential {
     protected DeviceCredential() {
     }
 
-    public DeviceCredential(Long deviceId, String mqttUsername, String secretHash) {
+    public DeviceCredential(Long deviceId, String mqttUsername, String secretHash, String mosquittoHash) {
         this.deviceId = deviceId;
         this.mqttUsername = mqttUsername;
         this.secretHash = secretHash;
+        this.mosquittoHash = mosquittoHash;
     }
 
     public void revoke() {
@@ -52,6 +57,10 @@ public class DeviceCredential {
 
     public String getSecretHash() {
         return secretHash;
+    }
+
+    public String getMosquittoHash() {
+        return mosquittoHash;
     }
 
     public OffsetDateTime getIssuedAt() {
