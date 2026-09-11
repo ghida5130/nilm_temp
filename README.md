@@ -10,16 +10,32 @@ Docker Compose는 `infrastructure/local`(로컬), `infrastructure/ec2-a`, `infra
 
 ```powershell
 cd infrastructure/local
-.\Setup-Local.ps1
 ```
 
 `.env.example`을 바탕으로 `.env`를 만듭니다. 이미 있으면 덮어쓰지 않습니다. `MQTT_USER`, `MQTT_PASS`는 `infrastructure/mqtt/config/passwd`의 계정과 일치해야 하며, passwd 파일이 없는 새 환경은 `.\Setup-Local.ps1 -InitializeMqtt`로 생성합니다.
 
-## 실행
+## frontend-build.env 만들기
+
+Vite 빌드 시점에 필요한 공개 변수를 담는 파일입니다. **`infrastructure/frontend-build.env.example`을 복사해서 만듭니다.**
+
+```powershell
+Copy-Item infrastructure/frontend-build.env.example infrastructure/frontend-build.env
+```
+
+## 서버 실행
 
 ```powershell
 docker compose up -d --build
 docker compose ps
+```
+
+## 프론트엔드 실행 
+
+빌드 결과물을 nginx 이미지에 넣어 배포와 같은 형태로 확인할 때 사용한다. `frontend` 서비스는 프로필로 분리되어 있어 `--profile`을 붙여야 뜬다. `--profile`은 `up` 뒤가 아니라 `docker compose` 바로 뒤에 온다.
+
+```powershell
+cd infrastructure/local
+docker compose --profile frontend up -d --build
 ```
 
 포트: Keycloak 8090, Gateway 8080, Device 8081, Monitoring 8082, PostgreSQL 5432, Kafka 9092, MQTT 1883. 모두 `127.0.0.1`에만 바인딩됩니다. `realtime-analysis-service`는 외부 포트 없이 Kafka를 소비합니다. 프론트 컨테이너(3000)와 Kafka UI(8091)는 `--profile frontend --profile tools`를 붙였을 때만 뜹니다.
