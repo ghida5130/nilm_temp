@@ -6,8 +6,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -29,12 +27,6 @@ public class AnalysisEvent {
     @Column(nullable = false)
     private short score;
 
-    @Column(name = "event_date", nullable = false)
-    private LocalDate eventDate;
-
-    @Column(name = "expected_until", nullable = false)
-    private LocalTime expectedUntil;
-
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
 
@@ -49,14 +41,12 @@ public class AnalysisEvent {
     }
 
     public AnalysisEvent(UUID eventId, String householdId, String eventType, short score,
-                         LocalDate eventDate, LocalTime expectedUntil, Instant occurredAt,
+                         Instant occurredAt,
                          JsonNode reason, Instant receivedAt) {
         this.eventId = eventId;
         this.householdId = householdId;
         this.eventType = eventType;
         this.score = score;
-        this.eventDate = eventDate;
-        this.expectedUntil = expectedUntil;
         this.occurredAt = occurredAt;
         this.reason = reason;
         this.receivedAt = receivedAt;
@@ -66,8 +56,6 @@ public class AnalysisEvent {
     public String getHouseholdId() { return householdId; }
     public String getEventType() { return eventType; }
     public short getScore() { return score; }
-    public LocalDate getEventDate() { return eventDate; }
-    public LocalTime getExpectedUntil() { return expectedUntil; }
     public Instant getOccurredAt() { return occurredAt; }
     public JsonNode getReason() { return reason; }
     public Instant getReceivedAt() { return receivedAt; }

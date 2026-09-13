@@ -34,7 +34,6 @@ public class AnalysisEventIngestService {
     private final IncidentActionRepository actionRepository;
     private final HouseholdAccessRepository accessRepository;
     private final NotificationDeliveryRepository notificationRepository;
-    private final AnalysisEventNormalizer normalizer;
     private final OutboxWriter outboxWriter;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -46,7 +45,6 @@ public class AnalysisEventIngestService {
             IncidentActionRepository actionRepository,
             HouseholdAccessRepository accessRepository,
             NotificationDeliveryRepository notificationRepository,
-            AnalysisEventNormalizer normalizer,
             OutboxWriter outboxWriter,
             ObjectMapper objectMapper,
             Clock clock,
@@ -56,7 +54,6 @@ public class AnalysisEventIngestService {
         this.actionRepository = actionRepository;
         this.accessRepository = accessRepository;
         this.notificationRepository = notificationRepository;
-        this.normalizer = normalizer;
         this.outboxWriter = outboxWriter;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -70,15 +67,9 @@ public class AnalysisEventIngestService {
         }
 
         Instant now = Instant.now(clock);
-        AnalysisEventNormalizer.NormalizedFields normalized = normalizer.normalize(message);
-        if (eventRepository.existsByHouseholdIdAndEventTypeAndEventDateAndExpectedUntil(
-                message.householdId(), EVENT_TYPE, normalized.eventDate(), normalized.expectedUntil())) {
-            return IngestResult.DUPLICATE_LOGICAL_EVENT;
-        }
         eventRepository.save(new AnalysisEvent(
                 message.eventId(), message.householdId(), EVENT_TYPE, (short) message.score(),
-                normalized.eventDate(), normalized.expectedUntil(), message.occurredAt(),
-                message.reason(), now));
+                message.occurredAt(), message.reason(), now));
 
         if (message.occurredAt().isBefore(now.minus(maxEventAge))) {
             return IngestResult.STORED_STALE_EVENT;
@@ -117,7 +108,6 @@ public class AnalysisEventIngestService {
     public enum IngestResult {
         CREATED,
         DUPLICATE_EVENT,
-        DUPLICATE_LOGICAL_EVENT,
         STORED_STALE_EVENT
     }
 }
