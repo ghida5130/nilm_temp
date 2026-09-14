@@ -101,11 +101,12 @@ python simulator.py --help
 | 옵션 | 단축키 | 기본값 | 설명 |
 | :--- | :--- | :--- | :--- |
 | `--scenario` | `-s` | `random` | 실행 시나리오 모드 (`random`: 연속 확률, `peak`: 10초 피크, `routine_missed`: 08:10 루틴 누락 이상치) |
+| `--date` | `-d` | `None` | 가상 기준 날짜 (`YYYY-MM-DD`). 미지정 시 오늘 날짜 사용 |
 | `--houses` | `-n` | `10` | 대상 가구 수 (`H001` ~ `H{n:03d}`) |
 | `--interval` | `-i` | `1.0` | 데이터 발행 주기 (초 단위) |
 | `--hz` | | `None` | 가구당 초당 측정 횟수 (지정 시 `interval = 1/hz` 자동 환산) |
 | `--count` | `-c` | `0` | 전송 사이클 수 (`0`: 무한, `N > 0`: N회 전송 종료, peak 기본값: 60, routine_missed 기본값: 300) |
-| `--start-time` | | `None` | 시작 가상 시각 (예: `08:15:00`). routine_missed 기본값: 오늘 아침 08:15:00 KST |
+| `--start-time` | | `None` | 시작 가상 시각 (예: `08:15:00`). CLI routine_missed 기본값: 오늘 08:15:00 KST (웹: 08:10:01 KST) |
 | `--host` | | `localhost` | MQTT 브로커 호스트 주소 (**TLS 사용 시 인증서 SAN과 반드시 일치해야 함. EC2-A 로컬 실행 시에도 localhost가 아닌 A 사설 IP 사용**) |
 | `--port` | `-p` | `None` | MQTT 브로커 포트 번호 (미지정 시 `MQTT_PORT` 환경변수 또는 TLS 여부에 따라 `8883`/`1883` 자동 결정) |
 | `--user` | `-u` | `simulator_user` | MQTT 인증 계정명 (환경변수: `MQTT_USER`) |
@@ -270,6 +271,110 @@ python web_server.py \
 * **실시간 제어 바**: 일시정지, 재생, 리셋(발행 중지), 재생 속도 조절(1x, 2x, 5x 배속)
 * **실시간 가전 칩 패널**: 6대 가전의 실시간 ON/OFF 상태 및 소비전력 표시 (루틴 누락 시 전자레인지 칩 "미가동 감시" 강조)
 * **CSV 내보내기**: 시뮬레이션된 시계열 데이터를 엑셀 호환 UTF-8 BOM CSV 파일로 즉시 저장
+
+### (3) 시뮬레이션 기준 날짜 선택 및 가상 시각 제어 (New)
+
+#### 1) 웹 화면에서 기준 날짜 선택 방법
+* **날짜 선택 입력창**: 브라우저 상단 제어 바의 `시뮬레이션 기준 날짜`(`<input type="date" id="simDateInput">`)에서 원하는 날짜를 선택합니다.
+* **초기 기본값**: 브라우저가 실행 중인 로컬 머신 시각이 아닌, 한국 표준시(`Asia/Seoul`, KST) 기준 오늘 날짜(`YYYY-MM-DD`)가 자동으로 채워집니다.
+* **조작 안전장치**: 시뮬레이션이 시작되면 실행 도중 날짜가 변경되어 시계열 일관성이 깨지는 것을 방지하기 위해 입력 필드가 자동으로 비활성화(disabled)되며, 리셋 또는 정지 시 다시 활성화됩니다.
+* **유효성 검사**: 빈 값이나 잘못된 날짜가 선택된 상태에서 시작 버튼을 누르면 친절한 경고 알림(`alert`)이 발생하며 시뮬레이션이 시작되지 않습니다.
+
+#### 2) `simulation_date` API 계약
+
+##### A. 시뮬레이션 시작 (`POST /api/start`)
+* **요청 헤더**: `Content-Type: application/json`
+* **요청 본문 (JSON)**:
+  ```json
+  {
+    "scenario": "peak",
+    "house": "H001",
+    "simulation_date": "2026-09-10"
+  }
+  ```
+* **입력 검증 규칙**:
+  * `simulation_date` 필드는 선택(optional)입니다.
+  * 전달된 경우 문자열이어야 하며, 엄격한 `YYYY-MM-DD` 형식 및 실제 존재하는 유효한 날짜(윤년 `2024-02-29` 허용, `2026-02-30` 또는 `2026-9-1` 불허)여야 합니다.
+  * 유효하지 않은 값이 전달되면 HTTP `400 Bad Request` 에러 응답을 반환합니다:
+    ```json
+    {
+      "status": "error",
+      "code": "BAD_REQUEST",
+      "message": "simulation_date 형식이 올바르지 않습니다. YYYY-MM-DD 형식(예: 2026-09-10)의 실제 존재하는 날짜여야 합니다."
+    }
+    ```
+  * `simulation_date` 필드가 생략된 기존 요청은 이전과 100% 동일하게 동작합니다 (하위 호환성 유지).
+* **성공 응답 (HTTP 200 OK)**:
+  ```json
+  {
+    "status": "started",
+    "scenario": "peak",
+    "house": "H001",
+    "simulation_date": "2026-09-10",
+    "resolved_start_time": "2026-09-10T05:30:15.000Z"
+  }
+  ```
+
+##### B. 시뮬레이터 상태 조회 (`GET /api/status`)
+현재 시뮬레이터의 실행 상태와 적용된 가상 기준 일시 정보를 조회합니다.
+* **응답 본문 (HTTP 200 OK)**:
+  ```json
+  {
+    "is_running": true,
+    "scenario": "peak",
+    "house": "H001",
+    "cycle_count": 15,
+    "simulation_date": "2026-09-10",
+    "resolved_start_time": "2026-09-10T05:30:15.000Z",
+    "last_metrics": { ... }
+  }
+  ```
+  *(시뮬레이터가 유휴(idle) 상태인 경우 `simulation_date`와 `resolved_start_time`은 `null`로 반환됩니다.)*
+
+#### 3) 가상 시작 시각 결정 우선순위 및 규칙
+시뮬레이터는 `--date`(`simulation_date`)와 `--start-time` 입력에 대해 다음의 명확한 우선순위 규칙을 적용합니다:
+
+| 우선순위 규칙 | 조합 조건 | 시작 시각 결정 규칙 | 예시 |
+| :--- | :--- | :--- | :--- |
+| **규칙 A** | `--date` + 시간 형식 `--start-time` (`HH:MM:SS`) | 선택한 날짜 + 지정 시간 결합 (KST) | `--date 2026-09-10 --start-time 09:00:00`<br>➡️ `2026-09-10 09:00:00+09:00` |
+| **규칙 B** | 시간 형식 `--start-time` (`HH:MM:SS`) 단독 | KST 오늘 날짜 + 지정 시간 결합 (KST) | `--start-time 09:00:00`<br>➡️ `(오늘 날짜) 09:00:00+09:00` |
+| **규칙 C** | 완전한 ISO datetime `--start-time` 단독 | 지정된 ISO datetime 유지 (tz 없으면 KST) | `--start-time 2026-10-01T15:30:00`<br>➡️ `2026-10-01 15:30:00+09:00` |
+| **규칙 D** | `--date` + 완전한 ISO datetime 동시 지정 | **충돌로 간주하여 거절** (`ValueError` / 종료) | `--date와 완전한 ISO --start-time을 함께 사용할 수 없습니다.` |
+| **규칙 E** | `simulation_date`만 단독 지정 | • `routine_missed`: 선택 날짜 + 기본 시간 (웹: `08:10:01`, CLI: `08:15:00`)<br>• `peak` / `random` / `manual`: 선택 날짜 + 시작 시점 현재 KST 시각 | `--date 2026-09-10`<br>(peak, 14:30:15 실행 시)<br>➡️ `2026-09-10 14:30:15+09:00` |
+| **규칙 F** | 아무 값도 지정하지 않음 | • `routine_missed`: 오늘 날짜 + 기본 시간 (웹: `08:10:01`, CLI: `08:15:00`)<br>• `peak` / `random` / `manual`: 실제 시스템 시각(wall-clock) 스트리밍 | `--scenario routine_missed`<br>➡️ `(오늘 날짜) 08:15:00+09:00` |
+
+> [!CAUTION]
+> **날짜 및 ISO 시간 충돌 방지 (규칙 D)**:
+> `--date` 옵션과 날짜가 포함된 완전한 ISO 형식의 `--start-time`(예: `2026-09-10T09:00:00`)을 동시에 지정하면 날짜 정보가 충돌하므로 허용되지 않으며 명확한 에러 메시지와 함께 실행이 거절됩니다. 특정 날짜에 특정 시각을 지정하려면 반드시 시간 전용 형식(`HH:MM:SS` 또는 `HH:MM`)의 `--start-time`을 조합하십시오.
+
+#### 4) KST 입력의 UTC 변환 및 타임스탬프 일관성
+* **타임존 변환**:
+  * KST는 UTC보다 9시간 빠릅니다 (`UTC+09:00`).
+  * 예: KST `2026-09-10 14:30:15` ➡️ UTC `2026-09-10T05:30:15.000Z`
+  * 예: KST `2026-09-10 08:10:01` ➡️ UTC `2026-09-09T23:10:01.000Z`
+* **페이로드 타임스탬프 일치 보장**:
+  * MQTT 메시지의 `measured_at`, `ts`와 웹 SSE 실시간 스트림의 `now_iso`는 **밀리초 단위까지 완전히 동일한 UTC ISO 8601 문자열**로 발행됩니다.
+* **시간 누적 및 자정 넘김**:
+  * 각 시뮬레이션 사이클마다 가상 시각이 정확히 1초(`+ timedelta(seconds=1)`)씩 증가합니다.
+  * 벽시계(wall clock)를 매번 재조회하지 않으므로 네트워크 지연이나 슬립 오차에 의해 날짜와 시각이 흔들리지 않습니다.
+  * 23:59:59에서 1초가 지나면 다음 날짜의 00:00:00으로 자연스럽게 롤오버됩니다.
+
+#### 5) CLI에서 날짜 및 시작 시각 지정 예시
+CLI(`simulator.py`)에서도 `--date` (`-d`) 및 `--start-time` 옵션을 조합하여 동일한 가상 시계 제어가 가능합니다.
+
+```bash
+# 1. 특정 날짜를 지정하여 피크 시연 실행 (시작 시점의 KST 시:분:초 결합)
+python simulator.py --scenario peak --date 2026-09-10
+
+# 2. 특정 날짜와 임의의 시작 가상 시각을 함께 지정 (2026-09-10 09:00:00 KST 시작)
+python simulator.py --scenario random --date 2026-09-10 --start-time 09:00:00
+
+# 3. 날짜 생략 후 --start-time만 지정 (오늘 날짜의 08:15:00 KST 시작)
+python simulator.py --scenario routine_missed --start-time 08:15:00
+
+# 4. 날짜 생략 시 CLI 기본값 사용 (routine_missed: 오늘 08:15:00 KST)
+python simulator.py --scenario routine_missed
+```
 
 ---
 

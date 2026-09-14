@@ -22,9 +22,9 @@ env를 읽는 시점이 다르다는 이유만으로 파일 분리가 기술적�
 | --- | --- |
 | 로컬 | 개발에 필요한 PostgreSQL, Kafka, Mosquitto, Bridge, Keycloak, Redis, Backend, 실시간 분석 서비스. Frontend는 Vite 개발 서버 또는 별도 컨테이너로 실행 |
 | EC2-A | Frontend/Nginx, API Gateway, IoT Device Service, Monitoring Service, Keycloak, Mosquitto, Redis |
-| EC2-B | PostgreSQL, Kafka, MQTT–Kafka Bridge |
+| EC2-B | PostgreSQL, Kafka, 실시간 분석 서비스, MQTT–Kafka Bridge |
 
-운영 첫 스켈레톤 배포에서는 Spark, Flink, S3 Archive Sink, AI 학습·추론 서비스는 포함하지 않는다. 로컬 Compose에는 Kafka 연동 검증을 위해 `realtime-analysis-service`를 포함한다. 기존 HDFS 작업은 별도 실험용으로 보존한다.
+운영 첫 스켈레톤 배포에서는 Spark, Flink, S3 Archive Sink는 포함하지 않는다. `realtime-analysis-service`는 로컬 Compose와 EC2-B Compose에 포함하며, 같은 Compose의 Kafka(`kafka:19092`)와 PostgreSQL(`analysis_db`)에 연결한다. 기존 HDFS 작업은 별도 실험용으로 보존한다.
 
 ## 3. 저장소 폴더 구조
 
@@ -125,6 +125,7 @@ Frontend/Nginx는 첫 배포에서는 프론트 정적 파일을 포함한 Nginx
 | Backend→DB | 같은 Compose의 `postgres:5432` | EC2-B 사설 주소의 PostgreSQL |
 | Bridge→MQTT | 같은 Compose의 `mosquitto` | EC2-A의 내부 DNS 또는 사설 주소 |
 | Bridge→Kafka | `kafka:19092` | 같은 EC2-B Compose의 `kafka:19092` |
+| 분석 서비스→Kafka/DB | `kafka:19092`, `postgres:5432` | 같은 EC2-B Compose의 `kafka:19092`, `postgres:5432` |
 | 외부 공개 포트 | IDE·디버깅에 필요한 포트 | 사용자 진입 포트와 서버 간 통신 포트만 |
 | Mosquitto 설정 | 로컬 설정·로컬 계정 | 운영 TLS 설정·운영 계정·인증서 |
 
@@ -181,7 +182,7 @@ services:
 | `ec2-a-runtime-env` | EC2-A의 `/opt/nilm/.env` | Compose 설정 해석 및 컨테이너 생성 시점 |
 | `ec2-b-runtime-env` | EC2-B의 `/opt/nilm/.env` | Compose 설정 해석 및 컨테이너 생성 시점 |
 
-`frontend-build.env`, `ec2-a-runtime.env`, `ec2-b-runtime.env`처럼 파일 이름을 구분해 준비하더라도 서버에는 각 운영 파일을 `.env`라는 이름으로 저장할 수 있다. 서로 다른 서버이므로 충돌하지 않는다. AI 운영 설정은 실제 운영 배포 대상에 분석 서비스를 포함할 때 추가한다.
+`frontend-build.env`, `ec2-a-runtime.env`, `ec2-b-runtime.env`처럼 파일 이름을 구분해 준비하더라도 서버에는 각 운영 파일을 `.env`라는 이름으로 저장할 수 있다. 서로 다른 서버이므로 충돌하지 않는다. 분석 서비스 운영 설정(`ANALYSIS_*`)은 `ec2-b-runtime-env`에 둔다. 모두 기본값이 있으므로 비어 있어도 실행된다.
 
 ```text
 Jenkins Credential
@@ -328,6 +329,7 @@ PostgreSQL 초기화 SQL은 빈 데이터 디렉터리로 최초 초기화할 �
   → B: Kafka 토픽 초기화
   → A: Mosquitto·Redis·Keycloak 실행 및 인증 초기 구성 확인
   → A: Backend·Frontend/Nginx 실행 및 요청 확인
+  → B: 실시간 분석 서비스 실행
   → B: Bridge 실행
   → MQTT → Bridge → Kafka 전달 확인
 ```

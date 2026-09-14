@@ -81,7 +81,8 @@ EC2-B:
 4. B 기반 서비스: PostgreSQL/Kafka readiness 확인, 토픽 생성.
 5. A: Redis/Mosquitto/Keycloak, 이후 Backend/Frontend 실행.
 6. HTTP 검증: 프론트 응답, 미인증 요청 401, client_credentials 토큰 발급, Gateway→두 Backend 요청.
-7. B Bridge: health 확인, 고유 테스트 레코드의 MQTT→Kafka 전달 확인.
+7. B 실시간 분석: 이미 받은 이미지로 분석 서비스 실행.
+8. B Bridge: health 확인, 고유 테스트 레코드의 MQTT→Kafka 전달 확인.
 
 별도 서버의 의존성은 Jenkins 단계로 처리한다. 운영 A Compose에 B의 postgres를 depends_on으로 넣지 않는다.
 

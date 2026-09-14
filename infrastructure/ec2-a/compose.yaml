@@ -145,31 +145,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  realtime-analysis-service:
-    image: ${REALTIME_ANALYSIS_IMAGE:?REALTIME_ANALYSIS_IMAGE required}
-    restart: unless-stopped
-    init: true
-    stop_grace_period: 30s
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS required}
-      KAFKA_INPUT_TOPIC: ${KAFKA_RAW_TOPIC:-power.raw.v1}
-      KAFKA_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
-      KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
-      KAFKA_GROUP_ID: ${ANALYSIS_KAFKA_GROUP_ID:-realtime-analysis-service-v1}
-      KAFKA_AUTO_OFFSET_RESET: ${ANALYSIS_KAFKA_AUTO_OFFSET_RESET:-latest}
-      MODEL_WINDOW_SIZE: ${ANALYSIS_MODEL_WINDOW_SIZE:-299}
-      MODEL_MANIFEST_FILE: config/model_manifest.json
-      BASELINE_FILE: config/baselines.json
-      FAKE_ON_APPLIANCES: ${ANALYSIS_FAKE_ON_APPLIANCES:-}
-      ANALYSIS_SCORE_THRESHOLD: ${ANALYSIS_SCORE_THRESHOLD:-80}
-      ANALYSIS_TIMEZONE: ${ANALYSIS_TIMEZONE:-Asia/Seoul}
-      LOG_LEVEL: ${ANALYSIS_LOG_LEVEL:-INFO}
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   mosquitto:
     image: eclipse-mosquitto:2
     restart: unless-stopped

@@ -73,12 +73,21 @@ public class AnalysisEventIngestService {
                 message.eventId(), message.householdId(), EVENT_TYPE, (short) message.score(),
                 message.occurredAt(), message.reason(), now));
 
+        // 과거 이벤트 24시간 차단 (maxEventAge 기본 24시간)
+        // occured_at < 현재시각 - 24시간이면 알림 발행 X
         if (message.occurredAt().isBefore(now.minus(maxEventAge))) {
             return IngestResult.STORED_STALE_EVENT;
         }
+
+
+        // 이벤트 들어오면 사건 생성
         UUID incidentId = UUID.randomUUID();
         Incident incident = incidentRepository.save(new Incident(
-                incidentId, message.eventId(), message.householdId(), EVENT_TYPE, message.occurredAt()));
+                incidentId, // PK
+                message.eventId(), // eventId
+                message.householdId(), // 가구Id
+                EVENT_TYPE, // 이벤트 타입
+                message.occurredAt())); // 메시지 도착 시간
 
         actionRepository.save(new IncidentAction(
                 incidentId, null, ActionType.DETECTED, ActorType.SYSTEM, null,

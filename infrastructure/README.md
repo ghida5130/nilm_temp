@@ -4,9 +4,9 @@
 
 - `local/compose.yaml`: 로컬 전체 서비스. PostgreSQL·Kafka의 기존 프로젝트/볼륨 이름을 보존하고 실시간 분석 서비스를 함께 실행한다.
 - `ec2-a/compose.yaml`: Backend, Keycloak, Redis, Mosquitto, Frontend/Nginx.
-- `ec2-b/compose.yaml`: PostgreSQL, Kafka, 토픽 초기화, Bridge.
+- `ec2-b/compose.yaml`: PostgreSQL, Kafka, 토픽 초기화, 실시간 분석 서비스, Bridge.
 - 서비스 코드와 SQL은 기존 `postgres/`, `mqtt/`, `mqtt-kafka-bridge/`, `kafka/` 및 저장소 `backend/`에 둔다.
-- 실시간 분석 서비스 코드는 저장소 `ai/realtime-analysis-service/`에서 로컬 이미지를 빌드한다.
+- 실시간 분석 서비스 코드는 저장소 `ai/realtime-analysis-service/`에서 로컬 이미지를 빌드한다. 운영에서는 EC2-B에서 실행하며 같은 Compose의 `kafka:19092`와 `postgres`의 `analysis_db`에 연결한다.
 - HDFS는 별도 실험용으로 유지하며 `nilm-net`에 접속한다.
 - [전체 구조](../docs/배포설정/로컬_EC2_Compose_Jenkins_구조.md), [Jenkins 설정](../docs/배포설정/Jenkins_실행_및_검증.md)
 
@@ -126,7 +126,7 @@ docker compose pull
 docker compose up -d
 ```
 
-최초 배포는 Jenkins가 B 기반 서비스 → A → B Bridge 순서로 준비 상태를 확인하며 실행한다. 운영 백엔드와 Keycloak은 B의 PostgreSQL에 연결한다. B의 5432·9092는 사설 IP에 바인딩하며 보안 그룹에서도 필요한 A 서버 접근만 허용한다.
+최초 배포는 Jenkins가 B 기반 서비스 → A → B 실시간 분석 → B Bridge 순서로 준비 상태를 확인하며 실행한다. 운영 백엔드와 Keycloak은 B의 PostgreSQL에 연결한다. B의 5432·9092는 사설 IP에 바인딩하며 보안 그룹에서도 필요한 A 서버 접근만 허용한다.
 
 ## 데이터 및 설정 유의 사항
 
