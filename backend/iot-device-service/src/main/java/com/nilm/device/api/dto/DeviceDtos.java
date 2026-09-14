@@ -1,0 +1,79 @@
+package com.nilm.device.api.dto;
+
+import com.nilm.device.domain.Device;
+import com.nilm.device.domain.DeviceStatus;
+import com.nilm.device.domain.DeviceType;
+import com.nilm.device.domain.InstallHistory;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+import java.time.OffsetDateTime;
+import java.util.List;
+
+public final class DeviceDtos {
+
+    private DeviceDtos() {
+    }
+
+    public record RegisterRequest(
+            @NotBlank @Pattern(regexp = "^H\\d{3}$", message = "house_id는 H001 형식이어야 합니다")
+            String houseId,
+            @NotNull
+            DeviceType deviceType,
+            @Size(max = 50)
+            String location,
+            @Size(max = 20)
+            String firmwareVer
+    ) {
+    }
+
+    public record Response(
+            Long deviceId,
+            String houseId,
+            DeviceType deviceType,
+            String location,
+            String firmwareVer,
+            DeviceStatus status,
+            OffsetDateTime registeredAt
+    ) {
+        public static Response from(Device d) {
+            return new Response(d.getDeviceId(), d.getHouseId(), d.getDeviceType(),
+                    d.getLocation(), d.getFirmwareVer(), d.getStatus(), d.getRegisteredAt());
+        }
+    }
+
+    /** 등록 응답 — mqttPassword는 이 응답에서 1회만 노출되고 서버에는 해시만 남는다. */
+    public record RegisterResponse(
+            Response device,
+            String mqttUsername,
+            String mqttPassword,
+            List<String> aclTopics
+    ) {
+    }
+
+    public record StatusChangeRequest(
+            @NotNull
+            DeviceStatus status,
+            @Size(max = 200)
+            String reason,
+            @Size(max = 50)
+            String changedBy
+    ) {
+    }
+
+    public record HistoryResponse(
+            Long historyId,
+            InstallHistory.EventType eventType,
+            String fromValue,
+            String toValue,
+            String reason,
+            String changedBy,
+            OffsetDateTime changedAt
+    ) {
+        public static HistoryResponse from(InstallHistory h) {
+            return new HistoryResponse(h.getHistoryId(), h.getEventType(), h.getFromValue(),
+                    h.getToValue(), h.getReason(), h.getChangedBy(), h.getChangedAt());
+        }
+    }
+}

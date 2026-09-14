@@ -60,11 +60,17 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         elif url_path == "/api/status":
             # 2. 현재 시뮬레이터 실행 상태 확인
+            cfg = self.manager.get_connection_config() if hasattr(self.manager, "get_connection_config") else {
+                "host": simulator.DEFAULT_BROKER_HOST,
+                "port": simulator.DEFAULT_BROKER_PORT,
+                "tls_enabled": False
+            }
+            tls_desc = " (TLS)" if cfg.get("tls_enabled") else ""
             resp_data = {
                 "is_running": self.manager.is_running,
                 "current_mode": self.manager.current_mode,
                 "cycle_count": self.manager.cycle_count,
-                "broker": f"{simulator.DEFAULT_BROKER_HOST}:{simulator.DEFAULT_BROKER_PORT}",
+                "broker": f"{cfg['host']}:{cfg['port']}{tls_desc}",
                 "last_metrics": self.manager.last_metrics
             }
             content = json.dumps(resp_data).encode("utf-8")
@@ -216,8 +222,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             try:
                 self.manager.start(scenario=scenario, house=house)
                 self.send_json(200, {"status": "started", "scenario": scenario, "house": house})
+            except (ValueError, FileNotFoundError, PermissionError) as err:
+                self.send_error_json(400, "CONFIG_ERROR", str(err))
             except RuntimeError as err:
                 self.send_error_json(409, "START_FAILED", str(err))
+            except Exception as err:
+                self.send_error_json(500, "START_FAILED", str(err))
 
         elif url_path == "/api/stop":
             # 2. 시뮬레이션 중지

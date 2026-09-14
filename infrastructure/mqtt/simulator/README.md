@@ -82,62 +82,122 @@
 ## 5. 실행 방법 (`simulator.py`)
 
 ### (1) 사전 준비
+
+* **Python 버전**: **Python 3.10 이상** 필수 (비동기 이벤트 루프 및 SSLContext 검증 지원)
+* **패키지 의존성 설치**:
+
 ```bash
 pip install -r requirements.txt
 ```
 
+*`requirements.txt`는 비동기 MQTT 클라이언트인 `aiomqtt>=2.0.0`을 포함합니다.*
+
 ### (2) 커맨드라인 옵션 상세
+
 ```bash
 python simulator.py --help
 ```
 
-| 옵션         | 단축키 | 기본값           | 설명                                                                                     |
-| :----------- | :----- | :--------------- | :--------------------------------------------------------------------------------------- |
-| `--scenario` | `-s`   | `random`         | 실행 시나리오 모드 (`random`: 연속 확률, `peak`: 10초 피크, `routine_missed`: 08:10 루틴 누락 이상치) |
-| `--houses`   | `-n`   | `10`             | 대상 가구 수 (`H001` ~ `H{n:03d}`)                                                       |
-| `--interval` | `-i`   | `1.0`            | 데이터 발행 주기 (초 단위)                                                               |
-| `--hz`       |        | `None`           | 가구당 초당 측정 횟수 (지정 시 `interval = 1/hz` 자동 환산)                              |
-| `--count`    | `-c`   | `0`              | 전송 사이클 수 (`0`: 무한, `N > 0`: N회 전송 종료, peak 기본값: 60, routine_missed 기본값: 300) |
-| `--start-time` |      | `None`           | 시작 가상 시각 (예: `08:15:00`). routine_missed 기본값: 오늘 아침 08:15:00 KST           |
-| `--host`     |        | `localhost`      | MQTT 브로커 호스트 주소                                                                  |
-| `--port`     | `-p`   | `1883`           | MQTT 브로커 포트 번호                                                                    |
-| `--user`     | `-u`   | `simulator_user` | MQTT 인증 계정명                                                                         |
-| `--password` |        | `test1234`       | MQTT 인증 비밀번호                                                                       |
-| `--qos`      |        | `1`              | MQTT QoS 레벨 (`0` 또는 `1`)                                                             |
-| `--quiet`    | `-q`   | `False`          | 요약 모드 (매초 상세 로그 생략, 5초 주기 누적 처리량 통계만 출력)                        |
+| 옵션 | 단축키 | 기본값 | 설명 |
+| :--- | :--- | :--- | :--- |
+| `--scenario` | `-s` | `random` | 실행 시나리오 모드 (`random`: 연속 확률, `peak`: 10초 피크, `routine_missed`: 08:10 루틴 누락 이상치) |
+| `--houses` | `-n` | `10` | 대상 가구 수 (`H001` ~ `H{n:03d}`) |
+| `--interval` | `-i` | `1.0` | 데이터 발행 주기 (초 단위) |
+| `--hz` | | `None` | 가구당 초당 측정 횟수 (지정 시 `interval = 1/hz` 자동 환산) |
+| `--count` | `-c` | `0` | 전송 사이클 수 (`0`: 무한, `N > 0`: N회 전송 종료, peak 기본값: 60, routine_missed 기본값: 300) |
+| `--start-time` | | `None` | 시작 가상 시각 (예: `08:15:00`). routine_missed 기본값: 오늘 아침 08:15:00 KST |
+| `--host` | | `localhost` | MQTT 브로커 호스트 주소 (**TLS 사용 시 인증서 SAN과 반드시 일치해야 함. EC2-A 로컬 실행 시에도 localhost가 아닌 A 사설 IP 사용**) |
+| `--port` | `-p` | `None` | MQTT 브로커 포트 번호 (미지정 시 `MQTT_PORT` 환경변수 또는 TLS 여부에 따라 `8883`/`1883` 자동 결정) |
+| `--user` | `-u` | `simulator_user` | MQTT 인증 계정명 (환경변수: `MQTT_USER`) |
+| `--password` | | `None` | MQTT 인증 비밀번호 (미지정 시 `MQTT_PASS` 환경변수 또는 `test1234`. **프로세스 노출 및 쉘 히스토리 방지를 위해 환경변수 또는 read 프롬프트 사용 권장**) |
+| `--tls` / `--no-tls` | | `None` | MQTT TLS 암호화 연결 활성화 여부 (미지정 시 `MQTT_TLS_ENABLED` 환경변수 또는 `False`) |
+| `--ca-file` | | `None` | 브로커 검증에 사용할 CA 인증서 파일 경로 (PEM 형식, 환경변수: `MQTT_CA_FILE`) |
+| `--qos` | | `1` | MQTT QoS 레벨 (`0` 또는 `1`) |
+| `--quiet` | `-q` | `False` | 요약 모드 (매초 상세 로그 생략, 5초 주기 누적 처리량 통계만 출력) |
 
-### (3) 주요 실행 예시
+> [!IMPORTANT]
+> **포트 결정 우선순위**:
+> `--port` CLI 명시 > `MQTT_PORT` 환경변수 > TLS 활성화 시 `8883` > 평문 연결 시 `1883`
 
-#### 예시 1. [시연용] 10초 피크 시연 모드 (권장)
-단일 가구(`H001`)를 대상으로 정확히 10초 시점에 3,000W 이상의 피크 전력을 발생시키며 60초 코스 완주 후 자동 종료합니다.
+---
+
+### (3) 환경별 실행 가이드
+
+#### 1) 로컬 개발 환경 (평문 1883 연결)
+
+로컬에 구동된 Mosquitto 브로커(`localhost:1883`)로 평문 통신합니다. 별도의 TLS 환경변수 없이 바로 실행할 수 있습니다.
+
 ```bash
+# 피크 60초 시연 모드 (10초 시점 3,000W+ 도달)
 python simulator.py --scenario peak
-```
-* **타임라인**:
-  * T+01s ~ T+09s: 평상시 대기 상태 (약 55~65W)
-  * T+10s ~ T+30s: **[피크 발생]** 전기포트(1,700W) + 인덕션(1,600W) 동시 기동 (3,400~3,600W 도달)
-  * T+31s ~ T+44s: **[피크 해소]** 전기포트 자동 정지, 인덕션만 단독 가동 (약 1,600W)
-  * T+45s ~ T+60s: **[정상 복귀]** 인덕션 조리 완료, 대기전력 상태 복귀 (약 60W)
 
-#### 예시 2. [검증용] 실시간 분석 서비스 루틴 누락(ROUTINE_MISSED) 이상치 검증 모드
-실시간 분석 서비스(`realtime-analysis-service`)의 이상 감지 조건(08:10 초과, 버퍼 299개 충족, 당일 전자레인지 미사용)을 검증하기 위해, 한국 시각 08:15:00 기준 대기전력 파형을 300초간 발행합니다.
-```bash
+# 08:10 루틴 누락(ROUTINE_MISSED) 300초 이상치 검증 모드
 python simulator.py --scenario routine_missed
-```
-* **타임라인**:
-  * T+001s ~ T+298s: 전자레인지 미가동 대기전력(45~65W) 유지, 분석 서비스 슬라이딩 버퍼(299개) 적재
-  * T+299s: **[이상 감지 조건 충족]** 08:10 마감 시각 초과 + 299개 버퍼 완충 ➡️ Kafka 토픽 `analysis.event.v1` (score 86) 이상 이벤트 발행
-  * T+300s: 검증 완료 후 자동 종료
 
-#### 예시 3. 1,000가구 대규모 스트리밍 부하 테스트
-1,000개 가구의 데이터를 초당 1,000건(1,000 msg/s) 속도로 연속 전송합니다.
-```bash
+# 1,000가구 대규모 스트리밍 부하 테스트 (초당 1,000건)
 python simulator.py -n 1000 -q
 ```
 
-#### 예시 4. 특정 횟수 한정 테스트 (예: 10가구 5회 전송)
+---
+
+#### 2) 운영 EC2 환경 (TLS 8883 보안 연결)
+
+운영 Mosquitto 브로커(EC2-A)는 **8883 포트의 TLS 리스너만 사용**하며, 서버 인증서에는 **EC2-A의 사설 IP(`A_PRIVATE_IP`)가 SAN(Subject Alternative Name)**에 등록되어 있습니다.
+
+> [!WARNING]
+> * **인증서 SAN 불일치 방지**: EC2-A 머신 내부에서 시뮬레이터를 실행하더라도 `--host`나 `MQTT_HOST`에 `localhost`를 사용할 수 없습니다. 반드시 인증서 SAN에 등록된 사설 IP `<A_PRIVATE_IP>`를 지정해야 TLS 핸드셰이크 검증에 통과합니다.
+> * **비밀번호 노출 및 쉘 히스토리 방지**:
+>   * **CLI 인자 노출 위험**: `--password <PASS>`를 커맨드라인에 직접 입력하면 프로세스 목록(`ps aux`, `/proc/<pid>/cmdline`)을 통해 동일 머신의 다른 사용자에게 노출될 위험이 있으므로 CLI 인자 전달을 지양합니다.
+>   * **쉘 히스토리 노출 주의**: 단순히 쉘에 `export MQTT_PASS=...`를 직접 타이핑하면 `~/.bash_history` 등에 평문으로 저장됩니다. 히스토리 저장을 방지하려면 아래 방법 중 하나를 사용하십시오:
+>     * **방법 1 (`read -rsp`)**: 화면 에코 및 쉘 히스토리 없이 프롬프트로 비밀번호 입력
+>       ```bash
+>       read -rsp "MQTT Password: " MQTT_PASS && export MQTT_PASS
+>       ```
+>     * **방법 2 (권한 제한 환경파일 생성)**:
+>       ```bash
+>       umask 077
+>       read -rsp "MQTT Password: " MQTT_PASS
+>       printf '\n'
+>       printf 'MQTT_PASS=%q\n' "$MQTT_PASS" > ~/.nilm_mqtt.env
+>       unset MQTT_PASS
+>       set -a && source ~/.nilm_mqtt.env && set +a
+>       ```
+> * **CA 파일 권한 및 예시 경로**:
+>   * EC2-A 실행 시 예시: `~/mqtt-ca/ca.crt`
+>   * EC2-B 실행 시 예시: `/opt/nilm/mqtt/certs/ca.crt` (서버 권한에 따라 `sudo` 또는 그룹 읽기 권한 필요)
+
+##### 방법 A. 환경변수 기반 실행 (권장)
+
 ```bash
-python simulator.py -n 10 -c 5
+# 1. 운영 브로커 접속 환경변수 설정
+export MQTT_HOST=<A_PRIVATE_IP>
+export MQTT_PORT=8883
+export MQTT_USER=<MQTT_USER>
+read -rsp "MQTT Password: " MQTT_PASS && export MQTT_PASS
+export MQTT_TLS_ENABLED=true
+export MQTT_CA_FILE=<CA_FILE_PATH>
+
+# 2. 피크 시연 모드 실행
+python simulator.py --scenario peak
+
+# 3. 루틴 누락 검증 모드 실행
+python simulator.py --scenario routine_missed
+```
+
+##### 방법 B. CLI 옵션 명시 실행
+
+```bash
+# 비밀번호는 프롬프트나 환경변수로 안전하게 주입
+read -rsp "MQTT Password: " MQTT_PASS && export MQTT_PASS
+
+# CLI 플래그로 운영 TLS 접속 정보 전달
+python simulator.py \
+  --host <A_PRIVATE_IP> \
+  --port 8883 \
+  --user <MQTT_USER> \
+  --tls \
+  --ca-file <CA_FILE_PATH> \
+  --scenario peak
 ```
 
 ---
@@ -146,14 +206,54 @@ python simulator.py -n 10 -c 5
 
 웹 브라우저에서 직접 버튼을 클릭하여 시뮬레이터를 제어하고, 실시간 전력 파형 시각화와 **실제 Mosquitto MQTT 발행(Kafka 연동)**을 동시에 수행할 수 있습니다.
 
-### (1) 실행 방법 (2가지 모드 지원)
+웹 컨트롤러 HTTP 서버는 보안을 위해 **기본적으로 `127.0.0.1`에만 바인딩**됩니다.
 
-* **모드 A. [권장] 실제 MQTT 발행 + 실시간 차트 동기화 모드**:
-  터미널에서 경량 웹 서버를 실행하면 브라우저가 자동으로 열리며, **화면 버튼 클릭 시 실제 Mosquitto 브로커(Port 1883)로 MQTT 메시지가 발행**되어 카프카 및 백엔드로 전송됩니다.
-  ```bash
-  python web_server.py
-  # 브라우저 자동 접속: http://localhost:8085
-  ```
+> [!CAUTION]
+> * **0.0.0.0 바인딩 및 인증되지 않은 제어 API 노출 위험**:
+>   웹 컨트롤러의 제어 API(`/api/start`, `/api/stop`, `/api/device` 등)는 별도의 사용자 인증이 없으므로, `--bind-host 0.0.0.0`으로 외부 네트워크에 개방할 경우 인가되지 않은 사용자가 전력 데이터 발행을 임의로 조작할 수 있습니다.
+> * **권장 원격 접속 방식 (SSH 터널링)**:
+>   웹 서버는 기본값(`127.0.0.1`)으로 안전하게 유지하고, 로컬 PC에서 SSH 포트 포워딩을 통해 암호화 터널로 접속하십시오:
+>   ```bash
+>   ssh -i <EC2_KEY.pem> -L 8085:127.0.0.1:8085 ubuntu@<EC2_PUBLIC_IP>
+>   # 로컬 브라우저에서 http://localhost:8085 접속
+>   ```
+> * **부득이하게 `--bind-host 0.0.0.0`을 사용하는 경우**:
+>   반드시 EC2 보안 그룹(Security Group)에서 웹 서버 포트(8085)의 인바운드 허용 소스 IP를 관리자 개인 공인 IP(`/32`)로 엄격히 제한하십시오.
+
+### (1) 실행 방법
+
+#### A. 로컬 평문 실행 (기본 localhost:1883)
+
+```bash
+python web_server.py
+# 특정 웹 포트 지정: python web_server.py 8089
+# 브라우저 접속: http://127.0.0.1:8085
+```
+
+#### B. 운영 EC2 TLS 실행 (8883 포트 보안 연결)
+웹 시뮬레이터 역시 CLI와 동일한 공통 TLS 설정을 지원합니다. 웹 서버 기동 시점에 CA 파일 유효성을 사전 검증하며, 버튼 클릭(`/api/start`) 시에도 동기적으로 TLS 검증을 수행합니다.
+
+```bash
+# 환경변수 기반 운영 웹 서버 실행 (권장)
+export MQTT_HOST=<A_PRIVATE_IP>
+export MQTT_PORT=8883
+export MQTT_USER=<MQTT_USER>
+read -rsp "MQTT Password: " MQTT_PASS && export MQTT_PASS
+export MQTT_TLS_ENABLED=true
+export MQTT_CA_FILE=<CA_FILE_PATH>
+
+python web_server.py
+
+# 또는 CLI 인자로 지정하여 실행 (바인딩 호스트 및 웹 포트 지정 가능)
+python web_server.py \
+  --bind-host 127.0.0.1 \
+  --web-port 8085 \
+  --host <A_PRIVATE_IP> \
+  --port 8883 \
+  --user <MQTT_USER> \
+  --tls \
+  --ca-file <CA_FILE_PATH>
+```
 
 * **모드 B. 브라우저 단독 시각화 모드 (네트워크 미연동)**:
   파이썬/도커를 켤 필요 없이 파일 탐색기에서 `waveform_viewer.html`을 더블 클릭하여 로컬 브라우저에서 시각적 데모만 재생합니다.

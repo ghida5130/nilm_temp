@@ -30,13 +30,23 @@ if sys.platform == "win32":
 
 import aiomqtt
 
+# 상위 디렉터리 import 경로 등록
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SIMULATOR_DIR = os.path.dirname(CURRENT_DIR)
+if SIMULATOR_DIR not in sys.path:
+    sys.path.insert(0, SIMULATOR_DIR)
+
+from engine.tls import parse_tls_enabled, resolve_mqtt_port, get_mqtt_tls_context
+
 # 테스트 설정
 TEST_PORT = 8089
 BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
+MQTT_TLS_ENABLED = parse_tls_enabled(os.getenv("MQTT_TLS_ENABLED", "false"))
+MQTT_PORT = resolve_mqtt_port(tls_enabled=MQTT_TLS_ENABLED)
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USER = os.getenv("MQTT_USER", "simulator_user")
 MQTT_PASS = os.getenv("MQTT_PASS", "test1234")
+MQTT_CA_FILE = os.getenv("MQTT_CA_FILE", None)
 
 # 인증정보 마스킹 헬퍼
 def mask_credentials(user: str, password: str) -> str:
@@ -81,7 +91,14 @@ class MqttSubscriberThread(threading.Thread):
 
     async def _async_loop(self):
         try:
-            async with aiomqtt.Client(MQTT_HOST, MQTT_PORT, username=MQTT_USER, password=MQTT_PASS) as client:
+            tls_context = get_mqtt_tls_context(tls_enabled=MQTT_TLS_ENABLED, ca_file=MQTT_CA_FILE)
+            async with aiomqtt.Client(
+                MQTT_HOST,
+                MQTT_PORT,
+                username=MQTT_USER,
+                password=MQTT_PASS,
+                tls_context=tls_context
+            ) as client:
                 await client.subscribe(self.topic)
                 self.connected_event.set()
                 while not self._stop_event.is_set():
@@ -222,10 +239,11 @@ class TestManualLiveIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        tls_info = f", TLS ON (CA: {MQTT_CA_FILE})" if MQTT_TLS_ENABLED else ", TLS OFF"
         print(f"\n============================================================")
         print(f" [{datetime.now().strftime('%H:%M:%S')}] [통합 검증] 수동 가전 제어 최종 보강 검증 시작")
         print(f" - 대상 서버 포트: {TEST_PORT}")
-        print(f" - MQTT 브로커   : {MQTT_HOST}:{MQTT_PORT} ({mask_credentials(MQTT_USER, MQTT_PASS)})")
+        print(f" - MQTT 브로커   : {MQTT_HOST}:{MQTT_PORT} ({mask_credentials(MQTT_USER, MQTT_PASS)}{tls_info})")
         print(f" - 정상 예상 시간: 약 95초 (최대 제한 시간: 180초)")
         print(f"============================================================", flush=True)
 

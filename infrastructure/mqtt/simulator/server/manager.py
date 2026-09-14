@@ -34,7 +34,15 @@ class ModeConflictError(Exception):
 
 
 class SimulatorManager:
-    def __init__(self):
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        tls_enabled: bool | None = None,
+        ca_file: str | None = None,
+    ):
         self.lock = threading.RLock()
         # HTTP 요청 스레드에서 동시에 들어오는 start/stop/set_device를 직렬화한다.
         self.lifecycle_lock = threading.Lock()
@@ -48,6 +56,25 @@ class SimulatorManager:
         self.subscribers = []  # SSE 큐 목록
         self.last_metrics = None
         self.cycle_count = 0
+
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.tls_enabled = tls_enabled
+        self.ca_file = ca_file
+
+    def get_connection_config(self) -> dict:
+        """현재 설정된 인자 및 환경변수를 기반으로 연결 파라미터를 결정합니다."""
+        from engine.tls import resolve_mqtt_config
+        return resolve_mqtt_config(
+            host=self.host,
+            port=self.port,
+            username=self.username,
+            password=self.password,
+            tls_enabled=self.tls_enabled,
+            ca_file=self.ca_file,
+        )
 
     def add_subscriber(self, q: queue.Queue):
         with self.lock:
@@ -69,6 +96,11 @@ class SimulatorManager:
 
     def start(self, scenario: str = "peak", house: str = "H001"):
         with self.lifecycle_lock:
+            # 1. TLS 설정 사전 동기 검증 (CA 누락/미존재/권한 오류 시 런타임 start 호출에서 즉각 예외 발생)
+            from engine.tls import get_mqtt_tls_context
+            cfg = self.get_connection_config()
+            tls_context = get_mqtt_tls_context(tls_enabled=cfg["tls_enabled"], ca_file=cfg["ca_file"])
+
             if not self._stop_and_join():
                 raise RuntimeError("기존 시뮬레이터 워커가 종료되지 않았습니다.")
 
@@ -79,7 +111,7 @@ class SimulatorManager:
             stop_event = threading.Event()
             worker_thread = threading.Thread(
                 target=self._run_async_worker,
-                args=(scenario, house, stop_event),
+                args=(scenario, house, stop_event, cfg, tls_context),
                 daemon=True
             )
 
@@ -138,11 +170,11 @@ class SimulatorManager:
 
         return True
 
-    def _run_async_worker(self, scenario: str, house: str, stop_event: threading.Event):
+    def _run_async_worker(self, scenario: str, house: str, stop_event: threading.Event, cfg: dict, tls_context):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self._worker_loop(scenario, house, stop_event))
+            loop.run_until_complete(self._worker_loop(scenario, house, stop_event, cfg, tls_context))
         except Exception as err:
             print(f"[WebSimulator] 워커 오류: {err}", flush=True)
         finally:
@@ -155,7 +187,7 @@ class SimulatorManager:
                     self.is_running = False
                     self.current_mode = "idle"
 
-    async def _worker_loop(self, scenario: str, house: str, stop_event: threading.Event):
+    async def _worker_loop(self, scenario: str, house: str, stop_event: threading.Event, cfg: dict, tls_context):
         is_peak = (scenario == "peak")
         is_routine_missed = (scenario == "routine_missed")
         is_manual = (scenario == "manual")
@@ -174,13 +206,22 @@ class SimulatorManager:
             # 08:10:01 KST 시점 기준 타임스탬프 생성
             base_dt = scenarios.parse_simulation_start_time("08:10:01", is_missed_mode=True)
 
-        print(f"[WebSimulator] MQTT 브로커({simulator.DEFAULT_BROKER_HOST}:{simulator.DEFAULT_BROKER_PORT}) 연결 중...", flush=True)
+        host = cfg["host"]
+        port = cfg["port"]
+        user = cfg["username"]
+        password = cfg["password"]
+        tls_enabled = cfg["tls_enabled"]
+        ca_file = cfg["ca_file"]
+
+        tls_desc = f" (TLS ON | CA: {ca_file})" if tls_enabled else " (평문)"
+        print(f"[WebSimulator] MQTT 브로커({host}:{port}{tls_desc}) 연결 중...", flush=True)
 
         async with aiomqtt.Client(
-            hostname=simulator.DEFAULT_BROKER_HOST,
-            port=simulator.DEFAULT_BROKER_PORT,
-            username=simulator.DEFAULT_BROKER_USER,
-            password=simulator.DEFAULT_BROKER_PASS,
+            hostname=host,
+            port=port,
+            username=user,
+            password=password,
+            tls_context=tls_context,
             keepalive=60,
             timeout=5
         ) as client:

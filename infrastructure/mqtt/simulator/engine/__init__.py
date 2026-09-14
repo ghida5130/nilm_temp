@@ -7,6 +7,8 @@ from .config import (
     DEFAULT_BROKER_PORT,
     DEFAULT_BROKER_USER,
     DEFAULT_BROKER_PASS,
+    DEFAULT_TLS_ENABLED,
+    DEFAULT_CA_FILE,
     DEFAULT_HOUSES,
 )
 from .profiles import DEVICE_PROFILES
@@ -29,6 +31,8 @@ __all__ = [
     "DEFAULT_BROKER_PORT",
     "DEFAULT_BROKER_USER",
     "DEFAULT_BROKER_PASS",
+    "DEFAULT_TLS_ENABLED",
+    "DEFAULT_CA_FILE",
     "DEFAULT_HOUSES",
     "DEVICE_PROFILES",
     "house_states",
