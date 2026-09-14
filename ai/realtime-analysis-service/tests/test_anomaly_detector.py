@@ -56,7 +56,7 @@ def test_skips_routine_missed_when_appliance_was_used() -> None:
     assert anomalies == []
 
 
-def test_temporarily_allows_repeated_daily_anomaly_after_marking() -> None:
+def test_emits_same_daily_anomaly_only_once_after_marking() -> None:
     tracker = DailyActivityTracker()
     detector = RoutineMissedDetector(tracker, 80, "Asia/Seoul")
     measured_at = datetime.fromisoformat("2026-09-08T09:00:00+09:00")
@@ -65,4 +65,4 @@ def test_temporarily_allows_repeated_daily_anomaly_after_marking() -> None:
     detector.mark_emitted(first[0])
     second = detector.detect("H001", measured_at, [make_baseline()])
 
-    assert len(second) == 1
+    assert second == []
