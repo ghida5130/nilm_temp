@@ -204,3 +204,93 @@ def test_session_insert_failure_rolls_back_daily_rows(
         assert session.scalar(select(HouseholdObservationDaily)) is None
         assert session.scalar(select(HouseholdActivityDaily)) is None
         assert session.scalar(select(ApplianceUsageSession)) is None
+
+
+def test_observation_sample_count_and_coverage_are_accumulated(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = SqlAlchemyApplianceActivityRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=4,
+        valid_coverage_ratio=0.75,
+    )
+
+    repository.record_observation("H001", START)
+    repository.record_observation("H001", START + timedelta(seconds=1))
+    repository.record_observation("H001", START + timedelta(seconds=2))
+
+    with session_factory() as session:
+        observation = session.scalar(select(HouseholdObservationDaily))
+        assert observation is not None
+        assert observation.sample_count == 3
+        assert observation.expected_sample_count == 4
+        assert observation.coverage_ratio == Decimal("0.7500")
+        assert observation.observation_status == "COLLECTING"
+
+
+def test_replayed_timestamp_is_not_counted_twice(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = SqlAlchemyApplianceActivityRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=4,
+    )
+
+    repository.record_observation("H001", START)
+    repository.record_observation("H001", START)
+
+    with session_factory() as session:
+        observation = session.scalar(select(HouseholdObservationDaily))
+        assert observation is not None
+        assert observation.sample_count == 1
+        assert observation.coverage_ratio == Decimal("0.2500")
+
+
+def test_previous_day_observations_are_finalized(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = SqlAlchemyApplianceActivityRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=4,
+        valid_coverage_ratio=0.75,
+    )
+
+    for second in range(3):
+        repository.record_observation("H001", START + timedelta(seconds=second))
+    repository.record_observation("H002", START)
+
+    with session_factory.begin() as session:
+        session.add(
+            HouseholdObservationDaily(
+                household_id="H003",
+                observation_date=START.date(),
+                sample_count=0,
+                expected_sample_count=4,
+                coverage_ratio=Decimal("0.0000"),
+                observation_status="COLLECTING",
+                updated_at=START,
+            )
+        )
+
+    repository.record_observation("H001", START + timedelta(days=1))
+
+    with session_factory() as session:
+        observations = {
+            (item.household_id, item.observation_date.isoformat()): item
+            for item in session.scalars(select(HouseholdObservationDaily)).all()
+        }
+        assert observations[("H001", "2026-09-10")].observation_status == "VALID"
+        assert (
+            observations[("H002", "2026-09-10")].observation_status
+            == "INSUFFICIENT_DATA"
+        )
+        assert (
+            observations[("H003", "2026-09-10")].observation_status
+            == "SENSOR_GAP"
+        )
+        current = observations[("H001", "2026-09-11")]
+        assert current.observation_status == "COLLECTING"
+        assert current.sample_count == 1

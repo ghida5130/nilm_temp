@@ -1,7 +1,7 @@
 """가전 사용 세션과 일일 활동을 트랜잭션으로 저장한다."""
 
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import AbstractSet, Protocol
 from zoneinfo import ZoneInfo
@@ -24,10 +24,17 @@ from realtime_analysis.schemas import (
 
 EXPECTED_SAMPLES_PER_DAY = 86_400
 PROBABILITY_QUANTUM = Decimal("0.0001")
+COVERAGE_QUANTUM = Decimal("0.0001")
 
 
 class ApplianceActivityRepository(Protocol):
     """Handler와 DB 구현을 분리하기 위한 저장소 인터페이스."""
+
+    def record_observation(
+        self,
+        household_id: str,
+        observed_at: datetime,
+    ) -> None: ...
 
     def record(
         self,
@@ -46,9 +53,66 @@ class SqlAlchemyApplianceActivityRepository:
         self,
         session_factory: sessionmaker[Session],
         timezone_name: str,
+        expected_samples_per_day: int = EXPECTED_SAMPLES_PER_DAY,
+        valid_coverage_ratio: float = 0.95,
     ) -> None:
+        if expected_samples_per_day < 1:
+            raise ValueError("expected_samples_per_day must be greater than zero")
+        if not 0 <= valid_coverage_ratio <= 1:
+            raise ValueError("valid_coverage_ratio must be between zero and one")
         self._session_factory = session_factory
         self._timezone = ZoneInfo(timezone_name)
+        self._expected_samples_per_day = expected_samples_per_day
+        self._valid_coverage_ratio = Decimal(str(valid_coverage_ratio))
+
+    def record_observation(
+        self,
+        household_id: str,
+        observed_at: datetime,
+    ) -> None:
+        """정상 입력 한 건을 일일 샘플 수와 수집률에 반영한다."""
+
+        observation_date = observed_at.astimezone(self._timezone).date()
+        with self._session_factory.begin() as session:
+            # 다음 날짜의 데이터가 들어오면 아직 COLLECTING인 이전 날짜를 마감한다.
+            self._finalize_observations_before(
+                session,
+                observation_date,
+                observed_at,
+            )
+
+            observation = session.scalar(
+                select(HouseholdObservationDaily)
+                .where(
+                    HouseholdObservationDaily.household_id == household_id,
+                    HouseholdObservationDaily.observation_date == observation_date,
+                )
+                .with_for_update()
+            )
+            if observation is None:
+                observation = HouseholdObservationDaily(
+                    household_id=household_id,
+                    observation_date=observation_date,
+                    sample_count=1,
+                    expected_sample_count=self._expected_samples_per_day,
+                    coverage_ratio=self._coverage_ratio(1),
+                    observation_status="COLLECTING",
+                    updated_at=observed_at,
+                )
+                session.add(observation)
+                return
+
+            # Consumer는 가구별 메시지를 순서대로 처리한다. Snapshot 발행 후 Offset 커밋
+            # 전에 재시작되어 같은 입력이 재처리되면 updated_at을 기준으로 중복 집계하지 않는다.
+            if not self._is_newer_than_last_update(observed_at, observation.updated_at):
+                return
+
+            observation.sample_count += 1
+            observation.coverage_ratio = self._coverage_ratio(
+                observation.sample_count,
+                observation.expected_sample_count,
+            )
+            observation.updated_at = observed_at
 
     def record(
         self,
@@ -198,8 +262,8 @@ class SqlAlchemyApplianceActivityRepository:
         usage_session.ended_at = transition.occurred_at
         usage_session.updated_at = transition.confirmed_at
 
-    @staticmethod
     def _get_or_create_observation(
+        self,
         session: Session,
         household_id: str,
         activity_date: date,
@@ -215,13 +279,13 @@ class SqlAlchemyApplianceActivityRepository:
         if observation is not None:
             return observation
 
-        # 일일 샘플 수와 수집률 확정은 별도 일일 관측 집계 작업의 책임이다.
-        # 여기서는 세션이 참조할 수 있도록 COLLECTING 상태의 부모 행을 생성한다.
+        # 정상 Handler 흐름에서는 record_observation이 먼저 부모 행을 만든다.
+        # 직접 세션 저장을 호출하는 복구 경로를 위해 여기서도 부모 행 생성을 보장한다.
         observation = HouseholdObservationDaily(
             household_id=household_id,
             observation_date=activity_date,
             sample_count=0,
-            expected_sample_count=EXPECTED_SAMPLES_PER_DAY,
+            expected_sample_count=self._expected_samples_per_day,
             coverage_ratio=Decimal("0.0000"),
             observation_status="COLLECTING",
             updated_at=updated_at,
@@ -229,6 +293,52 @@ class SqlAlchemyApplianceActivityRepository:
         session.add(observation)
         session.flush()
         return observation
+
+    def _finalize_observations_before(
+        self,
+        session: Session,
+        current_date: date,
+        finalized_at: datetime,
+    ) -> None:
+        observations = session.scalars(
+            select(HouseholdObservationDaily)
+            .where(
+                HouseholdObservationDaily.observation_date < current_date,
+                HouseholdObservationDaily.observation_status == "COLLECTING",
+            )
+            .with_for_update()
+        ).all()
+
+        for observation in observations:
+            observation.coverage_ratio = self._coverage_ratio(
+                observation.sample_count,
+                observation.expected_sample_count,
+            )
+            if observation.sample_count == 0:
+                observation.observation_status = "SENSOR_GAP"
+            elif observation.coverage_ratio >= self._valid_coverage_ratio:
+                observation.observation_status = "VALID"
+            else:
+                observation.observation_status = "INSUFFICIENT_DATA"
+            observation.updated_at = finalized_at
+
+    def _coverage_ratio(
+        self,
+        sample_count: int,
+        expected_sample_count: int | None = None,
+    ) -> Decimal:
+        expected = expected_sample_count or self._expected_samples_per_day
+        ratio = Decimal(sample_count) / Decimal(expected)
+        return min(Decimal("1.0000"), ratio.quantize(COVERAGE_QUANTUM))
+
+    def _is_newer_than_last_update(
+        self,
+        observed_at: datetime,
+        updated_at: datetime,
+    ) -> bool:
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=self._timezone)
+        return observed_at.astimezone(timezone.utc) > updated_at.astimezone(timezone.utc)
 
     @staticmethod
     def _get_or_create_activity(

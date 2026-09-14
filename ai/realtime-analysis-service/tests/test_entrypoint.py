@@ -6,6 +6,7 @@ def test_default_topic_contracts() -> None:
 
     assert settings.kafka_input_topic == "power.raw.v1"
     assert settings.kafka_analysis_event_topic == "analysis.event.v1"
+    assert settings.kafka_analysis_snapshot_topic == "analysis.snapshot.v1"
     assert settings.consumer_config()["enable.auto.commit"] is False
 
 

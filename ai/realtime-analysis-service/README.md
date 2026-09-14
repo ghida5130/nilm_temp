@@ -13,6 +13,7 @@ power.raw.v1
   -> 입력 검증 및 가구별 299개 버퍼
   -> FakePredictor 가전 6종 ON 확률
   -> model_manifest.json의 threshold로 ON/OFF 판정
+  -> 연속 판정과 히스테리시스로 확정한 상태를 analysis.snapshot.v1로 발행
   -> JSON baseline과 일일 사용 상태 비교
   -> score가 임계치 이상이면 analysis.event.v1 발행
 ```
@@ -31,6 +32,53 @@ VACUUM_CLEANER
 
 잘못된 입력은 `dlq.analysis`로 발행합니다. Kafka offset은 정상 처리 또는 DLQ 전송이
 완료된 뒤에만 수동으로 commit합니다.
+
+## 실시간 Snapshot 수신 담당자 전달 사항
+
+### 수신 대상
+
+| 항목 | 값 |
+| --- | --- |
+| Kafka 토픽 | `analysis.snapshot.v1` |
+| Kafka Record Key | `household_id` |
+| Value 형식 | UTF-8 JSON Object |
+| 발행 시점 | 입력 윈도우가 완성된 뒤 매 추론 시점 |
+
+기본 입력이 가구별 1Hz이고 모델 윈도우 크기가 299이면, 최초 299개 입력이 쌓인 뒤부터
+가구별로 약 1초마다 Snapshot 한 건을 발행합니다. `appliances[].is_on`은 모델 확률을
+단순 비교한 값이 아니라 연속 판정과 히스테리시스를 모두 적용한 최종 확정 상태입니다.
+
+### Snapshot 출력 계약
+
+```json
+{
+  "schema_version": 1,
+  "snapshot_id": "8f3b2a19-d6e-4c72-9b12-a1b2c3d4e5f6",
+  "household_id": "H001",
+  "observed_at": "2026-09-10T00:10:00Z",
+  "published_at": "2026-09-10T00:10:00.125Z",
+  "measurement": {
+    "active_power": 1789.47,
+    "reactive_power": 340.01,
+    "power_factor": 0.982,
+    "current": 8.279
+  },
+  "appliances": [
+    {"appliance_type": "KETTLE", "is_on": false},
+    {"appliance_type": "INDUCTION", "is_on": false},
+    {"appliance_type": "IRON", "is_on": false},
+    {"appliance_type": "MICROWAVE", "is_on": true},
+    {"appliance_type": "HAIR_DRYER", "is_on": false},
+    {"appliance_type": "VACUUM_CLEANER", "is_on": false}
+  ]
+}
+```
+
+- `snapshot_id`는 원본 입력의 `message_id`를 사용하므로 동일 입력 재처리 시에도 같습니다.
+- `observed_at`은 원본 측정 시각, `published_at`은 Snapshot 발행 직전 시각이며 UTC로 냅니다.
+- `measurement`는 해당 추론 시점에 수신한 최신 원본 전력값 네 개를 그대로 담습니다.
+- `appliances`는 계약에 정한 6종을 고정 순서로 모두 포함하며 확률은 노출하지 않습니다.
+- 같은 가구의 Kafka 레코드 순서를 유지할 수 있도록 Key로 `household_id`를 사용합니다.
 
 ## 시뮬레이터 담당자 전달 사항
 
@@ -270,8 +318,37 @@ FAKE_ON_APPLIANCES=MICROWAVE,HAIR_DRYER
 수 있습니다.
 
 `MODEL_MANIFEST_FILE`로 Manifest 경로를 변경할 수 있습니다. 서비스 시작 시 입력 shape,
-Feature 순서, 출력 가전 순서, sigmoid 출력과 threshold 범위를 검증합니다. 현재
-Manifest의 `mean`, `std`와 `0.5` threshold는 실제 모델 전달 전까지 사용하는 임시값입니다.
+Feature 순서, 출력 가전 순서, sigmoid 출력, `mean`, 양수 `std`와 threshold 범위를
+검증합니다. Predictor 호출 직전에 Feature별 `(x - mean) / std`를 적용하고, Predictor가
+반환한 확률에는 Manifest의 가전별 threshold를 적용합니다. Snapshot에는 정규화 전 최신
+원본 측정값을 담습니다. 현재 Manifest의 `mean=0`, `std=1`과 `0.5` threshold는 실제 모델
+전달 전까지 사용하는 중립 임시값입니다.
+
+## 일일 관측 집계
+
+입력 검증을 통과한 가구별 샘플을 `household_observation_daily`에 즉시 누적합니다.
+
+```text
+sample_count += 1
+coverage_ratio = min(sample_count / expected_sample_count, 1.0)
+```
+
+기본 1Hz 전일 수집의 `expected_sample_count`는 86,400이며, 수집 중에는 상태를
+`COLLECTING`으로 유지합니다. 다음 날짜의 첫 입력이 들어오면 이전의 `COLLECTING` 행을
+다음 기준으로 마감합니다.
+
+```text
+sample_count = 0                 → SENSOR_GAP
+coverage_ratio >= 유효 기준값   → VALID
+그 외                           → INSUFFICIENT_DATA
+```
+
+| 환경변수 | 기본값 | 의미 |
+| --- | ---: | --- |
+| `ANALYSIS_EXPECTED_SAMPLES_PER_DAY` | 86400 | 하루 예상 샘플 수 |
+| `ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO` | 0.95 | `VALID` 최소 수집률 |
+
+현재 유효 수집률 `0.95`는 요구사항의 TBD 값을 설정으로 분리한 임시 운영값입니다.
 
 ## ON/OFF 상태 변화
 
@@ -293,12 +370,49 @@ threshold - 0.05 < probability < threshold → 기존 ON 상태 유지
 | `APPLIANCE_OFF_CONFIRMATION_SAMPLES` | 3 | OFF 확정에 필요한 연속 예측 수 |
 | `APPLIANCE_OFF_THRESHOLD_MARGIN` | 0.05 | OFF 판정용 히스테리시스 폭 |
 
+## 단계별 구간 타이밍 로그
+
+Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로거가 JSON 한 줄을
+출력합니다. 구간 시간은 시스템 시각 변경의 영향을 받지 않도록
+`time.perf_counter_ns()`로 측정합니다.
+
+```json
+{"event":"pipeline_timing","status":"processed","message_id":"8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6","household_id":"H001","kafka":{"topic":"power.raw.v1","partition":3,"offset":42},"processing_total_ns":1842000,"stage_durations_ns":{"activity_db":310000,"buffer_append":12000,"deserialize_validate":82000,"inference":1500000,"offset_commit":73000,"preprocess":21000,"snapshot_publish_ack":260000,"state_decision_transition":31000},"stage_counts":{"activity_db":1,"buffer_append":1,"deserialize_validate":1,"inference":1,"offset_commit":1,"preprocess":1,"snapshot_publish_ack":1,"state_decision_transition":1},"sensor_to_log_ns":2185000,"clock_skew_detected":false}
+```
+
+주요 구간 이름은 다음과 같습니다.
+
+| 구간 | 범위 |
+| --- | --- |
+| `consumer_poll` | Kafka Consumer `poll()` 대기 |
+| `deserialize_validate` | JSON 역직렬화와 Pydantic 입력 검증 |
+| `observation_db` | 일일 관측 Sample DB 반영 |
+| `buffer_append` | 가구별 Sliding Window 추가 |
+| `preprocess` | Manifest 기반 Feature 표준화 |
+| `inference` | Predictor 단독 실행 |
+| `state_decision_transition` | Threshold, Hysteresis, 상태 전이 판정 |
+| `activity_db` | 일일 활동과 사용 Session DB 반영 |
+| `snapshot_publish_ack` | Snapshot Produce부터 Broker ACK까지 |
+| `anomaly_detection` | 기준선 조회와 이상 후보 판정 |
+| `event_publish_ack` | 이상 Event Produce부터 Broker ACK까지 |
+| `offset_commit` | 입력 Offset 동기 Commit |
+| `dlq_publish_ack` | 잘못된 입력의 DLQ Broker ACK |
+
+같은 구간이 메시지 한 건에서 여러 번 실행되면 `stage_durations_ns`에는 합계,
+`stage_counts`에는 호출 횟수를 기록합니다. `status`는 `processed`, `dlq`, `failed` 중
+하나이며, 실패 로그에는 예외 메시지 대신 `error_type`만 남겨 민감한 Payload가 로그에
+유출되지 않게 합니다.
+
+`sensor_to_log_ns`는 센서 `measured_at`부터 분석 메시지 처리 종료까지의 벽시계
+지연입니다. 서로 다른 장비의 시계를 사용하는 E2E 측정에서는 NTP 동기화가 필요하며,
+음수이면 `clock_skew_detected=true`로 표시합니다.
+
 ## 현재 MVP 제약
 
 - 실제 AI 모델 대신 결정적인 FakePredictor를 사용합니다.
-- Manifest의 정규화 계약은 검증하지만 실제 정규화는 실제 Predictor 연동 시 적용합니다.
+- 실제 학습 `mean`, `std`와 가전별 Validation threshold는 AI 모델 전달 후 교체해야 합니다.
 - baseline과 당일 활동 상태는 아직 각각 JSON과 메모리에 저장합니다.
 - 재시작하면 299개 버퍼와 당일 활동·발행 상태가 초기화됩니다.
-- analysis_db 스키마는 생성되지만 Repository 저장 로직은 아직 연결하지 않았습니다.
-- 감지된 상태 변화는 메모리에 반영되며 사용 세션 DB 저장은 아직 연결하지 않았습니다.
+- 완전히 데이터가 들어오지 않은 가구의 `SENSOR_GAP` 판정에는 별도 가구 목록 기반 마감
+  스케줄러가 추가로 필요합니다.
 - HTTP API는 포함하지 않습니다.

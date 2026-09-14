@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     kafka_input_topic: str = "power.raw.v1"
     kafka_dlq_topic: str = "dlq.analysis"
     kafka_analysis_event_topic: str = "analysis.event.v1"
+    kafka_analysis_snapshot_topic: str = "analysis.snapshot.v1"
     kafka_group_id: str = "realtime-analysis-service-v1"
     kafka_auto_offset_reset: str = "earliest"
 
@@ -36,6 +37,12 @@ class Settings(BaseSettings):
     baseline_file: str = "config/baselines.json"
     analysis_score_threshold: int = Field(default=80, ge=0, le=100)
     analysis_timezone: str = "Asia/Seoul"
+    analysis_expected_samples_per_day: int = Field(default=86_400, ge=1)
+    analysis_observation_valid_coverage_ratio: float = Field(
+        default=0.95,
+        ge=0,
+        le=1,
+    )
     appliance_on_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_threshold_margin: float = Field(default=0.05, ge=0, le=1)
