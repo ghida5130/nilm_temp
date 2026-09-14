@@ -118,20 +118,22 @@ class ReleaseTests(unittest.TestCase):
             return {"OSType": "linux", "Architecture": "x86_64"}
         return [{"Os": "linux", "Architecture": "amd64", "RepoDigests": [args[-1].removeprefix("docker.io/")]}]
 
-    def test_b_pulls_only_bridge_by_digest(self):
+    def test_b_pulls_analysis_and_bridge_by_digest(self):
         with patch.object(release, "docker_json", side_effect=self.docker_metadata), \
                 patch.object(release.subprocess, "run") as run:
             release.check_images(self.data, "b", pull=True)
-        run.assert_called_once_with(["docker", "pull", self.data["images"]["mqtt-kafka-bridge"]["reference"]], check=True)
+        self.assertEqual(run.call_count, 2)
+        for service in ("realtime-analysis-service", "mqtt-kafka-bridge"):
+            self.assertIn(self.data["images"][service]["reference"], str(run.call_args_list))
+        self.assertNotIn(self.data["images"]["api-gateway"]["reference"], str(run.call_args_list))
 
-    def test_a_pulls_exactly_five_application_images(self):
+    def test_a_pulls_exactly_four_application_images(self):
         with patch.object(release, "docker_json", side_effect=self.docker_metadata), \
                 patch.object(release.subprocess, "run") as run:
             release.check_images(self.data, "a", pull=True)
-        self.assertEqual(run.call_count, 5)
-        self.assertIn(self.data["images"]["realtime-analysis-service"]["reference"],
-                      str(run.call_args_list))
-        self.assertNotIn(self.data["images"]["mqtt-kafka-bridge"]["reference"], str(run.call_args_list))
+        self.assertEqual(run.call_count, 4)
+        for service in ("realtime-analysis-service", "mqtt-kafka-bridge"):
+            self.assertNotIn(self.data["images"][service]["reference"], str(run.call_args_list))
 
     def test_platform_and_digest_mismatch_block_deployment(self):
         for image in ({"Os": "linux", "Architecture": "arm64", "RepoDigests": []},

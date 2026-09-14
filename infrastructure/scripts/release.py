@@ -22,10 +22,9 @@ TARGETS = {
         "api-gateway",
         "iot-device-service",
         "monitoring-service",
-        "realtime-analysis-service",
         "frontend",
     ),
-    "b": ("mqtt-kafka-bridge",),
+    "b": ("realtime-analysis-service", "mqtt-kafka-bridge"),
 }
 REPOSITORY = re.compile(r"docker\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*/[a-z0-9]+(?:[._-][a-z0-9]+)*")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")

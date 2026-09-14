@@ -208,10 +208,10 @@ pipeline {
         }
         stage('Deploy realtime analysis') {
             when { beforeAgent true; allOf { branch 'master'; expression { env.DEPLOY == 'true' } } }
-            agent { label 'ec2-a' }
+            agent { label 'ec2-b' }
             steps {
                 unstash 'deploy-config'
-                sh 'bash infrastructure/scripts/deploy.sh a-analysis'
+                sh 'bash infrastructure/scripts/deploy.sh b-analysis'
             }
         }
         stage('Deploy Bridge and verify pipeline') {
