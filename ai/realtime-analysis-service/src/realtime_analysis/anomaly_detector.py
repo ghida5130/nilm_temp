@@ -48,13 +48,13 @@ class RoutineMissedDetector:
                 continue   
             # TODO: 반복 이벤트 테스트가 끝나면 일별 중복 발행 방지를 다시 활성화한다.
             # 현재는 같은 (가구, 날짜, 가전, 이벤트 종류) 조합도 재발행한다.
-            # if self._tracker.was_emitted(
-            #     household_id,
-            #     activity_date,
-            #     baseline.appliance_type,
-            #     baseline.baseline_type,
-            # ):
-            #     continue
+            if self._tracker.was_emitted(
+                household_id,
+                activity_date,
+                baseline.appliance_type,
+                baseline.baseline_type,
+            ):
+                continue
 
             # 점수 계산 
             score = min(

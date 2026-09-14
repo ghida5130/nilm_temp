@@ -17,6 +17,9 @@ if CURRENT_DIR not in sys.path:
 from scenarios import (
     KST,
     RoutineMissedScenario,
+    parse_simulation_date,
+    resolve_simulation_start_time,
+    format_iso_utc,
     parse_simulation_start_time,
 )
 
@@ -106,6 +109,11 @@ def parse_args(args=None):
         type=int,
         default=0,
         help="전송 사이클 횟수 (0: 무한 연속 발행, N > 0: N회 전송 후 자동 종료, peak 기본값: 60회, routine_missed 기본값: 300회)"
+    )
+    parser.add_argument(
+        "--date", "-d",
+        default=None,
+        help="시뮬레이션 데이터 기준 날짜 (YYYY-MM-DD 형식, 예: '2026-09-10')"
     )
     parser.add_argument(
         "--start-time",
@@ -205,13 +213,25 @@ async def run_simulator(args):
         target_count = 0
 
     allow_random = not (is_peak_mode or is_missed_mode)
-    base_dt = parse_simulation_start_time(args.start_time, is_missed_mode)
+    try:
+        sim_date_parsed = parse_simulation_date(args.date) if args.date else None
+        base_dt = resolve_simulation_start_time(
+            scenario=args.scenario,
+            simulation_date=sim_date_parsed,
+            start_time_str=args.start_time,
+            routine_default_time="08:15:00"
+        )
+    except ValueError as err:
+        print(f"[오류] 시작 일시 설정 오류: {err}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"============================================================")
     if is_peak_mode:
+        start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각 (실시간)'
         print(f" NILM IoT 전력 시뮬레이터 시작 [10초 3,000W+ 피크 시연 모드]")
         print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
         print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
+        print(f" - 시작 가상 시각: {start_desc}")
         print(f" - 시연 타임라인:")
         print(f"   * T+01s ~ T+09s: 평상시 대기 상태 (약 55~65W)")
         print(f"   * T+10s ~ T+30s: [피크 경보] 전기포트(1,700W) + 인덕션(1,600W) 동시 기동 (3,300~3,500W 도달)")
@@ -233,9 +253,11 @@ async def run_simulator(args):
         print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
         print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료")
     else:
+        start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각 (실시간)'
         print(f" NILM IoT 전력 시뮬레이터 시작")
         print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
         print(f" - 대상 가구: 총 {len(houses)}개 ({houses[0]} ~ {houses[-1]})")
+        print(f" - 시작 가상 시각: {start_desc}")
         print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
         if target_count > 0:
             print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료 (총 {len(houses) * target_count}건)")
@@ -265,9 +287,9 @@ async def run_simulator(args):
             cycle_start = time.time()
             if base_dt is not None:
                 sim_dt = base_dt + timedelta(seconds=cycle)
-                now_iso = sim_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                now_iso = format_iso_utc(sim_dt)
             else:
-                now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                now_iso = format_iso_utc(datetime.now(timezone.utc))
             cycle += 1
 
             # 피크 시연 모드일 경우 타임라인 이벤트 주입
