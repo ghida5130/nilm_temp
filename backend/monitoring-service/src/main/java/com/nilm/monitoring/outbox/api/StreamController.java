@@ -35,11 +35,10 @@ public class StreamController {
             @RequestHeader(name = "Last-Event-ID", required = false) Long lastEventId) {
         String userId = currentUserService.userId();
         boolean admin = currentUserService.isAdmin();
-        SseEmitter emitter = sseHub.register(userId, admin);
+        SseEmitter emitter = sseHub.register(userId, admin, currentUserService.streamTimeoutMillis());
         if (lastEventId != null) {
             List<UiOutbox> replay = admin
-                    ? outboxRepository.findByOutboxIdGreaterThanOrderByOutboxId(
-                            lastEventId, PageRequest.of(0, 1000))
+                    ? outboxRepository.findReplayForAdmin(userId, lastEventId, PageRequest.of(0, 1000))
                     : outboxRepository.findReplayForUser(
                             userId, lastEventId, PageRequest.of(0, 1000));
             replay.forEach(event -> sseHub.send(emitter, event));

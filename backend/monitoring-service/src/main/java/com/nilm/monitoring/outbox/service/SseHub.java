@@ -17,8 +17,8 @@ public class SseHub {
     private final Map<String, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
     private final Set<String> adminUserIds = ConcurrentHashMap.newKeySet();
 
-    public SseEmitter register(String userId, boolean admin) {
-        SseEmitter emitter = new SseEmitter(0L);
+    public SseEmitter register(String userId, boolean admin, long timeoutMillis) {
+        SseEmitter emitter = new SseEmitter(timeoutMillis);
         emitters.computeIfAbsent(userId, ignored -> new CopyOnWriteArrayList<>()).add(emitter);
         if (admin) adminUserIds.add(userId);
         Runnable cleanup = () -> remove(userId, emitter);

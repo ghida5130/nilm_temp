@@ -10,6 +10,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -37,6 +43,30 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
                 "입력값 검증에 실패했습니다.", request.getRequestURI(), errors));
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ErrorResponse> handleHandlerMethodValidation(
+            HandlerMethodValidationException e, HttpServletRequest request) {
+        List<ErrorResponse.FieldErrorDetail> errors = e.getParameterValidationResults().stream()
+                .flatMap(result -> result.getResolvableErrors().stream()
+                        .map(error -> new ErrorResponse.FieldErrorDetail(
+                                result.getMethodParameter().getParameterName(), error.getDefaultMessage())))
+                .toList();
+        return ResponseEntity.badRequest().body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
+                "입력값 검증에 실패했습니다.", request.getRequestURI(), errors));
+    }
+
+    @ExceptionHandler({HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class,
+            BadRequestException.class,
+            IllegalArgumentException.class})
+    public ResponseEntity<ErrorResponse> handleBadRequest(Exception e, HttpServletRequest request) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
+                "입력값 검증에 실패했습니다.", request.getRequestURI(), List.of()));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
@@ -68,6 +98,30 @@ public class GlobalExceptionHandler {
             ConflictException e, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
                 HttpStatus.CONFLICT.value(), "CONFLICT", e.getMessage(),
+                request.getRequestURI(), List.of()));
+    }
+
+    @ExceptionHandler({ObjectOptimisticLockingFailureException.class, DataIntegrityViolationException.class})
+    public ResponseEntity<ErrorResponse> handlePersistenceConflict(
+            RuntimeException e, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
+                HttpStatus.CONFLICT.value(), "CONFLICT", "다른 요청과 충돌했습니다.",
+                request.getRequestURI(), List.of()));
+    }
+
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleServiceUnavailable(
+            ServiceUnavailableException e, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(ErrorResponse.of(
+                HttpStatus.SERVICE_UNAVAILABLE.value(), "SERVICE_UNAVAILABLE", e.getMessage(),
+                request.getRequestURI(), List.of()));
+    }
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ErrorResponse> handleTooManyRequests(
+            TooManyRequestsException e, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(ErrorResponse.of(
+                HttpStatus.TOO_MANY_REQUESTS.value(), "TOO_MANY_REQUESTS", e.getMessage(),
                 request.getRequestURI(), List.of()));
     }
 

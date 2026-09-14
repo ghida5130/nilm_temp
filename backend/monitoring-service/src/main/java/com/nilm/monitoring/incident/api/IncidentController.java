@@ -15,6 +15,7 @@ import com.nilm.monitoring.incident.repository.IncidentActionRepository;
 import com.nilm.monitoring.incident.repository.IncidentRepository;
 import com.nilm.monitoring.notification.repository.NotificationDeliveryRepository;
 import com.nilm.monitoring.security.CurrentUserService;
+import com.nilm.monitoring.subject.service.SubjectAccessService;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Sort;
@@ -34,6 +35,7 @@ public class IncidentController {
     private final HouseholdAccessRepository accessRepository;
     private final NotificationDeliveryRepository notificationRepository;
     private final CurrentUserService currentUserService;
+    private final SubjectAccessService subjectAccessService;
 
     public IncidentController(
             IncidentRepository incidentRepository,
@@ -41,12 +43,14 @@ public class IncidentController {
             IncidentActionRepository actionRepository,
             HouseholdAccessRepository accessRepository,
             NotificationDeliveryRepository notificationRepository,
+            SubjectAccessService subjectAccessService,
             CurrentUserService currentUserService) {
         this.incidentRepository = incidentRepository;
         this.eventRepository = eventRepository;
         this.actionRepository = actionRepository;
         this.accessRepository = accessRepository;
         this.notificationRepository = notificationRepository;
+        this.subjectAccessService = subjectAccessService;
         this.currentUserService = currentUserService;
     }
 
@@ -67,7 +71,9 @@ public class IncidentController {
                 .orElseThrow(() -> new ResourceNotFoundException("사건을 찾을 수 없습니다."));
         if (!currentUserService.isAdmin()
                 && !accessRepository.existsByHouseholdIdAndUserId(
-                        incident.getHouseholdId(), currentUserService.userId())) {
+                        incident.getHouseholdId(), currentUserService.userId())
+                && !subjectAccessService.canAccessHousehold(
+                        currentUserService.userId(), incident.getHouseholdId())) {
             throw new ForbiddenException("이 사건을 조회할 권한이 없습니다.");
         }
 

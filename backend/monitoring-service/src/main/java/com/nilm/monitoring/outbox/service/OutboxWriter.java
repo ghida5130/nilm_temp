@@ -22,4 +22,8 @@ public class OutboxWriter {
         return repository.save(new UiOutbox(
                 householdId, eventName, payload, Instant.now(clock)));
     }
+
+    public UiOutbox writePersonal(String userId, String eventName, JsonNode payload) {
+        return repository.save(UiOutbox.personal(userId, eventName, payload, Instant.now(clock)));
+    }
 }

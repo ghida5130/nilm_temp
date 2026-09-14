@@ -5,6 +5,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
+import java.time.Duration;
+import java.time.Instant;
 
 @Component
 public class CurrentUserService {
@@ -27,5 +29,24 @@ public class CurrentUserService {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null && authentication.getAuthorities().stream()
                 .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    public String email() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
+            return jwtAuthentication.getToken().getClaimAsString("email");
+        }
+        return null;
+    }
+
+    public long streamTimeoutMillis() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
+            Instant expiresAt = jwtAuthentication.getToken().getExpiresAt();
+            if (expiresAt != null) {
+                return Math.max(1L, Duration.between(Instant.now(), expiresAt).toMillis());
+            }
+        }
+        return 0L;
     }
 }
