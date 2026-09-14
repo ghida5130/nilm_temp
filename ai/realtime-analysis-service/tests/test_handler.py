@@ -72,7 +72,7 @@ def measurement(second: int) -> PowerMeasurement:
     )
 
 
-def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
+def test_pipeline_temporarily_republishes_event_after_buffer_is_ready() -> None:
     tracker = DailyActivityTracker()
     publisher = RecordingPublisher()
     snapshot_publisher = RecordingSnapshotPublisher()
@@ -111,9 +111,10 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     handler(measurement(2))
     handler(measurement(3))
 
-    assert len(publisher.events) == 1
+    assert len(publisher.events) == 2
     assert publisher.events[0].household_id == "H001"
     assert publisher.events[0].score == 86
+    assert publisher.events[0].event_id != publisher.events[1].event_id
     # 모델 버퍼 준비 여부와 관계없이 검증된 원본 샘플은 모두 관측 집계로 전달한다.
     assert activity_repository.record_observation.call_count == 4
     assert len(snapshot_publisher.snapshots) == 2
