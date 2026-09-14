@@ -60,29 +60,18 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_error(500, f"HTML 파일 로드 실패: {e}")
 
         elif url_path == "/api/status":
-            # 2. 현재 시뮬레이터 실행 상태 확인
+            # 2. 현재 시뮬레이터 실행 상태 확인 (원자적 스냅샷 조회)
             cfg = self.manager.get_connection_config() if hasattr(self.manager, "get_connection_config") else {
                 "host": simulator.DEFAULT_BROKER_HOST,
                 "port": simulator.DEFAULT_BROKER_PORT,
                 "tls_enabled": False
             }
             tls_desc = " (TLS)" if cfg.get("tls_enabled") else ""
-            resp_data = {
-                "is_running": self.manager.is_running,
-                "current_mode": self.manager.current_mode,
-                "cycle_count": self.manager.cycle_count,
-                "broker": f"{cfg['host']}:{cfg['port']}{tls_desc}",
-                "last_metrics": self.manager.last_metrics,
-                "simulation_date": self.manager.simulation_date if self.manager.is_running else None,
-                "resolved_start_time": self.manager.resolved_start_time if self.manager.is_running else None,
-            }
-            content = json.dumps(resp_data).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Content-Length", str(len(content)))
-            self.end_headers()
-            self.wfile.write(content)
+
+            status_snap = self.manager.get_status()
+            status_snap["broker"] = f"{cfg['host']}:{cfg['port']}{tls_desc}"
+
+            self.send_json(200, status_snap)
 
         elif url_path == "/api/stream":
             # 3. Server-Sent Events (SSE) 실시간 데이터 스트리밍
@@ -210,17 +199,72 @@ class RequestHandler(BaseHTTPRequestHandler):
             if not ok:
                 return
 
-            scenario = params.get("scenario", "peak")
-            house = params.get("house", "H001")
+            has_households = ("households" in params)
+            has_single_fields = ("house" in params or "scenario" in params)
 
-            # 시나리오 허용 목록 검증 (peak, routine_missed, random, manual)
-            if scenario not in ALLOWED_SCENARIOS:
-                self.send_error_json(400, "BAD_REQUEST", f"지원하지 않는 시나리오입니다: '{scenario}'. 허용 목록: {sorted(ALLOWED_SCENARIOS)}")
+            # house/scenario 단일 지정과 households 다중 지정 동시 입력 거절
+            if has_households and has_single_fields:
+                self.send_error_json(400, "BAD_REQUEST", "house/scenario 단일 지정과 households 다중 지정은 동시에 전달할 수 없습니다.")
                 return
 
-            if not isinstance(house, str) or house not in simulator.DEFAULT_HOUSES:
-                self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 house ID입니다: '{house}'. 허용 목록: {simulator.DEFAULT_HOUSES}")
-                return
+            if has_households:
+                raw_households = params["households"]
+                if not isinstance(raw_households, list):
+                    self.send_error_json(400, "BAD_REQUEST", "households 필드는 배열(list)이어야 합니다.")
+                    return
+                if len(raw_households) == 0:
+                    self.send_error_json(400, "BAD_REQUEST", "households 배열은 비어있을 수 없습니다.")
+                    return
+                if len(raw_households) > len(simulator.DEFAULT_HOUSES):
+                    self.send_error_json(400, "BAD_REQUEST", f"최대 가구 수({len(simulator.DEFAULT_HOUSES)}개)를 초과할 수 없습니다.")
+                    return
+
+                seen_houses = set()
+                normalized_households = []
+                allowed_item_keys = {"house", "scenario"}
+                for item in raw_households:
+                    if not isinstance(item, dict):
+                        self.send_error_json(400, "BAD_REQUEST", "households 배열의 각 원소는 객체(dict)여야 합니다.")
+                        return
+                    if "house" not in item or "scenario" not in item:
+                        self.send_error_json(400, "BAD_REQUEST", "households 원소에는 'house'와 'scenario' 필드가 필수입니다.")
+                        return
+                    extra_keys = set(item.keys()) - allowed_item_keys
+                    if extra_keys:
+                        self.send_error_json(400, "BAD_REQUEST", f"households 원소에 허용되지 않은 필드가 포함되어 있습니다: {sorted(extra_keys)}")
+                        return
+
+                    h_id = item["house"]
+                    sc = item["scenario"]
+                    if not isinstance(h_id, str) or not isinstance(sc, str):
+                        self.send_error_json(400, "BAD_REQUEST", "house와 scenario는 문자열이어야 합니다.")
+                        return
+                    if h_id not in simulator.DEFAULT_HOUSES:
+                        self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 house ID입니다: '{h_id}'. 허용 목록: {simulator.DEFAULT_HOUSES}")
+                        return
+                    if sc not in ALLOWED_SCENARIOS:
+                        self.send_error_json(400, "BAD_REQUEST", f"지원하지 않는 시나리오입니다: '{sc}'. 허용 목록: {sorted(ALLOWED_SCENARIOS)}")
+                        return
+                    if h_id in seen_houses:
+                        self.send_error_json(400, "BAD_REQUEST", f"중복된 가구 ID가 존재합니다: '{h_id}'")
+                        return
+
+                    seen_houses.add(h_id)
+                    normalized_households.append({"house": h_id, "scenario": sc})
+
+                normalized_households = sorted(normalized_households, key=lambda x: x["house"])
+            else:
+                house = params.get("house", "H001")
+                scenario = params.get("scenario", "peak")
+
+                if not isinstance(house, str) or house not in simulator.DEFAULT_HOUSES:
+                    self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 house ID입니다: '{house}'. 허용 목록: {simulator.DEFAULT_HOUSES}")
+                    return
+                if not isinstance(scenario, str) or scenario not in ALLOWED_SCENARIOS:
+                    self.send_error_json(400, "BAD_REQUEST", f"지원하지 않는 시나리오입니다: '{scenario}'. 허용 목록: {sorted(ALLOWED_SCENARIOS)}")
+                    return
+
+                normalized_households = [{"house": house, "scenario": scenario}]
 
             # simulation_date 선택 필드 엄격 검증
             simulation_date = None
@@ -244,11 +288,22 @@ class RequestHandler(BaseHTTPRequestHandler):
                     return
 
             try:
-                started_info = self.manager.start(scenario=scenario, house=house, simulation_date=simulation_date)
+                if has_households:
+                    started_info = self.manager.start(
+                        simulation_date=simulation_date,
+                        households=normalized_households
+                    )
+                else:
+                    started_info = self.manager.start(
+                        scenario=scenario,
+                        house=house,
+                        simulation_date=simulation_date
+                    )
                 self.send_json(200, {
                     "status": "started",
-                    "scenario": scenario,
-                    "house": house,
+                    "scenario": started_info.get("scenario"),
+                    "house": started_info.get("house"),
+                    "households": started_info.get("households"),
                     "simulation_date": started_info.get("simulation_date"),
                     "resolved_start_time": started_info.get("resolved_start_time")
                 })
@@ -265,6 +320,36 @@ class RequestHandler(BaseHTTPRequestHandler):
             status_code = 200 if stopped else 503
             resp = {"status": "stopped" if stopped else "stop_timeout"}
             self.send_json(status_code, resp)
+
+        elif url_path == "/api/pause":
+            # 3. 시뮬레이션 일시정지
+            try:
+                res = self.manager.pause()
+                self.send_json(200, res)
+            except ModeConflictError as err:
+                self.send_error_json(409, "INVALID_MODE", str(err))
+            except Exception as err:
+                self.send_error_json(500, "PAUSE_FAILED", str(err))
+
+        elif url_path == "/api/resume":
+            # 4. 시뮬레이션 재개
+            try:
+                res = self.manager.resume()
+                self.send_json(200, res)
+            except ModeConflictError as err:
+                self.send_error_json(409, "INVALID_MODE", str(err))
+            except Exception as err:
+                self.send_error_json(500, "RESUME_FAILED", str(err))
+
+        elif url_path == "/api/reset":
+            # 5. 시뮬레이터 완전 초기화
+            try:
+                res = self.manager.reset()
+                self.send_json(200, res)
+            except RuntimeError as err:
+                self.send_error_json(503, "RESET_FAILED", str(err))
+            except Exception as err:
+                self.send_error_json(500, "RESET_FAILED", str(err))
 
         else:
             self.send_error(404, "Not Found")
@@ -287,6 +372,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             if not isinstance(house, str) or not isinstance(device, str) or type(enabled) is not bool:
                 self.send_error_json(400, "BAD_REQUEST", "house와 device는 문자열, enabled는 정확히 bool 타입이어야 합니다.")
+                return
+
+            if house not in simulator.DEFAULT_HOUSES:
+                self.send_error_json(400, "BAD_REQUEST", f"지원하지 않는 가구 ID입니다: '{house}'")
                 return
 
             if device not in simulator.DEVICE_PROFILES:

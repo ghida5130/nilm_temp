@@ -475,6 +475,31 @@
       margin-bottom: 16px;
       width: 100%;
     }
+
+    .btn-execute {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #ffffff;
+      border-color: rgba(16, 185, 129, 0.4);
+      box-shadow: 0 2px 10px rgba(16, 185, 129, 0.35);
+      font-weight: 700;
+    }
+    .btn-execute:hover:not(:disabled) {
+      background: linear-gradient(135deg, #34d399, #10b981);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(16, 185, 129, 0.5);
+    }
+
+    .badge-hh {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-hh-waiting { background: #334155; color: #94a3b8; }
+    .badge-hh-running { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
+    .badge-hh-completed { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+    .badge-hh-stopped { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
   </style>
 </head>
 
@@ -484,23 +509,14 @@
   <div class="header">
     <div class="title">
       <div style="display: flex; align-items: center; gap: 12px;">
-        <h1>NILM 실시간 전력 시뮬레이터 & 피크 시연 대시보드</h1>
+        <h1>NILM 실시간 전력 시뮬레이터 & 다중 가구 대시보드</h1>
         <span id="serverIndicator" class="badge-status status-running">연결 확인 중...</span>
       </div>
-      <p>스마트홈 메인 분전반 교류 전력(P, Q, S, PF, V, I) 실시간 생성 및 시연 인터페이스</p>
+      <p>스마트홈 메인 분전반 교류 전력(P, Q, S, PF, V, I) 실시간 다중 가구 동시 생성 및 시연 인터페이스</p>
     </div>
     <div class="controls">
-      <button id="btnPeakDemo" class="btn btn-peak" onclick="startPeakDemo()">
-        10초 피크 시연 시작 (3,000W+)
-      </button>
-      <button id="btnMissedDemo" class="btn btn-missed" onclick="startRoutineMissedDemo()">
-        루틴 누락 시연 시작 (08:10+)
-      </button>
-      <button id="btnRandomDemo" class="btn btn-random" onclick="startRandomSimulation()">
-        연속 실시간 시뮬레이션
-      </button>
-      <button id="btnManualDemo" class="btn btn-manual" onclick="startManualDemo()" disabled>
-        가전 수동 제어
+      <button id="btnStartSimulation" class="btn btn-execute" onclick="startMultiSimulation()">
+        ▶ 설정한 가구 실행
       </button>
       <button id="btnPause" class="btn btn-secondary" onclick="togglePause()" disabled>
         일시정지
@@ -512,6 +528,12 @@
         <label for="simDateInput" style="font-size: 0.85rem; font-weight: 600; color: #94a3b8;">기준 날짜:</label>
         <input type="date" id="simDateInput" class="speed-select" style="padding: 6px 10px;" />
       </div>
+      <div class="observe-control-group" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(56, 189, 248, 0.1); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.3);">
+        <label for="observedHouseSelect" style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">관찰 가구:</label>
+        <select id="observedHouseSelect" class="speed-select" style="padding: 4px 8px; font-weight: bold;" onchange="changeObservedHouse(this.value)">
+          <option value="H001">H001</option>
+        </select>
+      </div>
       <select id="speedSelect" class="speed-select" onchange="changeSpeed(this.value)">
         <option value="1000">1x (실시간 1.0초)</option>
         <option value="500">2x 배속 (0.5초)</option>
@@ -521,9 +543,46 @@
     </div>
   </div>
 
+  <!-- 다중 가구 시뮬레이션 설정 카드 (H001 ~ H010) -->
+  <div class="chart-container" id="householdConfigCard" style="padding: 16px 20px; margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <div class="chart-title" style="display: flex; align-items: center; gap: 8px;">
+          <span>가구별 시나리오 설정</span>
+          <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">(H001 ~ H010)</span>
+        </div>
+        <div class="chart-desc">각 가구의 실행 여부와 시나리오를 선택하세요. 상단의 [▶ 설정한 가구 실행] 버튼으로 동시 시작됩니다.</div>
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+        <span style="font-size: 0.8rem; color: #94a3b8; margin-right: 4px; font-weight: 600;">프리셋:</span>
+        <button type="button" id="btnPresetPeak" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('peak_single')">H001 피크 단독</button>
+        <button type="button" id="btnPresetMissed" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('missed_single')">H001 루틴누락 단독</button>
+        <button type="button" id="btnPresetManual" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('manual_single')">H001 수동제어 단독</button>
+        <button type="button" id="btnPresetMulti" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('comprehensive')">종합 시연 (H001~H004)</button>
+        <button type="button" id="btnPresetAllRandom" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('all_random')">전체 랜덤 (10가구)</button>
+      </div>
+    </div>
+    <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.84rem;">
+        <thead>
+          <tr>
+            <th style="width: 60px; text-align: center;">실행</th>
+            <th style="width: 100px;">가구</th>
+            <th style="width: 200px;">시나리오</th>
+            <th style="width: 120px;">상태</th>
+            <th>최신 전력</th>
+          </tr>
+        </thead>
+        <tbody id="householdTableBody">
+          <!-- JS에서 H001 ~ H010 행 동적 생성 -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- 시연 진행 안내 배너 -->
   <div id="timelineNotice" class="timeline-notice">
-    [준비 완료] 상단의 <strong>[10초 피크 시연 시작 (3,000W+)]</strong> 버튼을 누르면 실시간 시연 시나리오가 시작됩니다.
+    [준비 완료] 가구별 시나리오를 확인한 후 상단의 <strong>[▶ 설정한 가구 실행]</strong> 버튼을 누르면 동시 발행이 시작됩니다.
   </div>
 
   <!-- 2. 실시간 핵심 통계 카드 -->
@@ -554,7 +613,7 @@
 
   <!-- 3. 실시간 가전 기동 상태 칩 패널 -->
   <div class="appliance-bar">
-    <div class="appliance-bar-title">6대 타겟 가전 실시간 동작 상태 (수동 제어 모드 시 클릭하여 ON/OFF)</div>
+    <div class="appliance-bar-title">6대 타겟 가전 실시간 동작 상태 (관찰 가구: <span id="observedHouseBadge" style="color:#38bdf8; font-weight:700;">H001</span>) - 수동 제어(manual) 가구일 때 클릭하여 ON/OFF</div>
     <div class="appliance-grid">
       <button type="button" class="app-chip" id="chip_kettle" aria-pressed="false" disabled onclick="toggleDevice('kettle')">
         <span class="name">전기포트</span>
@@ -648,7 +707,25 @@
       vacuum_cleaner: { name_ko: "진공청소기", nominal_w: [700, 950], inrush_factor: 1.50, pf_nominal: [0.75, 0.85] }
     };
 
-    // 상태 관리
+    // 다중 가구 지원 상태 관리
+    const DEFAULT_HOUSES = ["H001", "H002", "H003", "H004", "H005", "H006", "H007", "H008", "H009", "H010"];
+    const latestMetricsByHouse = new Map(); // house -> 최신 SSE metrics 객체
+    const historyByHouse = new Map();       // house -> { times: [], activeP: [], ... }
+    const maxPowerByHouse = new Map();      // house -> 최고 소비전력 기록 (가구별 독립 관리)
+    let observedHouse = "H001";             // 현재 대시보드에서 관찰 및 차트 렌더링할 대상 가구
+    let activeConfiguredHouseholds = [];    // 현재 실행 시작된 가구 목록
+
+    function getOrCreateHistory(house) {
+      if (!historyByHouse.has(house)) {
+        historyByHouse.set(house, {
+          times: [], activeP: [], reactiveP: [], apparentS: [],
+          currents: [], pfs: [], voltages: [], activeLabels: []
+        });
+      }
+      return historyByHouse.get(house);
+    }
+
+    // 상태 관리 (로컬/단일 호환)
     let houseEnv = { voltage: 220.0, base_p: 55.0, fridge_p: 0.0, fridge_active: false, fridge_timer: 60 };
     let deviceStates = {};
     function initDevices() {
@@ -660,17 +737,187 @@
 
     // 시뮬레이션 제어 변수
     let timerId = null;
-    let currentMode = null; // 'peak', 'routine_missed', 'random', 'manual'
+    let currentMode = null; // 'peak', 'routine_missed', 'random', 'manual', 'multi'
     let currentSec = 0;
     let intervalMs = 1000;
     let isPaused = false;
     let maxPowerRecorded = 0.0;
+    let isControlsEnabled = true;
 
     // 수동 제어 모드 및 디바이스 상태 관리 (Map 기반 pending 추적)
     let latestDeviceStates = {};
     const pendingDeviceRequests = new Map(); // device -> { enabled: boolean, timeoutId: number }
     let hasReceivedManualSse = false;
     const PENDING_TIMEOUT_MS = 5000;
+
+    // ----------------------------------------------------
+    // 가구 설정 테이블 동적 렌더링 및 프리셋 관리
+    // ----------------------------------------------------
+    function renderHouseholdTable() {
+      const tbody = document.getElementById('householdTableBody');
+      if (!tbody) return;
+      tbody.replaceChildren();
+
+      const defaultScenarios = {
+        H001: 'peak',
+        H002: 'routine_missed',
+        H003: 'random',
+        H004: 'manual'
+      };
+
+      DEFAULT_HOUSES.forEach(house => {
+        const tr = document.createElement('tr');
+        tr.id = `row_${house}`;
+
+        // 1. 실행 체크박스 (H001 기본 체크)
+        const tdChk = document.createElement('td');
+        tdChk.style.textAlign = 'center';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox';
+        chk.id = `chk_${house}`;
+        chk.checked = (house === 'H001');
+        tdChk.appendChild(chk);
+        tr.appendChild(tdChk);
+
+        // 2. 가구 ID
+        const tdHouse = document.createElement('td');
+        tdHouse.textContent = house;
+        tdHouse.style.fontWeight = '700';
+        tdHouse.style.color = '#38bdf8';
+        tr.appendChild(tdHouse);
+
+        // 3. 시나리오 선택
+        const tdScenario = document.createElement('td');
+        const sel = document.createElement('select');
+        sel.id = `scenario_${house}`;
+        sel.className = 'speed-select';
+        sel.style.padding = '3px 8px';
+        sel.style.fontSize = '0.8rem';
+        const scenariosList = [
+          { val: 'peak', text: 'peak (피크 부하 시연)' },
+          { val: 'routine_missed', text: 'routine_missed (루틴 누락 시연)' },
+          { val: 'random', text: 'random (랜덤 부하 시뮬레이션)' },
+          { val: 'manual', text: 'manual (가전 수동 제어)' }
+        ];
+        scenariosList.forEach(opt => {
+          const optEl = document.createElement('option');
+          optEl.value = opt.val;
+          optEl.textContent = opt.text;
+          sel.appendChild(optEl);
+        });
+        sel.value = defaultScenarios[house] || 'random';
+        tdScenario.appendChild(sel);
+        tr.appendChild(tdScenario);
+
+        // 4. 상태 뱃지
+        const tdStatus = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.id = `status_badge_${house}`;
+        badge.className = 'badge-hh badge-hh-waiting';
+        badge.textContent = '대기';
+        tdStatus.appendChild(badge);
+        tr.appendChild(tdStatus);
+
+        // 5. 최신 전력
+        const tdPower = document.createElement('td');
+        tdPower.id = `power_val_${house}`;
+        tdPower.style.fontFamily = 'monospace';
+        tdPower.textContent = '-';
+        tr.appendChild(tdPower);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function applyPreset(type) {
+      if (!isControlsEnabled) return;
+      DEFAULT_HOUSES.forEach(house => {
+        const chk = document.getElementById(`chk_${house}`);
+        const sel = document.getElementById(`scenario_${house}`);
+        if (!chk || !sel) return;
+
+        if (type === 'peak_single') {
+          chk.checked = (house === 'H001');
+          if (house === 'H001') sel.value = 'peak';
+        } else if (type === 'missed_single') {
+          chk.checked = (house === 'H001');
+          if (house === 'H001') sel.value = 'routine_missed';
+        } else if (type === 'manual_single') {
+          chk.checked = (house === 'H001');
+          if (house === 'H001') sel.value = 'manual';
+        } else if (type === 'comprehensive') {
+          chk.checked = ['H001', 'H002', 'H003', 'H004'].includes(house);
+          if (house === 'H001') sel.value = 'peak';
+          if (house === 'H002') sel.value = 'routine_missed';
+          if (house === 'H003') sel.value = 'random';
+          if (house === 'H004') sel.value = 'manual';
+        } else if (type === 'all_random') {
+          chk.checked = true;
+          sel.value = 'random';
+        }
+      });
+    }
+
+    function setTableAndControlsEnabled(enabled) {
+      isControlsEnabled = enabled;
+      DEFAULT_HOUSES.forEach(house => {
+        const chk = document.getElementById(`chk_${house}`);
+        const sel = document.getElementById(`scenario_${house}`);
+        if (chk) chk.disabled = !enabled;
+        if (sel) sel.disabled = !enabled;
+      });
+      const btnStart = document.getElementById('btnStartSimulation');
+      if (btnStart) btnStart.disabled = !enabled;
+
+      ['btnPresetPeak', 'btnPresetMissed', 'btnPresetManual', 'btnPresetMulti', 'btnPresetAllRandom'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = !enabled;
+      });
+
+      setSimulationDateInputEnabled(enabled);
+    }
+
+    function ensureHouseInObservedSelect(house) {
+      const select = document.getElementById('observedHouseSelect');
+      if (!select) return;
+      const options = select.options || select.children || [];
+      let found = false;
+      for (let i = 0; i < options.length; i++) {
+        if (options[i].value === house) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        const opt = document.createElement('option');
+        opt.value = house;
+        opt.textContent = house;
+        select.appendChild(opt);
+      }
+    }
+
+    function updateHouseholdTableRow(house, status, sec, totalP) {
+      const badge = document.getElementById(`status_badge_${house}`);
+      if (badge) {
+        if (status === 'completed') {
+          badge.className = 'badge-hh badge-hh-completed';
+          badge.textContent = `완료 (${sec}s)`;
+        } else if (status === 'running') {
+          badge.className = 'badge-hh badge-hh-running';
+          badge.textContent = `실행중 (${sec}s)`;
+        } else if (status === 'stopped') {
+          badge.className = 'badge-hh badge-hh-stopped';
+          badge.textContent = '정지됨';
+        } else {
+          badge.className = 'badge-hh badge-hh-waiting';
+          badge.textContent = '대기';
+        }
+      }
+      const pCell = document.getElementById(`power_val_${house}`);
+      if (pCell && typeof totalP === 'number') {
+        pCell.textContent = `${totalP.toFixed(1)} W`;
+      }
+    }
 
     function clearAllPendingRequests() {
       pendingDeviceRequests.forEach((info) => {
@@ -692,10 +939,14 @@
     }
 
     function isDeviceControllable(device) {
+      const curMetrics = latestMetricsByHouse.get(observedHouse);
+      const isObservedManual = curMetrics ? (curMetrics.scenario === "manual" || curMetrics.mode === "manual") : false;
+      const isObservedRunning = curMetrics ? (curMetrics.status === "running") : false;
+
       return isServerConnected &&
-             currentMode === "manual" &&
+             isObservedManual &&
+             isObservedRunning &&
              !isPaused &&
-             hasReceivedManualSse &&
              !pendingDeviceRequests.has(device);
     }
 
@@ -792,7 +1043,7 @@
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            house: 'H001',
+            house: observedHouse,
             device: device,
             enabled: enabled
           })
@@ -804,22 +1055,20 @@
             const errData = await res.json();
             if (errData && errData.message) errMsg = errData.message;
           } catch (_) {}
-          // HTTP 오류 시 즉시 pending 제거하고 마지막 SSE 상태로 복원
           clearPendingRequest(device);
           updateApplianceButtonsState();
           renderDeviceState(device);
           showNoticeError(`[가전 제어 오류] ${errMsg}`);
         }
-        // 중요: HTTP 200 성공 응답만으로는 pending을 제거하지 않으며, 상태 UI를 확정하지 않음!
-        // 목표 상태의 SSE 패킷이 도착할 때 processServerMetrics()에서 pending이 완료 처리됨.
       } catch (err) {
-        // 네트워크 오류 시 즉시 pending 제거하고 마지막 SSE 상태로 복원
         clearPendingRequest(device);
         updateApplianceButtonsState();
         renderDeviceState(device);
         showNoticeError(`[가전 제어 네트워크 오류] ${err.message || err}`);
       }
     }
+
+
 
     // XSS 방지: textContent 및 안전한 DOM 조립 사용
     function showNoticeError(msg) {
@@ -839,7 +1088,7 @@
 
     // 시계열 데이터 버퍼
     const historyData = {
-      times: [], activeP: [], reactiveP: [], apparentP: [],
+      times: [], activeP: [], reactiveP: [], apparentS: [],
       currents: [], pfs: [], voltages: [], activeLabels: []
     };
 
@@ -1093,7 +1342,7 @@
       historyData.times.push(metrics.sec);
       historyData.activeP.push(metrics.totalP.toFixed(1));
       historyData.reactiveP.push(metrics.totalQ.toFixed(1));
-      historyData.apparentP.push(metrics.apparentS.toFixed(1));
+      historyData.apparentS.push(metrics.apparentS.toFixed(1));
       historyData.currents.push(metrics.currentA.toFixed(2));
       historyData.pfs.push(metrics.pf.toFixed(3));
       historyData.voltages.push(metrics.voltage.toFixed(1));
@@ -1285,26 +1534,18 @@
       updateApplianceButtonsState();
     }
 
-    // 서버에서 날아온 실제 MQTT 계측치 렌더링
-    function processServerMetrics(m) {
+    // 특정 가구의 metrics로 대시보드 통계 카드 및 상태 배너 갱신
+    function renderObservedHouseMetrics(m) {
+      if (!m) return;
       currentSec = m.sec;
 
-      // 데이터 버퍼 저장
-      historyData.times.push(m.sec);
-      historyData.activeP.push(m.totalP.toFixed(1));
-      historyData.reactiveP.push(m.totalQ.toFixed(1));
-      historyData.apparentP.push(m.apparentS.toFixed(1));
-      historyData.currents.push(m.currentA.toFixed(2));
-      historyData.pfs.push(m.pf.toFixed(3));
-      historyData.voltages.push(m.voltage.toFixed(1));
-      const activeLabelsStr = (m.activeNames && Array.isArray(m.activeNames)) ? m.activeNames.join(', ') : '';
-      historyData.activeLabels.push(activeLabelsStr || '대기');
-
-      if (m.totalP > maxPowerRecorded) {
-        maxPowerRecorded = m.totalP;
+      const house = m.house || observedHouse;
+      const curMax = maxPowerByHouse.get(house) || 0.0;
+      if (m.totalP > curMax) {
+        maxPowerByHouse.set(house, m.totalP);
       }
+      const displayMax = maxPowerByHouse.get(house) || 0.0;
 
-      // 통계 카드 갱신
       document.getElementById('valPower').textContent = m.totalP.toFixed(1);
       document.getElementById('valApparent').textContent = m.apparentS.toFixed(1);
       document.getElementById('valCurrent').textContent = m.currentA.toFixed(2);
@@ -1312,67 +1553,61 @@
       document.getElementById('valPf').textContent = m.pf.toFixed(3);
       document.getElementById('valReactive').textContent = m.totalQ.toFixed(1);
       document.getElementById('valTime').textContent = `T+${String(m.sec).padStart(2, '0')}s`;
-      document.getElementById('valMaxPower').textContent = `${maxPowerRecorded.toFixed(1)} W`;
+      document.getElementById('valMaxPower').textContent = `${displayMax.toFixed(1)} W`;
 
-      // 상태 배지 및 스타일
       const cardPower = document.getElementById('cardPower');
       const badgeStatus = document.getElementById('badgeStatus');
       const timelineNotice = document.getElementById('timelineNotice');
 
-      if (m.mode === 'manual') {
-        hasReceivedManualSse = true;
-      }
-
+      const scenario = m.scenario || m.mode;
+      const status = m.status || 'running';
       const timeLabel = getSimulationDateTimeLabel(m);
 
-      if (m.totalP >= 3000.0) {
+      if (status === 'completed') {
+        badgeStatus.className = "badge-status status-normal";
+        badgeStatus.textContent = `${m.house} 시연 완료 (${m.sec}s)`;
+        timelineNotice.style.color = "#4ade80";
+        timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.4)";
+        timelineNotice.innerHTML = `<strong>[가구 ${m.house} 완료]</strong> ${timeLabel}T+${m.sec}s: 시연 목표 달성 후 정상 완료되었습니다.`;
+      } else if (m.totalP >= 3000.0) {
         cardPower.className = "stat-card alert-card";
         badgeStatus.className = "badge-status status-peak";
-        badgeStatus.textContent = "피크 경보 (3,000W+ 초과!)";
+        badgeStatus.textContent = `${m.house} 피크 경보 (3,000W+ 초과!)`;
         timelineNotice.style.color = "#f87171";
         timelineNotice.style.borderColor = "#ef4444";
-        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 소비전력 <strong>${m.totalP.toFixed(1)} W</strong> - Mosquitto 및 Kafka로 피크 데이터가 실시간 전송 중입니다!`;
-      } else if (m.mode === 'manual') {
+        timelineNotice.innerHTML = `<strong>[피크 발생]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 소비전력 <strong>${m.totalP.toFixed(1)} W</strong> - 3,000W+ 초과 피크 발생!`;
+      } else if (scenario === 'manual') {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-running";
-        badgeStatus.textContent = "수동 제어 모드 (MQTT 발행)";
+        badgeStatus.textContent = `${m.house} 수동 제어 모드`;
         timelineNotice.style.color = "#a78bfa";
         timelineNotice.style.borderColor = "rgba(167, 139, 250, 0.4)";
         const actDevs = (m.activeNames && m.activeNames.length > 0) ? m.activeNames.join(', ') : "가전 대기(OFF)";
-        timelineNotice.innerHTML = `<strong>[가전 수동 제어]</strong> ${timeLabel}T+${m.sec}s: 총 전력 <strong>${m.totalP.toFixed(1)} W</strong> (가전: ${actDevs}) - 가전 버튼을 클릭하여 ON/OFF를 제어하세요.`;
-      } else if (m.totalP >= 1000.0) {
-        cardPower.className = "stat-card";
-        badgeStatus.className = "badge-status status-running";
-        badgeStatus.textContent = "가전 가동 중 (MQTT 발행)";
-        timelineNotice.style.color = "#38bdf8";
-        timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.3)";
-        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 소비전력 ${m.totalP.toFixed(1)} W (가전: ${m.activeNames.join(', ')})`;
-      } else if (m.mode === 'routine_missed') {
+        timelineNotice.innerHTML = `<strong>[가전 수동 제어]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 총 전력 <strong>${m.totalP.toFixed(1)} W</strong> (가전: ${actDevs})`;
+      } else if (scenario === 'routine_missed') {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-missed";
-
         if (m.sec < 299) {
-          badgeStatus.textContent = `루틴 누락 감시 (${m.sec}/299s)`;
+          badgeStatus.textContent = `${m.house} 루틴 누락 감시 (${m.sec}/299s)`;
           timelineNotice.style.color = "#fbbf24";
           timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
-          timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 전자레인지 미사용 대기전력 <strong>${m.totalP.toFixed(1)} W</strong> (AI 버퍼 누적: ${m.sec}/299초)`;
-        } else if (m.sec === 299) {
-          badgeStatus.textContent = "이상치 감지 트리거 (299s)";
+          timelineNotice.innerHTML = `<strong>[루틴 감시]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 전자레인지 미사용 대기전력 <strong>${m.totalP.toFixed(1)} W</strong> (AI 버퍼: ${m.sec}/299s)`;
+        } else {
+          badgeStatus.textContent = `${m.house} 이상치 감지 조건 충족 (299s+)`;
           timelineNotice.style.color = "#ef4444";
           timelineNotice.style.borderColor = "#ef4444";
-          timelineNotice.innerHTML = `<strong>[실제 이상치 발생!]</strong> ${timeLabel}T+${m.sec}s: 299초 버퍼 완충! 실시간 분석 서비스가 <strong>ROUTINE_MISSED</strong>를 Kafka 'analysis.event.v1'에 발행했습니다!`;
-        } else {
-          badgeStatus.textContent = "이상 상태 유지 (300s 완주)";
-          timelineNotice.innerHTML = `<strong>[시연 완료]</strong> ${timeLabel}T+${m.sec}s: 300초 데이터 전송 완료. Kafka UI에서 이상치 이벤트를 확인하세요.`;
+          timelineNotice.innerHTML = `<strong>[이상치 발생]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 299초 버퍼 충족 완료!`;
         }
       } else {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-normal";
-        badgeStatus.textContent = "정상 대기 (MQTT 발행)";
-        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 대기전력 상태 (카프카 토픽 power.raw.v1로 실시간 전송 중)`;
+        badgeStatus.textContent = `${m.house} 실시간 발행 중`;
+        timelineNotice.style.color = "#38bdf8";
+        timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.3)";
+        timelineNotice.innerHTML = `<strong>[MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 전력 ${m.totalP.toFixed(1)} W`;
       }
 
-      // 이벤트 로그 기록
+      // 이벤트 로그 기록 (현재 관찰 가구인 경우에만 추가)
       if (m.eventNoticeText) {
         let evType = "상태 안내";
         if (m.eventNoticeText.includes("피크 발생")) evType = "피크 경보";
@@ -1380,77 +1615,151 @@
         else if (m.eventNoticeText.includes("정상 복귀")) evType = "정상 복귀";
         else if (m.eventNoticeText.includes("이상치") || m.eventNoticeText.includes("버퍼 충족")) evType = "이상치 감지";
         else if (m.eventNoticeText.includes("루틴 검증")) evType = "루틴 감시";
-        addEventRow(m.sec, evType, m.activeNames.join(', ') || (m.mode === 'routine_missed' ? '전자레인지 미가동' : '가전 정지'), `${m.totalP.toFixed(0)} W`, m.eventNoticeText);
+        addEventRow(m.sec, `[${m.house}] ${evType}`, m.activeNames.join(', ') || (scenario === 'routine_missed' ? '전자레인지 미가동' : '가전 정지'), `${m.totalP.toFixed(0)} W`, m.eventNoticeText);
       }
 
-      // 6대 가전 칩/버튼 갱신 (SSE로 pending 완료 처리)
+      // 가전 상태 칩 갱신
       if (m.devices && typeof m.devices === 'object') {
         latestDeviceStates = m.devices;
         Object.keys(DEVICE_PROFILES).forEach(dev => {
           const devInfo = m.devices[dev] || {};
           const pendingInfo = pendingDeviceRequests.get(dev);
 
-          // SSE의 enabled 상태가 요청했던 목표 enabled와 일치하면 pending 제거 및 타임아웃 해제
           if (pendingInfo && devInfo.enabled === pendingInfo.enabled) {
             clearPendingRequest(dev);
           }
-
-          // 동일 렌더링 사이클에서 최종 상태 표시
-          renderDeviceState(dev, m.mode, m.totalP);
-        });
-      } else {
-        // Fallback: 기존 activeNames 한글 비교 방식
-        Object.keys(DEVICE_PROFILES).forEach(dev => {
-          const chip = document.getElementById(`chip_${dev}`);
-          const stLabel = document.getElementById(`state_${dev}`);
-          if (!chip || !stLabel) return;
-
-          const devKo = DEVICE_PROFILES[dev].name_ko;
-          const isRunning = (m.activeNames || []).some(name => name.includes(devKo));
-
-          if (isRunning) {
-            const isPeakApp = (dev === "kettle" || dev === "induction") && m.totalP >= 3000.0;
-            chip.className = isPeakApp ? "app-chip active peak-app" : "app-chip active";
-            chip.setAttribute("aria-pressed", "true");
-            stLabel.textContent = "ON (가동 중)";
-          } else if (m.mode === 'routine_missed' && dev === 'microwave') {
-            chip.className = "app-chip missed-target";
-            chip.setAttribute("aria-pressed", "false");
-            stLabel.textContent = "미가동 (이상 감시)";
-          } else {
-            chip.className = "app-chip";
-            chip.setAttribute("aria-pressed", "false");
-            stLabel.textContent = "OFF";
-          }
+          renderDeviceState(dev, scenario, m.totalP);
         });
       }
-
       updateApplianceButtonsState();
+    }
 
-      // Chart.js 갱신
-      const label = `${m.sec}s`;
-      chartMain.data.labels.push(label);
-      chartMain.data.datasets[0].data.push(m.totalP);
-      chartMain.data.datasets[1].data.push(m.apparentS);
-      chartMain.data.datasets[2].data.push(m.totalQ);
-      chartMain.update('none');
+    // 서버에서 날아온 실제 MQTT 계측치 SSE 렌더링
+    function processServerMetrics(m) {
+      const house = m.house || "H001";
+      latestMetricsByHouse.set(house, m);
 
-      chartSecondary.data.labels.push(label);
-      chartSecondary.data.datasets[0].data.push(m.currentA);
-      chartSecondary.data.datasets[1].data.push(m.pf);
-      chartSecondary.update('none');
-
-      if (currentMode === 'peak' && m.sec >= 60) {
-        if (evtSource) { evtSource.close(); evtSource = null; }
-        document.getElementById('btnPause').disabled = true;
-        badgeStatus.textContent = "시연 완료 (60s 완주)";
-        setSimulationDateInputEnabled(true);
-      } else if (currentMode === 'routine_missed' && m.sec >= 300) {
-        if (evtSource) { evtSource.close(); evtSource = null; }
-        document.getElementById('btnPause').disabled = true;
-        badgeStatus.textContent = "시연 완료 (300s 완주)";
-        setSimulationDateInputEnabled(true);
+      // 가구별 최고 전력 독립 갱신
+      const curMax = maxPowerByHouse.get(house) || 0.0;
+      if (m.totalP > curMax) {
+        maxPowerByHouse.set(house, m.totalP);
       }
+
+      // 가구별 독립 히스토리 버퍼에 저장
+      const hist = getOrCreateHistory(house);
+      const timeLabel = m.simTimeKst || new Date().toLocaleTimeString('ko-KR');
+      hist.times.push(timeLabel);
+      hist.activeP.push(m.totalP);
+      hist.reactiveP.push(m.totalQ);
+      hist.apparentS.push(m.apparentS);
+      hist.currents.push(m.currentA);
+      hist.pfs.push(m.pf);
+      hist.voltages.push(m.voltage);
+      hist.activeLabels.push((m.activeNames || []).join(', '));
+
+      if (hist.times.length > 120) {
+        hist.times.shift();
+        hist.activeP.shift();
+        hist.reactiveP.shift();
+        hist.apparentS.shift();
+        hist.currents.shift();
+        hist.pfs.shift();
+        hist.voltages.shift();
+        hist.activeLabels.shift();
+      }
+
+      // 가구 테이블 행 상태(뱃지, 전력) 갱신
+      updateHouseholdTableRow(house, m.status, m.sec, m.totalP);
+
+      // 관찰 가구 드롭다운 옵션 유지 (running, completed 모두 유지)
+      ensureHouseInObservedSelect(house);
+
+      // 현재 사용자가 보고 있는 관찰 가구인 경우 화면 및 차트 실시간 갱신
+      if (house === observedHouse) {
+        renderObservedHouseMetrics(m);
+
+        const label = timeLabel;
+        chartMain.data.labels.push(label);
+        chartMain.data.datasets[0].data.push(m.totalP);
+        chartMain.data.datasets[1].data.push(m.apparentS);
+        chartMain.data.datasets[2].data.push(m.totalQ);
+        if (chartMain.data.labels.length > 120) {
+          chartMain.data.labels.shift();
+          chartMain.data.datasets.forEach(ds => ds.data.shift());
+        }
+        chartMain.update('none');
+
+        chartSecondary.data.labels.push(label);
+        chartSecondary.data.datasets[0].data.push(m.currentA);
+        chartSecondary.data.datasets[1].data.push(m.pf);
+        if (chartSecondary.data.labels.length > 120) {
+          chartSecondary.data.labels.shift();
+          chartSecondary.data.datasets.forEach(ds => ds.data.shift());
+        }
+        chartSecondary.update('none');
+      }
+
+      // 모든 실행 가구가 완료되었는지 검사
+      checkAllHouseholdsFinished();
+    }
+
+    function checkAllHouseholdsFinished() {
+      if (!activeConfiguredHouseholds || activeConfiguredHouseholds.length === 0) return;
+      const allFinished = activeConfiguredHouseholds.every(item => {
+        const data = latestMetricsByHouse.get(item.house);
+        return data && (data.status === 'completed' || data.status === 'stopped');
+      });
+
+      if (allFinished) {
+        if (evtSource) {
+          evtSource.close();
+          evtSource = null;
+        }
+        document.getElementById('btnPause').disabled = true;
+        document.getElementById('badgeStatus').className = "badge-status status-normal";
+        document.getElementById('badgeStatus').textContent = "전체 가구 시연 완료";
+        setTableAndControlsEnabled(true);
+      }
+    }
+
+    // 관찰 대상 가구 변경 핸들러
+    function changeObservedHouse(targetHouse) {
+      observedHouse = targetHouse;
+      const badgeEl = document.getElementById('observedHouseBadge');
+      if (badgeEl) badgeEl.textContent = observedHouse;
+
+      const hist = getOrCreateHistory(observedHouse);
+      const m = latestMetricsByHouse.get(observedHouse);
+      const houseMax = maxPowerByHouse.get(observedHouse) || 0.0;
+      document.getElementById('valMaxPower').textContent = `${houseMax.toFixed(1)} W`;
+
+      // 메인/보조 차트 전체 재렌더링
+      chartMain.data.labels = [...hist.times];
+      chartMain.data.datasets[0].data = [...hist.activeP];
+      chartMain.data.datasets[1].data = [...hist.apparentS];
+      chartMain.data.datasets[2].data = [...hist.reactiveP];
+      chartMain.update();
+
+      chartSecondary.data.labels = [...hist.times];
+      chartSecondary.data.datasets[0].data = [...hist.currents];
+      chartSecondary.data.datasets[1].data = [...hist.pfs];
+      chartSecondary.update();
+
+      if (m) {
+        renderObservedHouseMetrics(m);
+      } else {
+        document.getElementById('valPower').textContent = "0.0";
+        document.getElementById('valApparent').textContent = "0.0";
+        document.getElementById('valCurrent').textContent = "0.00";
+        document.getElementById('valVoltage').textContent = "220.0";
+        document.getElementById('valPf').textContent = "1.000";
+        document.getElementById('valReactive').textContent = "0.0";
+        document.getElementById('valTime').textContent = "T+00s";
+        Object.keys(DEVICE_PROFILES).forEach(dev => {
+          renderDeviceState(dev, 'random', 0);
+        });
+      }
+      updateApplianceButtonsState();
     }
 
     // ==========================================
@@ -1490,66 +1799,89 @@
       }
     }
 
-    function getStartPayload(scenario, house = 'H001') {
-      const dateInput = document.getElementById('simDateInput');
-      const simDate = dateInput ? dateInput.value : '';
+    // 다중 가구 통합 시뮬레이션 시작 핸들러
+    async function startMultiSimulation() {
+      const selected = [];
+      DEFAULT_HOUSES.forEach(house => {
+        const chk = document.getElementById(`chk_${house}`);
+        const sel = document.getElementById(`scenario_${house}`);
+        if (chk && chk.checked) {
+          selected.push({
+            house: house,
+            scenario: sel ? sel.value : 'random'
+          });
+        }
+      });
 
-      if (!simDate) {
-        showNoticeError("시뮬레이션 기준 날짜를 입력해주세요 (YYYY-MM-DD).");
-        return null;
-      }
-
-      // 엄격한 YYYY-MM-DD 정규식 검증
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRegex.test(simDate)) {
-        showNoticeError("올바르지 않은 날짜 형식입니다. YYYY-MM-DD 형식으로 입력해주세요.");
-        return null;
-      }
-
-      const parts = simDate.split('-');
-      const y = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10);
-      const d = parseInt(parts[2], 10);
-      const testDate = new Date(Date.UTC(y, m - 1, d));
-      if (
-        testDate.getUTCFullYear() !== y ||
-        testDate.getUTCMonth() + 1 !== m ||
-        testDate.getUTCDate() !== d
-      ) {
-        showNoticeError("존재하지 않는 유효하지 않은 날짜입니다: " + simDate);
-        return null;
-      }
-
-      return {
-        scenario: scenario,
-        house: house,
-        simulation_date: simDate
-      };
-    }
-
-    async function startManualDemo() {
-      if (!isServerConnected) {
-        showNoticeError("가전 수동 제어는 서버 및 MQTT 브로커 연결 상태에서만 지원됩니다.");
+      if (selected.length === 0) {
+        showNoticeError("최소 1개 이상의 가구를 선택해야 시뮬레이션을 시작할 수 있습니다.");
         return;
       }
 
-      const payload = getStartPayload('manual', 'H001');
-      if (!payload) return;
+      const dateInput = document.getElementById('simDateInput');
+      const simDate = dateInput ? dateInput.value : '';
+      if (simDate) {
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(simDate)) {
+          showNoticeError("올바르지 않은 날짜 형식입니다. YYYY-MM-DD 형식으로 입력해주세요.");
+          return;
+        }
+      }
 
-      await resetSimulation();
-      currentMode = "manual";
+      if (!isServerConnected) {
+        showNoticeError("백엔드 서버에 연결되어 있지 않습니다. 다중 가구 시뮬레이션은 서버 실행 상태에서만 가능합니다.");
+        return;
+      }
+
+      const resetOk = await resetSimulation();
+      if (!resetOk) {
+        return;
+      }
+
+      const payload = {
+        households: selected
+      };
+      if (simDate && simDate.trim()) {
+        payload.simulation_date = simDate.trim();
+      }
+
+      currentMode = (selected.length === 1) ? selected[0].scenario : 'multi';
+      activeConfiguredHouseholds = selected;
+
+      // 관찰 가구 드롭다운 옵션 구성
+      const obsSelect = document.getElementById('observedHouseSelect');
+      if (obsSelect) {
+        obsSelect.replaceChildren();
+        selected.forEach(item => {
+          const opt = document.createElement('option');
+          opt.value = item.house;
+          opt.textContent = `${item.house} (${item.scenario})`;
+          obsSelect.appendChild(opt);
+        });
+        if (selected.some(item => item.house === observedHouse)) {
+          obsSelect.value = observedHouse;
+        } else {
+          observedHouse = selected[0].house;
+          obsSelect.value = observedHouse;
+        }
+      }
+      document.getElementById('observedHouseBadge').textContent = observedHouse;
+
       isPaused = false;
-      hasReceivedManualSse = false;
       clearAllPendingRequests();
-      updateApplianceButtonsState();
-
+      setTableAndControlsEnabled(false);
       document.getElementById('btnPause').disabled = false;
       document.getElementById('btnPause').textContent = "일시정지";
       document.getElementById('badgeStatus').className = "badge-status status-running";
-      document.getElementById('badgeStatus').textContent = "수동 제어 준비 중";
-      document.getElementById('timelineNotice').style.color = "#a78bfa";
-      document.getElementById('timelineNotice').style.borderColor = "rgba(167, 139, 250, 0.4)";
-      document.getElementById('timelineNotice').innerHTML = `<strong>[수동 제어 준비]</strong> (${payload.simulation_date}) 서버에 manual 시뮬레이터 시작을 요청하고 있습니다...`;
+      document.getElementById('badgeStatus').textContent = `시뮬레이션 실행 중 (${selected.length}개 가구)`;
+
+      selected.forEach(item => {
+        const badge = document.getElementById(`status_badge_${item.house}`);
+        if (badge) {
+          badge.className = 'badge-hh badge-hh-running';
+          badge.textContent = '실행중';
+        }
+      });
 
       try {
         const res = await fetch('/api/start', {
@@ -1559,261 +1891,119 @@
         });
 
         if (!res.ok) {
-          let errMsg = `서버 응답 오류 (${res.status})`;
+          let errMsg = `시작 실패 (${res.status})`;
           try {
             const errData = await res.json();
             if (errData && errData.message) errMsg = errData.message;
           } catch (_) {}
-          showNoticeError(`수동 제어 시작 실패: ${errMsg}`);
-          currentMode = null;
+          showNoticeError(`시뮬레이션 시작 오류: ${errMsg}`);
+          setTableAndControlsEnabled(true);
           document.getElementById('btnPause').disabled = true;
           document.getElementById('badgeStatus').className = "badge-status status-normal";
           document.getElementById('badgeStatus').textContent = "시작 실패";
-          updateApplianceButtonsState();
-          setSimulationDateInputEnabled(true);
           return;
         }
 
-        setSimulationDateInputEnabled(false);
         connectServerStream();
       } catch (err) {
-        showNoticeError(`수동 제어 요청 네트워크 오류: ${err.message || err}`);
-        currentMode = null;
+        showNoticeError(`시작 요청 네트워크 오류: ${err.message || err}`);
+        setTableAndControlsEnabled(true);
         document.getElementById('btnPause').disabled = true;
-        updateApplianceButtonsState();
-        setSimulationDateInputEnabled(true);
       }
     }
 
-    async function startPeakDemo() {
-      const payload = getStartPayload('peak', 'H001');
-      if (!payload) return;
-
-      await resetSimulation();
-      currentMode = 'peak';
-      clearAllPendingRequests();
-      document.getElementById('btnPause').disabled = false;
-      document.getElementById('btnPause').textContent = "일시정지";
-      isPaused = false;
-      document.getElementById('badgeStatus').className = "badge-status status-normal";
-      document.getElementById('badgeStatus').textContent = "피크 시연 진행 중";
-
-      if (isServerConnected) {
-        // [서버 모드]: 실제 MQTT 발행 API 호출 + SSE 스트림 수신
-        try {
-          const res = await fetch('/api/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          if (res.ok) {
-            setSimulationDateInputEnabled(false);
-            connectServerStream();
-            return;
-          }
-        } catch (err) {
-          console.warn("서버 호출 실패, 로컬 모드로 폴백:", err);
-        }
-      }
-
-      // [로컬 모드]: 브라우저 단독 실행
-      setSimulationDateInputEnabled(false);
-      tick();
-      timerId = setInterval(tick, intervalMs);
+    // 기존 단일 실행 프리셋 래퍼 (하위 호환)
+    function startPeakDemo() {
+      applyPreset('peak_single');
+      startMultiSimulation();
     }
 
-    async function startRoutineMissedDemo() {
-      const payload = getStartPayload('routine_missed', 'H001');
-      if (!payload) return;
-
-      await resetSimulation();
-      currentMode = 'routine_missed';
-      clearAllPendingRequests();
-      document.getElementById('btnPause').disabled = false;
-      document.getElementById('btnPause').textContent = "일시정지";
-      isPaused = false;
-      document.getElementById('badgeStatus').className = "badge-status status-missed";
-      document.getElementById('badgeStatus').textContent = "루틴 누락 시연 진행 중";
-
-      // 전자레인지 칩 강조
-      const mwChip = document.getElementById('chip_microwave');
-      const mwState = document.getElementById('state_microwave');
-      if (mwChip) {
-        mwChip.className = "app-chip missed-target";
-        mwState.textContent = "미가동 (루틴 누락 감시)";
-      }
-
-      if (isServerConnected) {
-        try {
-          const res = await fetch('/api/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          if (res.ok) {
-            setSimulationDateInputEnabled(false);
-            connectServerStream();
-            return;
-          }
-        } catch (err) {
-          console.warn("서버 호출 실패, 로컬 모드로 폴백:", err);
-        }
-      }
-
-      // [로컬 모드]: 브라우저 단독 실행
-      setSimulationDateInputEnabled(false);
-      tick();
-      timerId = setInterval(tick, intervalMs);
+    function startRoutineMissedDemo() {
+      applyPreset('missed_single');
+      startMultiSimulation();
     }
 
-    async function startRandomSimulation() {
-      const payload = getStartPayload('random', 'H001');
-      if (!payload) return;
+    function startRandomSimulation() {
+      applyPreset('all_random');
+      startMultiSimulation();
+    }
 
-      await resetSimulation();
-      currentMode = 'random';
-      clearAllPendingRequests();
-      document.getElementById('btnPause').disabled = false;
-      document.getElementById('btnPause').textContent = "일시정지";
-      isPaused = false;
-      document.getElementById('badgeStatus').className = "badge-status status-running";
-      document.getElementById('badgeStatus').textContent = "연속 시뮬레이션 중";
-
-      if (isServerConnected) {
-        try {
-          const res = await fetch('/api/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          if (res.ok) {
-            setSimulationDateInputEnabled(false);
-            connectServerStream();
-            return;
-          }
-        } catch (err) {
-          console.warn("서버 호출 실패, 로컬 모드로 폴백:", err);
-        }
-      }
-
-      setSimulationDateInputEnabled(false);
-      tick();
-      timerId = setInterval(tick, intervalMs);
+    function startManualDemo() {
+      applyPreset('manual_single');
+      startMultiSimulation();
     }
 
     async function togglePause() {
-      if (isServerConnected) {
-        if (currentMode === 'manual') {
-          if (!isPaused) {
-            // manual 모드 일시정지: /api/stop 응답 검증
+      if (!isServerConnected) return;
+
+      if (!isPaused) {
+        try {
+          const res = await fetch('/api/pause', { method: 'POST' });
+          if (!res.ok) {
+            let errMsg = `일시정지 실패 (${res.status})`;
             try {
-              const res = await fetch('/api/stop', { method: 'POST' });
-              if (!res.ok) {
-                let errMsg = `일시정지 실패 (${res.status})`;
-                try {
-                  const errData = await res.json();
-                  if (errData && errData.message) errMsg = errData.message;
-                } catch (_) {}
-                showNoticeError(errMsg);
-                return; // stop 실패 시 기존 실행 상태 유지
-              }
-            } catch (err) {
-              showNoticeError(`일시정지 네트워크 오류: ${err.message || err}`);
-              return; // 네트워크 오류 삼키지 않음
-            }
-
-            // stop 성공 후에만 SSE 닫고 일시정지 상태로 전이
-            if (evtSource) { evtSource.close(); evtSource = null; }
-            isPaused = true;
-            hasReceivedManualSse = false;
-            clearAllPendingRequests();
-            updateApplianceButtonsState();
-            document.getElementById('btnPause').textContent = "재생";
-            document.getElementById('badgeStatus').textContent = "일시정지됨";
-          } else {
-            // manual 모드 재생: /api/start 응답 검증
-            const payload = getStartPayload('manual', 'H001');
-            if (!payload) return;
-
-            try {
-              const res = await fetch('/api/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-              });
-              if (!res.ok) {
-                let errMsg = `재생 시작 실패 (${res.status})`;
-                try {
-                  const errData = await res.json();
-                  if (errData && errData.message) errMsg = errData.message;
-                } catch (_) {}
-                showNoticeError(errMsg);
-                // 400/409/500 실패 시 paused 상태 유지, 버튼 '재생' 유지, SSE 미생성
-                return;
-              }
-            } catch (err) {
-              showNoticeError(`재생 요청 네트워크 오류: ${err.message || err}`);
-              return;
-            }
-
-            // start 성공 후에만 isPaused=false로 변경하고 SSE 스트림 연결
-            setSimulationDateInputEnabled(false);
-            isPaused = false;
-            hasReceivedManualSse = false;
-            clearAllPendingRequests();
-            updateApplianceButtonsState();
-            document.getElementById('btnPause').textContent = "일시정지";
-            document.getElementById('badgeStatus').textContent = "수동 제어 재개 중...";
-            connectServerStream();
+              const errData = await res.json();
+              if (errData && errData.message) errMsg = errData.message;
+            } catch (_) {}
+            showNoticeError(errMsg);
+            return;
           }
+        } catch (err) {
+          showNoticeError(`일시정지 네트워크 오류: ${err.message || err}`);
           return;
         }
 
-        // 기존 peak, random, routine_missed 모드
-        if (!isPaused) {
-          if (evtSource) { evtSource.close(); evtSource = null; }
-          await fetch('/api/stop', { method: 'POST' }).catch(() => { });
-          isPaused = true;
-          document.getElementById('btnPause').textContent = "재생";
-          document.getElementById('badgeStatus').textContent = "일시정지됨";
-        } else {
-          const payload = getStartPayload(currentMode || 'peak', 'H001');
-          if (!payload) return;
-          isPaused = false;
-          setSimulationDateInputEnabled(false);
-          document.getElementById('btnPause').textContent = "일시정지";
-          await fetch('/api/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }).catch(() => { });
-          connectServerStream();
-        }
-        return;
-      }
-
-      if (!timerId && !isPaused) return;
-
-      if (!isPaused) {
-        clearInterval(timerId);
-        timerId = null;
         isPaused = true;
+        clearAllPendingRequests();
+        updateApplianceButtonsState();
         document.getElementById('btnPause').textContent = "재생";
         document.getElementById('badgeStatus').textContent = "일시정지됨";
       } else {
+        try {
+          const res = await fetch('/api/resume', { method: 'POST' });
+          if (!res.ok) {
+            let errMsg = `재개 실패 (${res.status})`;
+            try {
+              const errData = await res.json();
+              if (errData && errData.message) errMsg = errData.message;
+            } catch (_) {}
+            showNoticeError(errMsg);
+            return;
+          }
+        } catch (err) {
+          showNoticeError(`재개 네트워크 오류: ${err.message || err}`);
+          return;
+        }
+
         isPaused = false;
+        clearAllPendingRequests();
+        updateApplianceButtonsState();
         document.getElementById('btnPause').textContent = "일시정지";
-        timerId = setInterval(tick, intervalMs);
+        document.getElementById('badgeStatus').textContent = "시뮬레이션 실행 중";
       }
     }
 
     async function resetSimulation() {
       if (isServerConnected) {
-        if (evtSource) { evtSource.close(); evtSource = null; }
-        await fetch('/api/stop', { method: 'POST' }).catch(() => { });
-      }
+        try {
+          const res = await fetch('/api/reset', { method: 'POST' });
+          if (!res.ok) {
+            let errMsg = `초기화 실패 (${res.status})`;
+            try {
+              const errData = await res.json();
+              if (errData && errData.message) errMsg = errData.message;
+            } catch (_) {}
+            showNoticeError(`시뮬레이터 초기화 오류: ${errMsg}`);
+            return false;
+          }
+        } catch (err) {
+          showNoticeError(`초기화 요청 네트워크 오류: ${err.message || err}`);
+          return false;
+        }
 
-      setSimulationDateInputEnabled(true);
+        // reset 성공 후에만 기존 SSE 연결을 닫는다.
+        if (evtSource) { evtSource.close(); evtSource = null; }
+      }
 
       if (timerId) {
         clearInterval(timerId);
@@ -1822,10 +2012,13 @@
       currentSec = 0;
       isPaused = false;
       maxPowerRecorded = 0.0;
+      maxPowerByHouse.clear();
       initDevices();
 
       // 버퍼 초기화
-      Object.keys(historyData).forEach(k => historyData[k] = []);
+      latestMetricsByHouse.clear();
+      historyByHouse.clear();
+      activeConfiguredHouseholds = [];
 
       // 차트 초기화
       chartMain.data.labels = [];
@@ -1856,6 +2049,18 @@
       clearAllPendingRequests();
       hasReceivedManualSse = false;
 
+      // 테이블 뱃지 및 전력 초기화
+      DEFAULT_HOUSES.forEach(house => {
+        const badge = document.getElementById(`status_badge_${house}`);
+        if (badge) {
+          badge.className = 'badge-hh badge-hh-waiting';
+          badge.textContent = '대기';
+        }
+        const pCell = document.getElementById(`power_val_${house}`);
+        if (pCell) pCell.textContent = '-';
+      });
+
+      // 가전 칩 초기화
       Object.keys(DEVICE_PROFILES).forEach(dev => {
         const chip = document.getElementById(`chip_${dev}`);
         const stLabel = document.getElementById(`state_${dev}`);
@@ -1870,8 +2075,12 @@
       });
       updateApplianceButtonsState();
 
+      setTableAndControlsEnabled(true);
+
       document.getElementById('eventTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">시뮬레이션을 시작하면 실시간 이벤트가 기록됩니다.</td></tr>';
-      document.getElementById('timelineNotice').innerHTML = '[초기화 완료] 상단의 버튼을 누르면 새로운 시연 시나리오가 시작됩니다.';
+      document.getElementById('timelineNotice').innerHTML = '[초기화 완료] 가구별 시나리오를 설정한 후 상단의 [▶ 설정한 가구 실행] 버튼을 누르세요.';
+
+      return true;
     }
 
     function changeSpeed(val) {
@@ -1888,18 +2097,23 @@
       dateInputInit.value = getKstTodayDateString();
     }
 
+    // 초기 가구 설정 테이블 렌더링
+    renderHouseholdTable();
+
     // 초기 서버 연결 상태 감지
     checkServerConnection();
 
     function addEventRow(sec, type, device, power, desc) {
       const tbody = document.getElementById('eventTableBody');
-      if (tbody.children.length === 1 && tbody.children[0].innerText.includes('시뮬레이션을 시작하면')) {
+      const firstChild = tbody && tbody.children && tbody.children[0];
+      const rowText = firstChild ? (firstChild.innerText || firstChild.textContent || '') : '';
+      if (tbody && tbody.children.length === 1 && rowText.includes('시뮬레이션을 시작하면')) {
         tbody.innerHTML = '';
       }
 
       let badgeClass = 'status-normal';
       if (type.includes('피크') || type.includes('이상치')) badgeClass = 'status-peak';
-      else if (type.includes('켜짐')) badgeClass = 'status-running';
+      else if (type.includes('켜짐') || type.includes('수동')) badgeClass = 'status-running';
       else if (type.includes('루틴')) badgeClass = 'status-missed';
 
       const tr = document.createElement('tr');
@@ -1913,35 +2127,47 @@
       tbody.insertBefore(tr, tbody.firstChild);
     }
 
-    function downloadCsv() {
-      if (historyData.times.length === 0) {
-        alert("내보낼 시뮬레이션 데이터가 없습니다. 먼저 시뮬레이션을 실행해 주세요.");
-        return;
+    function getCsvContentForHouse(house) {
+      const targetHouse = house || observedHouse;
+      const hist = getOrCreateHistory(targetHouse);
+      if (!hist || hist.times.length === 0) {
+        return null;
       }
 
-      const headers = ["t_sec", "active_power", "reactive_power", "apparent_power", "power_factor", "voltage", "current", "active_devices"];
+      const headers = ["t_time", "house", "active_power", "reactive_power", "apparent_power", "power_factor", "voltage", "current", "active_devices"];
       let csvContent = "\uFEFF" + headers.join(",") + "\r\n";
 
-      for (let i = 0; i < historyData.times.length; i++) {
+      for (let i = 0; i < hist.times.length; i++) {
         const row = [
-          historyData.times[i],
-          historyData.activeP[i],
-          historyData.reactiveP[i],
-          historyData.apparentP[i],
-          historyData.pfs[i],
-          historyData.voltages[i],
-          historyData.currents[i],
-          `"${historyData.activeLabels[i].replace(/"/g, '""')}"`
+          hist.times[i],
+          targetHouse,
+          hist.activeP[i],
+          hist.reactiveP[i],
+          hist.apparentS[i],
+          hist.pfs[i],
+          hist.voltages[i],
+          hist.currents[i],
+          `"${(hist.activeLabels[i] || '').replace(/"/g, '""')}"`
         ];
         csvContent += row.join(",") + "\r\n";
       }
+      return csvContent;
+    }
 
+    function downloadCsv() {
+      const csvContent = getCsvContentForHouse(observedHouse);
+      if (!csvContent) {
+        alert(`관찰 가구(${observedHouse})의 내보낼 시뮬레이션 데이터가 없습니다.`);
+        return;
+      }
+
+      const hist = getOrCreateHistory(observedHouse);
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
       a.href = url;
-      a.download = `nilm_live_sim_${historyData.times.length}s_${timestamp}.csv`;
+      a.download = `nilm_live_sim_${observedHouse}_${hist.times.length}s_${timestamp}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

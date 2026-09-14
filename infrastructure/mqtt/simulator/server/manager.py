@@ -7,6 +7,7 @@ SSE 구독자 관리 및 브로드캐스트를 전담합니다.
 """
 
 import asyncio
+import copy
 from datetime import datetime, timezone, timedelta
 import os
 import queue
@@ -48,16 +49,24 @@ class SimulatorManager:
         self.lifecycle_lock = threading.Lock()
         # 시뮬레이션 상태 변경(가전 ON/OFF, 초기화) 및 물리 계측을 보호하는 락
         self.simulation_lock = threading.Lock()
+        # 개별 1초 틱(메트릭 계산, MQTT 발행, SSE 브로드캐스트)의 원자성을 보장하는 락
+        self.tick_lock = threading.Lock()
         self.is_running = False
-        self.current_mode = "idle"  # "idle", "peak", "routine_missed", "random", "manual"
+        self.is_paused = False
+        self.current_mode = "idle"  # 단일 가구는 해당 시나리오, 다중 가구는 "multi", 정지 시 "idle"
         self.simulation_date = None
         self.resolved_start_time = None
         # 실행별로 별도 Event를 생성해 종료된 워커가 다시 살아나는 것을 막는다.
         self.stop_event = None
         self.worker_thread = None
         self.subscribers = []  # SSE 큐 목록
-        self.last_metrics = None
-        self.cycle_count = 0
+        self.last_metrics = None  # 가장 최근 브로드캐스트된 단일 이벤트 (하위 호환)
+        self.last_metrics_by_house = {}  # 가구별 최신 이벤트의 authoritative 상태
+        self.active_households = {}  # {house: {"scenario": ..., "cycle_count": ..., "status": ...}}
+        self.global_cycle_count = 0
+        self.cycle_count = 0  # global_cycle_count와 동일 (하위 호환)
+        self._scenarios = {}  # {house: ScenarioInstance}
+        self._appliance_states = {}  # {house: appliance_dict}
 
         self.host = host
         self.port = port
@@ -96,64 +105,175 @@ class SimulatorManager:
                 except queue.Full:
                     pass
 
-    def start(self, scenario: str = "peak", house: str = "H001", simulation_date: str | None = None) -> dict:
+    def start(
+        self,
+        scenario: str = "peak",
+        house: str = "H001",
+        simulation_date: str | None = None,
+        *,
+        households: list[dict] | None = None,
+    ) -> dict:
+        """시뮬레이션을 시작합니다. 단일 가구 위치 인자 및 다중 가구 households keyword-only를 모두 지원합니다."""
         with self.lifecycle_lock:
-            # 1. TLS 설정 사전 동기 검증 (CA 누락/미존재/권한 오류 시 런타임 start 호출에서 즉각 예외 발생)
+            # 1. 단일 가구 하위 호환 및 households 목록 정규화
+            if households is None:
+                normalized_households = [{"house": house, "scenario": scenario}]
+                is_multi = False
+            else:
+                normalized_households = sorted(households, key=lambda x: x["house"])
+                is_multi = (len(normalized_households) > 1)
+
+            # 2. TLS 설정 사전 동기 검증 (CA 누락/미존재/권한 오류 시 런타임 start 호출에서 즉각 예외 발생)
             from engine.tls import get_mqtt_tls_context
             cfg = self.get_connection_config()
             tls_context = get_mqtt_tls_context(tls_enabled=cfg["tls_enabled"], ca_file=cfg["ca_file"])
 
-            # 2. 가상 시작 시각 결정 (scenarios.resolve_simulation_start_time 순수 함수 사용)
-            base_dt = scenarios.resolve_simulation_start_time(
-                scenario,
-                simulation_date=simulation_date,
-                routine_default_time="08:10:01"
-            )
+            # 3. 공통 가상 시작 시각 결정
+            if not is_multi and normalized_households[0]["scenario"] == "routine_missed":
+                base_dt = scenarios.resolve_simulation_start_time(
+                    "routine_missed",
+                    simulation_date=simulation_date,
+                    routine_default_time="08:10:01"
+                )
+            else:
+                base_dt = scenarios.resolve_multi_simulation_start_time(
+                    normalized_households,
+                    simulation_date=simulation_date,
+                    routine_default_time="08:10:01"
+                )
+
             resolved_start_iso = scenarios.format_iso_utc(base_dt) if base_dt else None
 
             if not self._stop_and_join():
                 raise RuntimeError("기존 시뮬레이터 워커가 종료되지 않았습니다.")
 
-            # 이전 워커가 완전히 종료된 후, 새 워커를 시작하기 전에 simulation_lock 안에서 상태 초기화
+            # 4. 이전 워커가 완전히 종료된 후, simulation_lock 안에서 대상 가구들의 상태 머신 초기화
+            target_houses = [h["house"] for h in normalized_households]
             with self.simulation_lock:
-                simulator.init_simulation_states([house])
+                simulator.init_simulation_states(target_houses)
 
             stop_event = threading.Event()
             worker_thread = threading.Thread(
                 target=self._run_async_worker,
-                args=(scenario, house, stop_event, cfg, tls_context, simulation_date, base_dt),
+                args=(normalized_households, stop_event, cfg, tls_context, simulation_date, base_dt),
                 daemon=True
             )
+
+            current_mode = "multi" if is_multi else normalized_households[0]["scenario"]
 
             with self.lock:
                 self.stop_event = stop_event
                 self.worker_thread = worker_thread
                 self.is_running = True
-                self.current_mode = scenario
+                self.is_paused = False
+                self.current_mode = current_mode
+                self.house = normalized_households[0]["house"]
+                self.global_cycle_count = 0
                 self.cycle_count = 0
                 self.simulation_date = simulation_date
                 self.resolved_start_time = resolved_start_iso
+                self.active_households = {
+                    h["house"]: {
+                        "scenario": h["scenario"],
+                        "cycle_count": 0,
+                        "status": "running"
+                    }
+                    for h in normalized_households
+                }
+                self.last_metrics_by_house = {}
+                self.last_metrics = None
 
             worker_thread.start()
             return {
                 "status": "started",
-                "scenario": scenario,
-                "house": house,
+                "scenario": current_mode,
+                "house": normalized_households[0]["house"],
+                "households": normalized_households,
                 "simulation_date": simulation_date,
                 "resolved_start_time": resolved_start_iso
             }
 
     def set_device(self, house: str, device: str, enabled: bool) -> dict:
-        """가전 상태를 수동 변경한다. manual 모드에서만 허용되며, lifecycle_lock 및 simulation_lock으로 보호된다."""
+        """가전 상태를 수동 변경한다. lifecycle_lock 및 simulation_lock 안에서 원자적으로 검증 및 상태 변경."""
         with self.lifecycle_lock:
             with self.simulation_lock:
                 with self.lock:
                     if not self.is_running:
-                        raise ModeConflictError("시뮬레이터가 정지 상태(idle)입니다. 먼저 manual 모드로 시작하세요.")
-                    if self.current_mode != "manual":
-                        raise ModeConflictError(f"가전 수동 제어는 'manual' 모드에서만 가능합니다. (현재 모드: {self.current_mode})")
+                        raise ModeConflictError("시뮬레이터가 정지 상태(idle)입니다. 먼저 시뮬레이션을 시작하세요.")
+                    if house not in self.active_households:
+                        raise ModeConflictError(f"가구 '{house}'는 현재 실행 중인 가구 목록에 포함되어 있지 않습니다.")
+                    h_info = self.active_households[house]
+                    if h_info["status"] != "running":
+                        raise ModeConflictError(f"가구 '{house}'는 현재 실행 중이 아닙니다 (현재 상태: {h_info['status']}).")
+                    if h_info["scenario"] != "manual":
+                        raise ModeConflictError(f"가전 수동 제어는 'manual' 시나리오 가구에서만 가능합니다. (가구 '{house}' 시나리오: {h_info['scenario']})")
 
                 return simulator.set_manual_device_state(house, device, enabled)
+
+    def pause(self) -> dict:
+        """시뮬레이터를 일시정지합니다. lifecycle_lock 및 self.lock으로 보호됩니다."""
+        with self.lifecycle_lock:
+            with self.lock:
+                if not self.is_running:
+                    raise ModeConflictError("시뮬레이터가 실행 중이 아닙니다.")
+                if self.is_paused:
+                    return {"status": "paused"}
+                self.is_paused = True
+
+            # 진행 중인 틱(MQTT/SSE 발행)이 있다면 완전히 완료될 때까지 대기
+            with self.tick_lock:
+                pass
+
+            return {"status": "paused"}
+
+    def resume(self) -> dict:
+        """일시정지된 시뮬레이터를 재개합니다. lifecycle_lock 및 self.lock으로 보호됩니다."""
+        with self.lifecycle_lock:
+            with self.lock:
+                if not self.is_running:
+                    raise ModeConflictError("시뮬레이터가 실행 중이 아닙니다.")
+                if not self.is_paused:
+                    return {"status": "resumed"}
+                self.is_paused = False
+            return {"status": "resumed"}
+
+    def reset(self) -> dict:
+        """시뮬레이터를 정지하고 모든 가구 상태, 메트릭, 날짜를 초기화합니다."""
+        with self.lifecycle_lock:
+            if not self._stop_and_join():
+                raise RuntimeError("시뮬레이터 워커 종료에 실패하여 리셋할 수 없습니다.")
+            with self.lock:
+                self.active_households = {}
+                self.last_metrics_by_house = {}
+                self.last_metrics = None
+                self.simulation_date = None
+                self.resolved_start_time = None
+                self.global_cycle_count = 0
+                self.cycle_count = 0
+                self.is_paused = False
+            return {"status": "reset"}
+
+    def get_status(self) -> dict:
+        with self.tick_lock:
+            with self.lock:
+                running_exists = any(
+                    h.get("status") == "running"
+                    for h in self.active_households.values()
+                ) if self.active_households else self.is_running
+                return {
+                    "is_running": running_exists,
+                    "is_paused": self.is_paused,
+                    "current_mode": self.current_mode,
+                    "scenario": self.current_mode,
+                    "cycle_count": self.cycle_count,
+                    "global_cycle_count": self.global_cycle_count,
+                    "house": getattr(self, "house", "H001"),
+                    "active_households": copy.deepcopy(self.active_households),
+                    "last_metrics_by_house": copy.deepcopy(self.last_metrics_by_house),
+                    "last_metrics": copy.deepcopy(self.last_metrics) if self.last_metrics else None,
+                    "simulation_date": self.simulation_date,
+                    "resolved_start_time": self.resolved_start_time,
+                }
 
     def stop(self):
         with self.lifecycle_lock:
@@ -164,6 +284,7 @@ class SimulatorManager:
         with self.lock:
             worker_thread = self.worker_thread
             stop_event = self.stop_event
+            self.is_paused = False
 
             if stop_event is not None:
                 stop_event.set()
@@ -185,16 +306,18 @@ class SimulatorManager:
                 self.worker_thread = None
                 self.stop_event = None
                 self.is_running = False
+                self.is_paused = False
                 self.current_mode = "idle"
-                self.simulation_date = None
-                self.resolved_start_time = None
+                # 명시적 stop 시 running이던 가구만 stopped로 변경하고, completed 가구는 상태 보존
+                for h_info in self.active_households.values():
+                    if h_info["status"] == "running":
+                        h_info["status"] = "stopped"
 
         return True
 
     def _run_async_worker(
         self,
-        scenario: str,
-        house: str,
+        households: list[dict],
         stop_event: threading.Event,
         cfg: dict,
         tls_context,
@@ -205,7 +328,7 @@ class SimulatorManager:
         asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(
-                self._worker_loop(scenario, house, stop_event, cfg, tls_context, simulation_date, base_dt)
+                self._worker_loop(households, stop_event, cfg, tls_context, simulation_date, base_dt)
             )
         except Exception as err:
             print(f"[WebSimulator] 워커 오류: {err}", flush=True)
@@ -217,33 +340,55 @@ class SimulatorManager:
                     self.worker_thread = None
                     self.stop_event = None
                     self.is_running = False
+                    self.is_paused = False
                     self.current_mode = "idle"
-                    self.simulation_date = None
-                    self.resolved_start_time = None
+                    # 자연 완주 시 running이던 가구만 stopped로 마킹하고 completed 상태 및 메트릭 보존
+                    for h_info in self.active_households.values():
+                        if h_info["status"] == "running":
+                            h_info["status"] = "stopped"
 
     async def _worker_loop(
         self,
-        scenario: str,
-        house: str,
-        stop_event: threading.Event,
-        cfg: dict,
-        tls_context,
-        simulation_date: str | None = None,
-        base_dt: datetime | None = None
+        target_or_scenario,
+        house_or_stop_event,
+        stop_event_or_cfg,
+        cfg_or_tls_context,
+        tls_or_sim_date=None,
+        base_dt_or_none=None,
+        *extra_args,
+        **extra_kwargs
     ):
-        is_peak = (scenario == "peak")
-        is_routine_missed = (scenario == "routine_missed")
-        is_manual = (scenario == "manual")
-        allow_random = not (is_peak or is_routine_missed or is_manual)
-
-        if is_peak:
-            target_count = 60
-        elif is_routine_missed:
-            target_count = 300  # AI 299초 슬라이딩 윈도우 충족
+        if isinstance(target_or_scenario, str):
+            # 레거시 단일 가구 호출 호환: _worker_loop(scenario, house, stop_event, cfg, tls_context)
+            legacy_scenario = target_or_scenario
+            legacy_house = house_or_stop_event
+            stop_event = stop_event_or_cfg
+            cfg = cfg_or_tls_context
+            tls_context = tls_or_sim_date
+            simulation_date = base_dt_or_none
+            base_dt = extra_args[0] if len(extra_args) > 0 else extra_kwargs.get("base_dt")
+            households = [{"house": legacy_house, "scenario": legacy_scenario}]
+            with self.lock:
+                self.house = legacy_house
+                self.current_mode = legacy_scenario
+                if legacy_house not in self.active_households:
+                    self.active_households[legacy_house] = {
+                        "scenario": legacy_scenario,
+                        "status": "running",
+                        "cycle_count": 0,
+                    }
+            with self.simulation_lock:
+                simulator.init_simulation_states([legacy_house])
         else:
-            target_count = 999999
-        interval = 1.0
+            # 정규 다중 가구 호출: _worker_loop(households, stop_event, cfg, tls_context, simulation_date, base_dt)
+            households = target_or_scenario
+            stop_event = house_or_stop_event
+            cfg = stop_event_or_cfg
+            tls_context = cfg_or_tls_context
+            simulation_date = tls_or_sim_date
+            base_dt = base_dt_or_none
 
+        interval = 1.0
         host = cfg["host"]
         port = cfg["port"]
         user = cfg["username"]
@@ -263,118 +408,213 @@ class SimulatorManager:
             keepalive=60,
             timeout=5
         ) as client:
-            print(f"[WebSimulator] MQTT 연결 성공 실시간 발행 시작 (시나리오: {scenario}, 대상: {house})", flush=True)
+            client.pending_calls_threshold = max(len(households) * 4, 200)
+            houses_desc = ", ".join(f"{h['house']}({h['scenario']})" for h in households)
+            print(f"[WebSimulator] MQTT 연결 성공 실시간 발행 시작 [{houses_desc}]", flush=True)
 
             cycle = 0
+            internal_base_dt = base_dt
             while not stop_event.is_set():
+                # 0. 일시정지 상태 확인 (Manager 락으로 보호)
+                with self.lock:
+                    if self.is_paused:
+                        is_paused_now = True
+                    else:
+                        is_paused_now = False
+
+                if is_paused_now:
+                    await asyncio.sleep(0.05)
+                    continue
+
                 cycle_start = time.time()
-                if base_dt is not None:
-                    sim_dt = base_dt + timedelta(seconds=cycle)
+
+                # tick_lock으로 전체 틱(메트릭 계산, MQTT 발행, SSE 브로드캐스트)을 보호하여
+                # pause() 및 get_status() 호출 시 현재 틱이 완전히 끝난 후 일관된 상태가 조회되도록 보장한다.
+                with self.tick_lock:
+                    # 1. 실행 중(running)인 가구 확인 및 다음 cycle 번호 산정
+                    with self.lock:
+                        if self.is_paused:
+                            continue
+                        running_items = [
+                            h for h in households
+                            if self.active_households.get(h["house"], {}).get("status") == "running"
+                        ]
+                        if not running_items:
+                            print(f"[WebSimulator] 모든 가구 시뮬레이션 완주, 워커를 자동 정지합니다.", flush=True)
+                            break
+                        house_next_cycles = {
+                            h["house"]: self.active_households[h["house"]]["cycle_count"] + 1
+                            for h in running_items
+                        }
+
+                    cycle += 1
+
+                    # 2. 첫 계측 tick을 실제로 생성하는 시점에 internal_base_dt를 1회만 확정
+                    #    (연결 지연이나 첫 tick 이전의 pause가 가상 시각에 반영되지 않음)
+                    if internal_base_dt is None:
+                        internal_base_dt = datetime.now(timezone.utc)
+
+                    sim_dt = internal_base_dt + timedelta(seconds=cycle - 1)
                     now_iso = scenarios.format_iso_utc(sim_dt)
                     sim_kst = sim_dt.astimezone(scenarios.KST)
                     sim_time_kst = sim_kst.strftime("%H:%M:%S")
                     sim_date_kst = sim_kst.strftime("%Y-%m-%d")
                     sim_datetime_kst = sim_kst.strftime("%Y-%m-%d %H:%M:%S KST")
-                else:
-                    curr_utc = datetime.now(timezone.utc)
-                    now_iso = scenarios.format_iso_utc(curr_utc)
-                    curr_kst = curr_utc.astimezone(scenarios.KST)
-                    sim_time_kst = curr_kst.strftime("%H:%M:%S")
-                    sim_date_kst = curr_kst.strftime("%Y-%m-%d")
-                    sim_datetime_kst = curr_kst.strftime("%Y-%m-%d %H:%M:%S KST")
 
-                cycle += 1
-                self.cycle_count = cycle
+                    # 3. simulation_lock 하에서 가구별 이벤트 주입, 물리 계측, 디바이스 스냅샷 생성
+                    #    (이 단계에서는 active_households를 갱신하지 않고 임시 계산만 수행)
+                    tick_calc_results = []
+                    with self.simulation_lock:
+                        for item in running_items:
+                            house = item["house"]
+                            scenario = item["scenario"]
+                            h_cycle = house_next_cycles[house]
+                            allow_random = (scenario == "random")
 
-                # 1. 시나리오 주입, 물리 계측, 디바이스 스냅샷 생성을 simulation_lock 하에서 원자적으로 처리
-                with self.simulation_lock:
-                    event_desc = None
-                    if is_peak:
-                        event_desc = simulator.inject_peak_scenario_event(cycle, house)
-                    elif is_routine_missed:
-                        if cycle == 1:
-                            event_desc = "08:10 아침 루틴 검증 시작 (전자레인지 미가동 / 대기전력 유지)"
-                        elif cycle == 100:
-                            event_desc = "대기전력 지속 중 (누적 100초)"
-                        elif cycle == 200:
-                            event_desc = "대기전력 지속 중 (누적 200초)"
-                        elif cycle == scenarios.RoutineMissedScenario.BUFFER_WINDOW_SIZE:
-                            event_desc = "299초 버퍼 충족 (AI 이상치 감지 조건 도달 -> analysis.event.v1 발행!)"
-                        elif cycle == 300:
-                            event_desc = "시연 완료 (300초 데이터 전송 완료)"
+                            event_desc = None
+                            if scenario == "peak":
+                                event_desc = simulator.inject_peak_scenario_event(h_cycle, house)
+                            elif scenario == "routine_missed":
+                                if h_cycle == 1:
+                                    event_desc = "08:10 아침 루틴 검증 시작 (전자레인지 미가동 / 대기전력 유지)"
+                                elif h_cycle == 100:
+                                    event_desc = "대기전력 지속 중 (누적 100초)"
+                                elif h_cycle == 200:
+                                    event_desc = "대기전력 지속 중 (누적 200초)"
+                                elif h_cycle == scenarios.RoutineMissedScenario.BUFFER_WINDOW_SIZE:
+                                    event_desc = "299초 버퍼 충족 (AI 이상치 감지 조건 도달 -> analysis.event.v1 발행!)"
+                                elif h_cycle == 300:
+                                    event_desc = "시연 완료 (300초 데이터 전송 완료)"
 
-                    # 물리 계측 (tick당 정확히 1회 호출)
-                    metrics = simulator.calculate_main_panel_metrics(house, allow_random=allow_random)
+                            metrics = simulator.calculate_main_panel_metrics(house, allow_random=allow_random)
 
-                    # 영문 device key 기반 devices SSE 스냅샷 생성 (enabled: state != "OFF")
-                    devices_snapshot = {}
-                    house_devices = simulator.device_states.get(house, {})
-                    for dev_name in simulator.DEVICE_PROFILES:
-                        dev_st = house_devices.get(dev_name, {})
-                        st_state = dev_st.get("state", "OFF")
-                        devices_snapshot[dev_name] = {
-                            "state": st_state,
-                            "enabled": (st_state != "OFF"),
-                            "manualHold": bool(dev_st.get("manual_hold", False))
-                        }
+                            devices_snapshot = {}
+                            house_devices = simulator.device_states.get(house, {})
+                            for dev_name in simulator.DEVICE_PROFILES:
+                                dev_st = house_devices.get(dev_name, {})
+                                st_state = dev_st.get("state", "OFF")
+                                devices_snapshot[dev_name] = {
+                                    "state": st_state,
+                                    "enabled": (st_state != "OFF"),
+                                    "manualHold": bool(dev_st.get("manual_hold", False))
+                                }
 
-                # 2. simulation_lock 해제 후 MQTT 발행 (네트워크 I/O 중 lock 미보유)
-                res = await simulator.publish_house_power(
-                    client=client,
-                    house=house,
-                    now_iso=now_iso,
-                    qos=1,
-                    allow_random=allow_random,
-                    metrics=metrics
-                )
+                            tick_calc_results.append({
+                                "house": house,
+                                "scenario": scenario,
+                                "h_cycle": h_cycle,
+                                "event_desc": event_desc,
+                                "metrics": metrics,
+                                "devices_snapshot": devices_snapshot
+                            })
 
-                # 3. 실시간 UI 동기화용 패킷 생성 및 SSE 브로드캐스트
-                broadcast_data = {
-                    "sec": cycle,
-                    "now_iso": now_iso,
-                    "simTimeKst": sim_time_kst,
-                    "simDateKst": sim_date_kst,
-                    "simDateTimeKst": sim_datetime_kst,
-                    "house": house,
-                    "totalP": metrics["active_power"],
-                    "totalQ": metrics["reactive_power"],
-                    "apparentS": metrics["apparent_power"],
-                    "pf": metrics["power_factor"],
-                    "voltage": metrics["voltage"],
-                    "currentA": metrics["current"],
-                    "activeNames": metrics["active_devices"],
-                    "eventNoticeText": event_desc,
-                    "mode": scenario,
-                    "devices": devices_snapshot
-                }
-                self.broadcast(broadcast_data)
+                    # 4. simulation_lock 해제 후 가구별 MQTT 동시 발행 (네트워크 I/O 중 lock 미보유)
+                    await asyncio.gather(*(
+                        simulator.publish_house_power(
+                            client=client,
+                            house=res["house"],
+                            now_iso=now_iso,
+                            qos=1,
+                            allow_random=False,
+                            metrics=res["metrics"]
+                        )
+                        for res in tick_calc_results
+                    ))
 
-                # 터미널 콘솔 로그 출력
-                if is_peak:
-                    status_tag = "대기"
-                    if metrics["active_power"] >= 3000.0:
-                        status_tag = "피크 경보 (3,000W+)"
-                    elif metrics["active_power"] >= 1000.0:
-                        status_tag = "가전 가동 중"
-                    notice_str = f" <== [{event_desc}]" if event_desc else ""
-                    print(f"[WebSimulator] (T+{cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}{notice_str}", flush=True)
-                elif is_routine_missed:
-                    status_tag, notice = scenarios.RoutineMissedScenario.get_cycle_status(cycle)
-                    notice_str = f" <== [{event_desc}]" if event_desc else notice
-                    print(f"[WebSimulator] (T+{cycle:03d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:5.1f} W | {status_tag}{notice_str}", flush=True)
-                elif is_manual:
-                    act_str = ", ".join(metrics["active_devices"]) if metrics["active_devices"] else "대기(가전 OFF)"
-                    print(f"[WebSimulator] (T+{cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | 수동 제어 모드 [{act_str}]", flush=True)
-                else:
-                    status_tag = "가전 가동 중" if metrics["active_power"] >= 500.0 else "대기"
-                    print(f"[WebSimulator] (T+{cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}", flush=True)
+                    # 5. 한 tick의 모든 공개 상태(cycle, status, last_metrics)를 단일 락 안에서 원자적으로 일괄 커밋(batch commit)
+                    broadcast_items = []
+                    with self.lock:
+                        self.global_cycle_count = cycle
+                        self.cycle_count = cycle
 
-                if target_count > 0 and cycle >= target_count:
-                    print(f"[WebSimulator] 목표 사이클({target_count}회) 완주, 자동 정지합니다.", flush=True)
-                    break
+                        for res in tick_calc_results:
+                            house = res["house"]
+                            scenario = res["scenario"]
+                            h_cycle = res["h_cycle"]
+                            metrics = res["metrics"]
+                            event_desc = res["event_desc"]
+                            devices_snapshot = res["devices_snapshot"]
+
+                            # 완료 여부 판정
+                            is_completed = False
+                            if scenario == "peak" and h_cycle >= 60:
+                                is_completed = True
+                            elif scenario == "routine_missed" and h_cycle >= 300:
+                                is_completed = True
+
+                            self.active_households[house]["cycle_count"] = h_cycle
+                            if is_completed:
+                                self.active_households[house]["status"] = "completed"
+                            h_status = self.active_households[house]["status"]
+
+                            broadcast_data = {
+                                "sec": h_cycle,
+                                "cycle_count": h_cycle,
+                                "house": house,
+                                "scenario": scenario,
+                                "mode": scenario,
+                                "status": h_status,
+                                "now_iso": now_iso,
+                                "simTimeKst": sim_time_kst,
+                                "simDateKst": sim_date_kst,
+                                "simDateTimeKst": sim_datetime_kst,
+                                "totalP": metrics["active_power"],
+                                "totalQ": metrics["reactive_power"],
+                                "apparentS": metrics["apparent_power"],
+                                "pf": metrics["power_factor"],
+                                "voltage": metrics["voltage"],
+                                "currentA": metrics["current"],
+                                "activeNames": metrics["active_devices"],
+                                "eventNoticeText": event_desc,
+                                "devices": devices_snapshot
+                            }
+
+                            self.last_metrics_by_house[house] = broadcast_data
+                            self.last_metrics = broadcast_data
+                            broadcast_items.append((broadcast_data, res, h_status))
+
+                    # 6. SSE 브로드캐스트 및 터미널 로그 출력
+                    for broadcast_data, res, h_status in broadcast_items:
+                        self.broadcast(broadcast_data)
+
+                        scenario = res["scenario"]
+                        h_cycle = res["h_cycle"]
+                        metrics = res["metrics"]
+                        event_desc = res["event_desc"]
+                        house = res["house"]
+
+                        # 터미널 로그 출력
+                        if scenario == "peak":
+                            status_tag = "대기"
+                            if metrics["active_power"] >= 3000.0:
+                                status_tag = "피크 경보 (3,000W+)"
+                            elif metrics["active_power"] >= 1000.0:
+                                status_tag = "가전 가동 중"
+                            notice_str = f" <== [{event_desc}]" if event_desc else ""
+                            print(f"[WebSimulator] (T+{h_cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag} [{h_status}]{notice_str}", flush=True)
+                        elif scenario == "routine_missed":
+                            status_tag, notice = scenarios.RoutineMissedScenario.get_cycle_status(h_cycle)
+                            notice_str = f" <== [{event_desc}]" if event_desc else notice
+                            print(f"[WebSimulator] (T+{h_cycle:03d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:5.1f} W | {status_tag} [{h_status}]{notice_str}", flush=True)
+                        elif scenario == "manual":
+                            act_str = ", ".join(metrics["active_devices"]) if metrics["active_devices"] else "대기(가전 OFF)"
+                            print(f"[WebSimulator] (T+{h_cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | 수동 [{act_str}] [{h_status}]", flush=True)
+                        else:
+                            status_tag = "가전 가동 중" if metrics["active_power"] >= 500.0 else "대기"
+                            print(f"[WebSimulator] (T+{h_cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag} [{h_status}]", flush=True)
+
+                # 모든 가구가 완료되었는지 확인
+                with self.lock:
+                    still_running = any(h["status"] == "running" for h in self.active_households.values())
+                    if not still_running:
+                        print(f"[WebSimulator] 모든 가구 시뮬레이션 완주, 워커를 자동 정지합니다.", flush=True)
+                        break
 
                 elapsed = time.time() - cycle_start
                 sleep_time = max(0.0, interval - elapsed)
                 end_sleep = time.time() + sleep_time
                 while time.time() < end_sleep and not stop_event.is_set():
+                    with self.lock:
+                        if self.is_paused:
+                            break
                     await asyncio.sleep(min(0.05, max(0.001, end_sleep - time.time())))
