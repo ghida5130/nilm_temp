@@ -4,6 +4,8 @@ import logging
 import signal
 from threading import Event
 
+from confluent_kafka.admin import AdminClient
+
 from realtime_analysis.activity_repository import (
     SqlAlchemyApplianceActivityRepository,
 )
@@ -16,9 +18,16 @@ from realtime_analysis.database import create_session_factory
 from realtime_analysis.dlq import DlqPublisher
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
+from realtime_analysis.health_server import ObservabilityServer
+from realtime_analysis.metrics import METRICS
 from realtime_analysis.model_manifest import ModelManifest
 from realtime_analysis.predictor import FakePredictor
 from realtime_analysis.preprocessing import StandardizingPredictor
+from realtime_analysis.readiness import (
+    ReadinessProbe,
+    database_readiness_check,
+    kafka_readiness_check,
+)
 from realtime_analysis.snapshot_publisher import AnalysisSnapshotPublisher
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
@@ -46,6 +55,8 @@ def main() -> None:
     # 이상 탐지기 생성
     tracker = DailyActivityTracker()
     manifest = ModelManifest.from_json_file(settings.model_manifest_file)
+    METRICS.set_model_info(manifest.model_name, manifest.version)
+    session_factory = create_session_factory(settings)
     # Fake Predictor 생성 
     detector = RoutineMissedDetector(
         tracker=tracker,
@@ -68,7 +79,7 @@ def main() -> None:
         # 환경변수의 analysis_db 접속 정보로 SessionFactory를 만들고
         # 실제 SQLAlchemy Repository를 Handler에 주입한다.
         activity_repository=SqlAlchemyApplianceActivityRepository(
-            session_factory=create_session_factory(settings),
+            session_factory=session_factory,
             timezone_name=settings.analysis_timezone,
             expected_samples_per_day=settings.analysis_expected_samples_per_day,
             valid_coverage_ratio=(
@@ -89,7 +100,32 @@ def main() -> None:
         dlq_publisher=DlqPublisher(settings),
         handler=handler,
     )
-    consumer.run(stop_event)
+    kafka_admin = AdminClient(
+        {"bootstrap.servers": settings.kafka_bootstrap_servers}
+    )
+    readiness = ReadinessProbe(
+        {
+            "kafka": kafka_readiness_check(
+                kafka_admin,
+                settings.kafka_input_topic,
+                settings.readiness_timeout_seconds,
+            ),
+            "database": database_readiness_check(session_factory),
+            # The current MVP loads its runtime model from the packaged manifest.
+            # The ACTIVE model loader can replace this check without changing HTTP.
+            "model": lambda: manifest is not None,
+        }
+    )
+    observability_server = ObservabilityServer(
+        settings.http_host,
+        settings.http_port,
+        readiness,
+    )
+    observability_server.start()
+    try:
+        consumer.run(stop_event)
+    finally:
+        observability_server.stop()
 
 
 if __name__ == "__main__":

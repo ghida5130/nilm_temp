@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterator
 
+from realtime_analysis.metrics import METRICS
 from realtime_analysis.schemas import PowerMeasurement
 
 
@@ -42,6 +43,7 @@ class PipelineTimer:
             self.stage_durations_ns.get(name, 0) + duration_ns
         )
         self.stage_counts[name] = self.stage_counts.get(name, 0) + 1
+        METRICS.observe_stage(name, duration_ns)
 
     @contextmanager
     def measure(self, name: str) -> Iterator[None]:
@@ -131,6 +133,12 @@ def pipeline_timing(
         timer.mark("failed", error)
         raise
     finally:
+        METRICS.record_message(timer.status)
+        if timer.status == "failed":
+            METRICS.record_error(
+                "pipeline",
+                timer.error_type or "UnknownError",
+            )
         timer.log()
         _current_timer.reset(token)
 

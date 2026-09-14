@@ -29,4 +29,6 @@ RUN pytest
 
 FROM base AS runtime
 
+EXPOSE 8000
+
 CMD ["sh", "-c", "alembic upgrade head && exec python -m realtime_analysis"]

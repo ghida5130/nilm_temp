@@ -9,6 +9,7 @@ from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.event_producer import AnalysisEventPublisher
+from realtime_analysis.metrics import METRICS
 from realtime_analysis.pipeline_timing import stage
 from realtime_analysis.predictor import Predictor
 from realtime_analysis.schemas import PowerMeasurement
@@ -92,14 +93,16 @@ class MeasurementHandler:
                 active_appliance_types=active_appliance_types,
             )
         # DB 저장이 끝난 최신 측정값과 확정 가전 상태를 매 추론마다 발행한다.
+        snapshot = create_analysis_snapshot(
+            measurement=measurement,
+            states=states,
+            active_appliance_types=active_appliance_types,
+        )
         with stage("snapshot_publish_ack"):
-            self._snapshot_publisher.publish(
-                create_analysis_snapshot(
-                    measurement=measurement,
-                    states=states,
-                    active_appliance_types=active_appliance_types,
-                )
-            )
+            self._snapshot_publisher.publish(snapshot)
+        METRICS.observe_e2e(
+            (snapshot.published_at - snapshot.observed_at).total_seconds()
+        )
         with stage("state_tracking"):
             self._tracker.record_transitions(
                 activity_date,

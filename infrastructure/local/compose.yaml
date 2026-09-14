@@ -188,7 +188,11 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:${ANALYSIS_HTTP_PORT:-8000}:8000"
     environment:
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8000
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       KAFKA_INPUT_TOPIC: ${KAFKA_RAW_TOPIC:-power.raw.v1}
       KAFKA_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
