@@ -370,6 +370,43 @@ threshold - 0.05 < probability < threshold → 기존 ON 상태 유지
 | `APPLIANCE_OFF_CONFIRMATION_SAMPLES` | 3 | OFF 확정에 필요한 연속 예측 수 |
 | `APPLIANCE_OFF_THRESHOLD_MARGIN` | 0.05 | OFF 판정용 히스테리시스 폭 |
 
+## 단계별 구간 타이밍 로그
+
+Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로거가 JSON 한 줄을
+출력합니다. 구간 시간은 시스템 시각 변경의 영향을 받지 않도록
+`time.perf_counter_ns()`로 측정합니다.
+
+```json
+{"event":"pipeline_timing","status":"processed","message_id":"8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6","household_id":"H001","kafka":{"topic":"power.raw.v1","partition":3,"offset":42},"processing_total_ns":1842000,"stage_durations_ns":{"activity_db":310000,"buffer_append":12000,"deserialize_validate":82000,"inference":1500000,"offset_commit":73000,"preprocess":21000,"snapshot_publish_ack":260000,"state_decision_transition":31000},"stage_counts":{"activity_db":1,"buffer_append":1,"deserialize_validate":1,"inference":1,"offset_commit":1,"preprocess":1,"snapshot_publish_ack":1,"state_decision_transition":1},"sensor_to_log_ns":2185000,"clock_skew_detected":false}
+```
+
+주요 구간 이름은 다음과 같습니다.
+
+| 구간 | 범위 |
+| --- | --- |
+| `consumer_poll` | Kafka Consumer `poll()` 대기 |
+| `deserialize_validate` | JSON 역직렬화와 Pydantic 입력 검증 |
+| `observation_db` | 일일 관측 Sample DB 반영 |
+| `buffer_append` | 가구별 Sliding Window 추가 |
+| `preprocess` | Manifest 기반 Feature 표준화 |
+| `inference` | Predictor 단독 실행 |
+| `state_decision_transition` | Threshold, Hysteresis, 상태 전이 판정 |
+| `activity_db` | 일일 활동과 사용 Session DB 반영 |
+| `snapshot_publish_ack` | Snapshot Produce부터 Broker ACK까지 |
+| `anomaly_detection` | 기준선 조회와 이상 후보 판정 |
+| `event_publish_ack` | 이상 Event Produce부터 Broker ACK까지 |
+| `offset_commit` | 입력 Offset 동기 Commit |
+| `dlq_publish_ack` | 잘못된 입력의 DLQ Broker ACK |
+
+같은 구간이 메시지 한 건에서 여러 번 실행되면 `stage_durations_ns`에는 합계,
+`stage_counts`에는 호출 횟수를 기록합니다. `status`는 `processed`, `dlq`, `failed` 중
+하나이며, 실패 로그에는 예외 메시지 대신 `error_type`만 남겨 민감한 Payload가 로그에
+유출되지 않게 합니다.
+
+`sensor_to_log_ns`는 센서 `measured_at`부터 분석 메시지 처리 종료까지의 벽시계
+지연입니다. 서로 다른 장비의 시계를 사용하는 E2E 측정에서는 NTP 동기화가 필요하며,
+음수이면 `clock_skew_detected=true`로 표시합니다.
+
 ## 현재 MVP 제약
 
 - 실제 AI 모델 대신 결정적인 FakePredictor를 사용합니다.

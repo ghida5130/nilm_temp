@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from realtime_analysis.buffer import FeatureRow
 from realtime_analysis.model_manifest import ModelManifest
+from realtime_analysis.pipeline_timing import stage
 from realtime_analysis.predictor import Predictor
 from realtime_analysis.schemas import AppliancePrediction
 
@@ -41,4 +42,7 @@ class StandardizingPredictor:
         self._standardizer = FeatureStandardizer(manifest)
 
     def predict(self, window: Sequence[FeatureRow]) -> list[AppliancePrediction]:
-        return self._predictor.predict(self._standardizer.transform(window))
+        with stage("preprocess"):
+            normalized_window = self._standardizer.transform(window)
+        with stage("inference"):
+            return self._predictor.predict(normalized_window)
