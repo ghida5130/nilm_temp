@@ -5,5 +5,12 @@ public enum ActionType {
     NOTIFIED,
     RESPONDED_YES,
     RESPONDED_NO,
-    AUTO_CONFIRMED
+    AUTO_CONFIRMED,
+    ACKNOWLEDGED,
+    PHONE_CALL,
+    VISIT,
+    NOTE,
+    ASSIGNED,
+    CLEARED,
+    RESOLVED
 }

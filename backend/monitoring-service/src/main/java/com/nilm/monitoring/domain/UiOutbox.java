@@ -20,10 +20,13 @@ public class UiOutbox {
     @Column(name = "id")
     private Long outboxId;
 
-    @Column(name = "household_id", nullable = false, length = 50)
+    @Column(name = "household_id", length = 50)
     private String householdId;
 
-    @Column(name = "event_name", nullable = false, length = 40)
+    @Column(name = "recipient_user_id", length = 255)
+    private String recipientUserId;
+
+    @Column(name = "event_name", nullable = false, length = 50)
     private String eventName;
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -40,20 +43,35 @@ public class UiOutbox {
     }
 
     public UiOutbox(String householdId, String eventName, JsonNode payload, Instant createdAt) {
-        this.householdId = householdId;
-        this.eventName = eventName;
-        this.payload = payload;
-        this.createdAt = createdAt;
+        this.householdId = DomainChecks.text(householdId, "householdId", 50);
+        this.recipientUserId = null;
+        this.eventName = DomainChecks.text(eventName, "eventName", 50);
+        this.payload = DomainChecks.required(payload, "payload").deepCopy();
+        this.createdAt = DomainChecks.required(createdAt, "createdAt");
+    }
+
+    public static UiOutbox personal(String recipientUserId, String eventName,
+                                    JsonNode payload, Instant createdAt) {
+        UiOutbox outbox = new UiOutbox();
+        outbox.recipientUserId = DomainChecks.text(recipientUserId, "recipientUserId", 255);
+        outbox.eventName = DomainChecks.text(eventName, "eventName", 50);
+        outbox.payload = DomainChecks.required(payload, "payload").deepCopy();
+        outbox.createdAt = DomainChecks.required(createdAt, "createdAt");
+        return outbox;
     }
 
     public void markPublished(Instant now) {
-        publishedAt = now;
+        DomainChecks.required(now, "now");
+        if (publishedAt == null) {
+            publishedAt = now;
+        }
     }
 
     public Long getOutboxId() { return outboxId; }
     public String getHouseholdId() { return householdId; }
+    public String getRecipientUserId() { return recipientUserId; }
     public String getEventName() { return eventName; }
-    public JsonNode getPayload() { return payload; }
+    public JsonNode getPayload() { return payload.deepCopy(); }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getPublishedAt() { return publishedAt; }
 }

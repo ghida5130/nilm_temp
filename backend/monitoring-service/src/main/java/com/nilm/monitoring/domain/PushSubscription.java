@@ -17,16 +17,16 @@ public class PushSubscription {
     @Column(name = "id")
     private Long subscriptionId;
 
-    @Column(name = "user_id", nullable = false, length = 100)
+    @Column(name = "user_id", nullable = false, length = 255)
     private String userId;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, columnDefinition = "text")
     private String endpoint;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "text")
     private String p256dh;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "text")
     private String auth;
 
     @Column(name = "expires_at")
@@ -46,27 +46,40 @@ public class PushSubscription {
 
     public PushSubscription(String userId, String endpoint, String p256dh, String auth,
                             Instant expirationTime, Instant now) {
-        this.userId = userId;
-        this.endpoint = endpoint;
-        this.p256dh = p256dh;
-        this.auth = auth;
+        this.userId = DomainChecks.text(userId, "userId", 255);
+        this.endpoint = requiredText(endpoint, "endpoint");
+        this.p256dh = requiredText(p256dh, "p256dh");
+        this.auth = requiredText(auth, "auth");
         this.expirationTime = expirationTime;
-        this.createdAt = now;
+        this.createdAt = DomainChecks.required(now, "now");
         this.updatedAt = now;
     }
 
     public void refresh(String userId, String p256dh, String auth, Instant expirationTime, Instant now) {
-        this.userId = userId;
-        this.p256dh = p256dh;
-        this.auth = auth;
+        String validatedUserId = DomainChecks.text(userId, "userId", 255);
+        String validatedP256dh = requiredText(p256dh, "p256dh");
+        String validatedAuth = requiredText(auth, "auth");
+        DomainChecks.chronological(updatedAt, now, "now");
+        this.userId = validatedUserId;
+        this.p256dh = validatedP256dh;
+        this.auth = validatedAuth;
         this.expirationTime = expirationTime;
         this.revokedAt = null;
         this.updatedAt = now;
     }
 
     public void revoke(Instant now) {
+        DomainChecks.chronological(updatedAt, now, "now");
         this.revokedAt = now;
         this.updatedAt = now;
+    }
+
+    private static String requiredText(String value, String name) {
+        DomainChecks.required(value, name);
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
+        return value;
     }
 
     public Long getSubscriptionId() { return subscriptionId; }
