@@ -19,6 +19,7 @@ if PARENT_DIR not in sys.path:
     sys.path.append(PARENT_DIR)
 
 import simulator
+import scenarios
 from .config import ALLOWED_SCENARIOS
 from .manager import SimulatorManager, ModeConflictError
 
@@ -71,7 +72,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "current_mode": self.manager.current_mode,
                 "cycle_count": self.manager.cycle_count,
                 "broker": f"{cfg['host']}:{cfg['port']}{tls_desc}",
-                "last_metrics": self.manager.last_metrics
+                "last_metrics": self.manager.last_metrics,
+                "simulation_date": self.manager.simulation_date if self.manager.is_running else None,
+                "resolved_start_time": self.manager.resolved_start_time if self.manager.is_running else None,
             }
             content = json.dumps(resp_data).encode("utf-8")
             self.send_response(200)
@@ -219,9 +222,36 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 house ID입니다: '{house}'. 허용 목록: {simulator.DEFAULT_HOUSES}")
                 return
 
+            # simulation_date 선택 필드 엄격 검증
+            simulation_date = None
+            if "simulation_date" in params and params["simulation_date"] is not None:
+                raw_sim_date = params["simulation_date"]
+                if not isinstance(raw_sim_date, str):
+                    self.send_error_json(
+                        400,
+                        "BAD_REQUEST",
+                        "잘못된 simulation_date 필드입니다: simulation_date는 YYYY-MM-DD 형식의 문자열이어야 합니다."
+                    )
+                    return
+                try:
+                    simulation_date = scenarios.parse_simulation_date(raw_sim_date)
+                except ValueError as err:
+                    self.send_error_json(
+                        400,
+                        "BAD_REQUEST",
+                        f"잘못된 simulation_date 필드입니다: {err}"
+                    )
+                    return
+
             try:
-                self.manager.start(scenario=scenario, house=house)
-                self.send_json(200, {"status": "started", "scenario": scenario, "house": house})
+                started_info = self.manager.start(scenario=scenario, house=house, simulation_date=simulation_date)
+                self.send_json(200, {
+                    "status": "started",
+                    "scenario": scenario,
+                    "house": house,
+                    "simulation_date": started_info.get("simulation_date"),
+                    "resolved_start_time": started_info.get("resolved_start_time")
+                })
             except (ValueError, FileNotFoundError, PermissionError) as err:
                 self.send_error_json(400, "CONFIG_ERROR", str(err))
             except RuntimeError as err:

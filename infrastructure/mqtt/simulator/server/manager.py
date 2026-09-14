@@ -50,6 +50,8 @@ class SimulatorManager:
         self.simulation_lock = threading.Lock()
         self.is_running = False
         self.current_mode = "idle"  # "idle", "peak", "routine_missed", "random", "manual"
+        self.simulation_date = None
+        self.resolved_start_time = None
         # 실행별로 별도 Event를 생성해 종료된 워커가 다시 살아나는 것을 막는다.
         self.stop_event = None
         self.worker_thread = None
@@ -94,12 +96,20 @@ class SimulatorManager:
                 except queue.Full:
                     pass
 
-    def start(self, scenario: str = "peak", house: str = "H001"):
+    def start(self, scenario: str = "peak", house: str = "H001", simulation_date: str | None = None) -> dict:
         with self.lifecycle_lock:
             # 1. TLS 설정 사전 동기 검증 (CA 누락/미존재/권한 오류 시 런타임 start 호출에서 즉각 예외 발생)
             from engine.tls import get_mqtt_tls_context
             cfg = self.get_connection_config()
             tls_context = get_mqtt_tls_context(tls_enabled=cfg["tls_enabled"], ca_file=cfg["ca_file"])
+
+            # 2. 가상 시작 시각 결정 (scenarios.resolve_simulation_start_time 순수 함수 사용)
+            base_dt = scenarios.resolve_simulation_start_time(
+                scenario,
+                simulation_date=simulation_date,
+                routine_default_time="08:10:01"
+            )
+            resolved_start_iso = scenarios.format_iso_utc(base_dt) if base_dt else None
 
             if not self._stop_and_join():
                 raise RuntimeError("기존 시뮬레이터 워커가 종료되지 않았습니다.")
@@ -111,7 +121,7 @@ class SimulatorManager:
             stop_event = threading.Event()
             worker_thread = threading.Thread(
                 target=self._run_async_worker,
-                args=(scenario, house, stop_event, cfg, tls_context),
+                args=(scenario, house, stop_event, cfg, tls_context, simulation_date, base_dt),
                 daemon=True
             )
 
@@ -121,8 +131,17 @@ class SimulatorManager:
                 self.is_running = True
                 self.current_mode = scenario
                 self.cycle_count = 0
+                self.simulation_date = simulation_date
+                self.resolved_start_time = resolved_start_iso
 
             worker_thread.start()
+            return {
+                "status": "started",
+                "scenario": scenario,
+                "house": house,
+                "simulation_date": simulation_date,
+                "resolved_start_time": resolved_start_iso
+            }
 
     def set_device(self, house: str, device: str, enabled: bool) -> dict:
         """가전 상태를 수동 변경한다. manual 모드에서만 허용되며, lifecycle_lock 및 simulation_lock으로 보호된다."""
@@ -167,14 +186,27 @@ class SimulatorManager:
                 self.stop_event = None
                 self.is_running = False
                 self.current_mode = "idle"
+                self.simulation_date = None
+                self.resolved_start_time = None
 
         return True
 
-    def _run_async_worker(self, scenario: str, house: str, stop_event: threading.Event, cfg: dict, tls_context):
+    def _run_async_worker(
+        self,
+        scenario: str,
+        house: str,
+        stop_event: threading.Event,
+        cfg: dict,
+        tls_context,
+        simulation_date: str | None = None,
+        base_dt: datetime | None = None
+    ):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self._worker_loop(scenario, house, stop_event, cfg, tls_context))
+            loop.run_until_complete(
+                self._worker_loop(scenario, house, stop_event, cfg, tls_context, simulation_date, base_dt)
+            )
         except Exception as err:
             print(f"[WebSimulator] 워커 오류: {err}", flush=True)
         finally:
@@ -186,8 +218,19 @@ class SimulatorManager:
                     self.stop_event = None
                     self.is_running = False
                     self.current_mode = "idle"
+                    self.simulation_date = None
+                    self.resolved_start_time = None
 
-    async def _worker_loop(self, scenario: str, house: str, stop_event: threading.Event, cfg: dict, tls_context):
+    async def _worker_loop(
+        self,
+        scenario: str,
+        house: str,
+        stop_event: threading.Event,
+        cfg: dict,
+        tls_context,
+        simulation_date: str | None = None,
+        base_dt: datetime | None = None
+    ):
         is_peak = (scenario == "peak")
         is_routine_missed = (scenario == "routine_missed")
         is_manual = (scenario == "manual")
@@ -200,11 +243,6 @@ class SimulatorManager:
         else:
             target_count = 999999
         interval = 1.0
-
-        base_dt = None
-        if is_routine_missed:
-            # 08:10:01 KST 시점 기준 타임스탬프 생성
-            base_dt = scenarios.parse_simulation_start_time("08:10:01", is_missed_mode=True)
 
         host = cfg["host"]
         port = cfg["port"]
@@ -232,11 +270,18 @@ class SimulatorManager:
                 cycle_start = time.time()
                 if base_dt is not None:
                     sim_dt = base_dt + timedelta(seconds=cycle)
-                    now_iso = sim_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                    sim_time_kst = (base_dt + timedelta(seconds=cycle)).astimezone(scenarios.KST).strftime("%H:%M:%S")
+                    now_iso = scenarios.format_iso_utc(sim_dt)
+                    sim_kst = sim_dt.astimezone(scenarios.KST)
+                    sim_time_kst = sim_kst.strftime("%H:%M:%S")
+                    sim_date_kst = sim_kst.strftime("%Y-%m-%d")
+                    sim_datetime_kst = sim_kst.strftime("%Y-%m-%d %H:%M:%S KST")
                 else:
-                    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                    sim_time_kst = None
+                    curr_utc = datetime.now(timezone.utc)
+                    now_iso = scenarios.format_iso_utc(curr_utc)
+                    curr_kst = curr_utc.astimezone(scenarios.KST)
+                    sim_time_kst = curr_kst.strftime("%H:%M:%S")
+                    sim_date_kst = curr_kst.strftime("%Y-%m-%d")
+                    sim_datetime_kst = curr_kst.strftime("%Y-%m-%d %H:%M:%S KST")
 
                 cycle += 1
                 self.cycle_count = cycle
@@ -288,6 +333,8 @@ class SimulatorManager:
                     "sec": cycle,
                     "now_iso": now_iso,
                     "simTimeKst": sim_time_kst,
+                    "simDateKst": sim_date_kst,
+                    "simDateTimeKst": sim_datetime_kst,
                     "house": house,
                     "totalP": metrics["active_power"],
                     "totalQ": metrics["reactive_power"],
@@ -310,17 +357,17 @@ class SimulatorManager:
                     elif metrics["active_power"] >= 1000.0:
                         status_tag = "가전 가동 중"
                     notice_str = f" <== [{event_desc}]" if event_desc else ""
-                    print(f"[WebSimulator] (T+{cycle:02d}s) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}{notice_str}", flush=True)
+                    print(f"[WebSimulator] (T+{cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}{notice_str}", flush=True)
                 elif is_routine_missed:
                     status_tag, notice = scenarios.RoutineMissedScenario.get_cycle_status(cycle)
                     notice_str = f" <== [{event_desc}]" if event_desc else notice
-                    print(f"[WebSimulator] (T+{cycle:03d}s | KST {sim_time_kst}) {house} 전력: {metrics['active_power']:5.1f} W | {status_tag}{notice_str}", flush=True)
+                    print(f"[WebSimulator] (T+{cycle:03d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:5.1f} W | {status_tag}{notice_str}", flush=True)
                 elif is_manual:
                     act_str = ", ".join(metrics["active_devices"]) if metrics["active_devices"] else "대기(가전 OFF)"
-                    print(f"[WebSimulator] (T+{cycle:02d}s) {house} 전력: {metrics['active_power']:7.1f} W | 수동 제어 모드 [{act_str}]", flush=True)
+                    print(f"[WebSimulator] (T+{cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | 수동 제어 모드 [{act_str}]", flush=True)
                 else:
                     status_tag = "가전 가동 중" if metrics["active_power"] >= 500.0 else "대기"
-                    print(f"[WebSimulator] (T+{cycle:02d}s) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}", flush=True)
+                    print(f"[WebSimulator] (T+{cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag}", flush=True)
 
                 if target_count > 0 and cycle >= target_count:
                     print(f"[WebSimulator] 목표 사이클({target_count}회) 완주, 자동 정지합니다.", flush=True)

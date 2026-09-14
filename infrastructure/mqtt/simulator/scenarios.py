@@ -7,8 +7,9 @@ NILM 스마트홈 전력 시뮬레이터 시나리오 및 대기전력 모델 (S
 """
 
 import math
+import re
 import random
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
 # 한국 표준시 (KST = UTC+9)
 KST = timezone(timedelta(hours=9))
@@ -157,26 +158,157 @@ def inject_peak_scenario_event(cycle_sec: int, house: str, device_states: dict) 
 
 
 # ==========================================
-# 4. 가상 시각(Virtual Time) 파싱 헬퍼
+# 4. 가상 시각(Virtual Time) 및 날짜 파싱 헬퍼
 # ==========================================
+def parse_simulation_date(val: object) -> str:
+    """
+    엄격한 YYYY-MM-DD 형식의 실제 존재하는 유효한 날짜인지 검증 및 파싱.
+    - 문자열이 아니거나 공백이 포함되어 있거나 형식이 맞지 않거나 실제 존재하지 않는 날짜(예: 2026-02-30)인 경우 ValueError 발생.
+    - 성공 시 검증된 YYYY-MM-DD 문자열 반환.
+    """
+    if not isinstance(val, str) or isinstance(val, bool):
+        raise ValueError("simulation_date는 YYYY-MM-DD 형식의 문자열이어야 합니다.")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+        raise ValueError(f"올바르지 않은 simulation_date 형식입니다: '{val}'. YYYY-MM-DD 형식이어야 합니다.")
+    try:
+        parsed_dt = datetime.strptime(val, "%Y-%m-%d")
+        return parsed_dt.strftime("%Y-%m-%d")
+    except ValueError as err:
+        raise ValueError(f"존재하지 않는 유효하지 않은 simulation_date입니다: '{val}' ({err})")
+
+
+def format_iso_utc(dt: datetime) -> str:
+    """timezone-aware datetime을 밀리초 3자리 UTC ISO 8601 포맷 문자열로 변환 (예: 2026-09-10T05:30:15.000Z)"""
+    aware_dt = dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+    return aware_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _parse_time_parts(time_str: str) -> tuple[int, int, int]:
+    """HH:MM:SS 또는 HH:MM 시간 문자열을 파싱하여 (hour, minute, second) 튜플을 반환한다."""
+    parts = time_str.strip().split(":")
+    if len(parts) not in (2, 3):
+        raise ValueError(f"올바르지 않은 시간 형식입니다: '{time_str}' (HH:MM:SS 또는 HH:MM)")
+    try:
+        h = int(parts[0])
+        m = int(parts[1])
+        s = int(parts[2]) if len(parts) > 2 else 0
+    except ValueError:
+        raise ValueError(f"시간 값은 정수여야 합니다: '{time_str}'")
+    if not (0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59):
+        raise ValueError(f"유효하지 않은 시간 범위입니다: '{time_str}' (00:00:00 ~ 23:59:59)")
+    return h, m, s
+
+
+def resolve_simulation_start_time(
+    scenario: str,
+    simulation_date: str | date | None = None,
+    start_time_str: str | None = None,
+    now: datetime | None = None,
+    routine_default_time: str = "08:10:01"
+) -> datetime | None:
+    """
+    시나리오, 기준 날짜(simulation_date), 시작 시각(start_time_str)을 기반으로 가상 시작 시각(aware datetime KST)을 결정한다.
+
+    우선순위 및 규칙:
+    A. simulation_date와 시간 형식 start_time_str 함께 지정: 선택 날짜 + 지정 시간 (KST)
+    B. 시간 형식 start_time_str만 지정: 오늘 날짜 + 지정 시간 (KST)
+    C. 완전한 ISO datetime start_time_str만 지정: ISO datetime 그대로 사용 (tz 없으면 KST)
+    D. simulation_date와 완전한 ISO datetime 동시 지정: 충돌 오류(ValueError) 발생
+    E. simulation_date만 지정:
+       - routine_missed: 선택 날짜 + routine_default_time (KST)
+       - peak/random/manual: 선택 날짜 + 현재 KST 시각(now)
+    F. 아무 값도 지정하지 않음:
+       - routine_missed: 오늘 날짜 + routine_default_time (KST)
+       - peak/random/manual: None 반환 (실제 현재 시각 기반 동작)
+    """
+    # 1. 기준 now_dt 준비 (KST aware)
+    if now is None:
+        now_dt = datetime.now(KST)
+    elif now.tzinfo is None:
+        now_dt = now.replace(tzinfo=KST)
+    else:
+        now_dt = now.astimezone(KST)
+
+    # 2. simulation_date 파싱
+    target_date: date | None = None
+    if simulation_date:
+        if isinstance(simulation_date, datetime):
+            target_date = simulation_date.date()
+        elif isinstance(simulation_date, date):
+            target_date = simulation_date
+        else:
+            date_str = parse_simulation_date(simulation_date)
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    # 3. start_time_str 분석
+    clean_start_time = start_time_str.strip() if start_time_str is not None and isinstance(start_time_str, str) else None
+    is_time_only = False
+    is_iso_dt = False
+    parsed_time_tuple: tuple[int, int, int] | None = None
+    parsed_iso_dt: datetime | None = None
+
+    if clean_start_time:
+        # 시간 형식(HH:MM[:SS]) 여부 확인: ":" 포함, "T" 및 "-" 미포함
+        if ":" in clean_start_time and "T" not in clean_start_time and "-" not in clean_start_time:
+            parsed_time_tuple = _parse_time_parts(clean_start_time)
+            is_time_only = True
+        else:
+            try:
+                parsed_iso_dt = datetime.fromisoformat(clean_start_time)
+                is_iso_dt = True
+            except ValueError as err:
+                raise ValueError(f"올바르지 않은 --start-time 형식입니다: '{clean_start_time}' ({err})")
+
+    # D. simulation_date와 완전한 ISO datetime 동시 지정 충돌 거절
+    if target_date is not None and is_iso_dt:
+        raise ValueError("--date와 완전한 ISO --start-time을 함께 사용할 수 없습니다.")
+
+    # C. 완전한 ISO datetime 단독 지정
+    if is_iso_dt and parsed_iso_dt is not None:
+        if parsed_iso_dt.tzinfo is None:
+            return parsed_iso_dt.replace(tzinfo=KST)
+        return parsed_iso_dt
+
+    # A & B. 시간 형식 start_time이 지정된 경우 (시나리오 무관하게 명시된 시간 사용)
+    if is_time_only and parsed_time_tuple is not None:
+        base_d = target_date if target_date is not None else now_dt.date()
+        h, m, s = parsed_time_tuple
+        return datetime(base_d.year, base_d.month, base_d.day, h, m, s, tzinfo=KST)
+
+    # E. simulation_date만 지정된 경우
+    if target_date is not None:
+        if scenario == "routine_missed":
+            def_h, def_m, def_s = _parse_time_parts(routine_default_time)
+            return datetime(target_date.year, target_date.month, target_date.day, def_h, def_m, def_s, tzinfo=KST)
+        else:
+            return datetime(
+                target_date.year, target_date.month, target_date.day,
+                now_dt.hour, now_dt.minute, now_dt.second,
+                tzinfo=KST
+            )
+
+    # F. 아무 값도 지정하지 않은 경우
+    if scenario == "routine_missed":
+        today = now_dt.date()
+        def_h, def_m, def_s = _parse_time_parts(routine_default_time)
+        return datetime(today.year, today.month, today.day, def_h, def_m, def_s, tzinfo=KST)
+
+    return None
+
+
 def parse_simulation_start_time(start_time_str: str | None, is_missed_mode: bool) -> datetime | None:
     """
-    시작 가상 시각 파싱.
+    시작 가상 시각 파싱 (레거시 CLI 및 헬퍼 호환).
     - routine_missed 모드는 미지정 시 기본값으로 오늘 아침 08:15:00 KST 반환
     """
     if start_time_str:
         try:
             val = start_time_str.strip()
-            if ":" in val and "T" not in val:
-                # "08:15:00" 또는 "08:15"
-                parts = [int(p) for p in val.split(":")]
-                hour = parts[0]
-                minute = parts[1]
-                second = parts[2] if len(parts) > 2 else 0
+            if ":" in val and "T" not in val and "-" not in val:
+                h, m, s = _parse_time_parts(val)
                 today = datetime.now(KST).date()
-                return datetime(today.year, today.month, today.day, hour, minute, second, tzinfo=KST)
+                return datetime(today.year, today.month, today.day, h, m, s, tzinfo=KST)
             else:
-                # ISO 문자열 파싱
                 dt = datetime.fromisoformat(val)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=KST)
