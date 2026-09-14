@@ -65,7 +65,8 @@ public class Incident {
     }
 
     public Incident(UUID incidentId, UUID sourceEventId, String householdId,
-                    String incidentType, Instant openedAt) {
+                    String incidentType, Instant openedAt)
+    {
         this(incidentId, sourceEventId, null, householdId, incidentType, null, openedAt);
     }
 
