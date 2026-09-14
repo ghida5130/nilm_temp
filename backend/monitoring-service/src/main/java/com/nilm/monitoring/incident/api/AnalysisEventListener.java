@@ -13,6 +13,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
+// Kafka 메시지 수신 (event)
 @Component
 public class AnalysisEventListener {
 

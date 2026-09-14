@@ -60,6 +60,8 @@ public class AnalysisEventIngestService {
         this.maxEventAge = maxEventAge;
     }
 
+    // 사건 생성 + outbox 생성
+    // SSE는 생성된 outbox를 SSE 전송 (outbox\service\SseHub.java)
     @Transactional
     public IngestResult ingest(AnalysisEventMessage message) {
         if (eventRepository.existsById(message.eventId())) {
