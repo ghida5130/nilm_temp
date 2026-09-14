@@ -8,9 +8,3 @@ WHERE NOT EXISTS (
     SELECT 1 FROM household_access
      WHERE household_id = 'H001' AND user_id = 'local-user'
 );
-
-INSERT INTO household_access (household_id, user_id)
-VALUES
-    ('H002', 'local-user'),
-    ('H003', 'local-user')
-ON CONFLICT DO NOTHING;
