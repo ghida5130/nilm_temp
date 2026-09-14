@@ -31,6 +31,14 @@ public class DomainExceptionHandler {
                 e.getMessage(), request.getRequestURI(), List.of()));
     }
 
+    @ExceptionHandler(InvalidOperationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidOperation(
+            InvalidOperationException e, HttpServletRequest request) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(), "INVALID_OPERATION",
+                e.getMessage(), request.getRequestURI(), List.of()));
+    }
+
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ErrorResponse> handleDuplicate(
             DuplicateResourceException e, HttpServletRequest request) {
