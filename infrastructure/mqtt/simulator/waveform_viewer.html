@@ -159,6 +159,11 @@
       cursor: pointer;
     }
 
+    .speed-select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .grid-stats {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -503,6 +508,10 @@
       <button id="btnReset" class="btn btn-secondary" onclick="resetSimulation()">
         초기화
       </button>
+      <div class="date-control-group" style="display: inline-flex; align-items: center; gap: 6px;">
+        <label for="simDateInput" style="font-size: 0.85rem; font-weight: 600; color: #94a3b8;">기준 날짜:</label>
+        <input type="date" id="simDateInput" class="speed-select" style="padding: 6px 10px;" />
+      </div>
       <select id="speedSelect" class="speed-select" onchange="changeSpeed(this.value)">
         <option value="1000">1x (실시간 1.0초)</option>
         <option value="500">2x 배속 (0.5초)</option>
@@ -1134,11 +1143,12 @@
           timelineNotice.innerHTML = `<strong>[시연 완료]</strong> T+${currentSec}s: 모든 가전이 종료되어 평상시 대기 상태로 복귀했습니다.`;
         } else if (currentMode === 'routine_missed') {
           badgeStatus.className = "badge-status status-missed";
+          const simDateVal = (document.getElementById('simDateInput') && document.getElementById('simDateInput').value) || getKstTodayDateString();
           const totalSecKst = 8 * 3600 + 10 * 60 + currentSec;
           const curH = Math.floor(totalSecKst / 3600) % 24;
           const curM = Math.floor((totalSecKst % 3600) / 60);
           const curS = totalSecKst % 60;
-          const timeStr = `${String(curH).padStart(2, '0')}:${String(curM).padStart(2, '0')}:${String(curS).padStart(2, '0')}`;
+          const timeStr = `${simDateVal} ${String(curH).padStart(2, '0')}:${String(curM).padStart(2, '0')}:${String(curS).padStart(2, '0')}`;
 
           if (currentSec < 299) {
             badgeStatus.textContent = `루틴 누락 감시 (${currentSec}/299s)`;
@@ -1194,11 +1204,13 @@
         timerId = null;
         document.getElementById('btnPause').disabled = true;
         badgeStatus.textContent = "시연 완료 (60s 완주)";
+        setSimulationDateInputEnabled(true);
       } else if (currentMode === 'routine_missed' && currentSec >= 300) {
         clearInterval(timerId);
         timerId = null;
         document.getElementById('btnPause').disabled = true;
         badgeStatus.textContent = "시연 완료 (300s 완주)";
+        setSimulationDateInputEnabled(true);
       }
     }
 
@@ -1311,13 +1323,15 @@
         hasReceivedManualSse = true;
       }
 
+      const timeLabel = getSimulationDateTimeLabel(m);
+
       if (m.totalP >= 3000.0) {
         cardPower.className = "stat-card alert-card";
         badgeStatus.className = "badge-status status-peak";
         badgeStatus.textContent = "피크 경보 (3,000W+ 초과!)";
         timelineNotice.style.color = "#f87171";
         timelineNotice.style.borderColor = "#ef4444";
-        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> T+${m.sec}s: 소비전력 <strong>${m.totalP.toFixed(1)} W</strong> - Mosquitto 및 Kafka로 피크 데이터가 실시간 전송 중입니다!`;
+        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 소비전력 <strong>${m.totalP.toFixed(1)} W</strong> - Mosquitto 및 Kafka로 피크 데이터가 실시간 전송 중입니다!`;
       } else if (m.mode === 'manual') {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-running";
@@ -1325,38 +1339,37 @@
         timelineNotice.style.color = "#a78bfa";
         timelineNotice.style.borderColor = "rgba(167, 139, 250, 0.4)";
         const actDevs = (m.activeNames && m.activeNames.length > 0) ? m.activeNames.join(', ') : "가전 대기(OFF)";
-        timelineNotice.innerHTML = `<strong>[가전 수동 제어]</strong> T+${m.sec}s: 총 전력 <strong>${m.totalP.toFixed(1)} W</strong> (가전: ${actDevs}) - 가전 버튼을 클릭하여 ON/OFF를 제어하세요.`;
+        timelineNotice.innerHTML = `<strong>[가전 수동 제어]</strong> ${timeLabel}T+${m.sec}s: 총 전력 <strong>${m.totalP.toFixed(1)} W</strong> (가전: ${actDevs}) - 가전 버튼을 클릭하여 ON/OFF를 제어하세요.`;
       } else if (m.totalP >= 1000.0) {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-running";
         badgeStatus.textContent = "가전 가동 중 (MQTT 발행)";
         timelineNotice.style.color = "#38bdf8";
         timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.3)";
-        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> T+${m.sec}s: 소비전력 ${m.totalP.toFixed(1)} W (가전: ${m.activeNames.join(', ')})`;
+        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 소비전력 ${m.totalP.toFixed(1)} W (가전: ${m.activeNames.join(', ')})`;
       } else if (m.mode === 'routine_missed') {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-missed";
-        const kstStr = m.simTimeKst ? ` [KST ${m.simTimeKst}]` : "";
 
         if (m.sec < 299) {
           badgeStatus.textContent = `루틴 누락 감시 (${m.sec}/299s)`;
           timelineNotice.style.color = "#fbbf24";
           timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
-          timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> T+${m.sec}s${kstStr}: 전자레인지 미사용 대기전력 <strong>${m.totalP.toFixed(1)} W</strong> (AI 버퍼 누적: ${m.sec}/299초)`;
+          timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 전자레인지 미사용 대기전력 <strong>${m.totalP.toFixed(1)} W</strong> (AI 버퍼 누적: ${m.sec}/299초)`;
         } else if (m.sec === 299) {
           badgeStatus.textContent = "이상치 감지 트리거 (299s)";
           timelineNotice.style.color = "#ef4444";
           timelineNotice.style.borderColor = "#ef4444";
-          timelineNotice.innerHTML = `<strong>[실제 이상치 발생!]</strong> T+${m.sec}s${kstStr}: 299초 버퍼 완충! 실시간 분석 서비스가 <strong>ROUTINE_MISSED</strong>를 Kafka 'analysis.event.v1'에 발행했습니다!`;
+          timelineNotice.innerHTML = `<strong>[실제 이상치 발생!]</strong> ${timeLabel}T+${m.sec}s: 299초 버퍼 완충! 실시간 분석 서비스가 <strong>ROUTINE_MISSED</strong>를 Kafka 'analysis.event.v1'에 발행했습니다!`;
         } else {
           badgeStatus.textContent = "이상 상태 유지 (300s 완주)";
-          timelineNotice.innerHTML = `<strong>[시연 완료]</strong> T+${m.sec}s${kstStr}: 300초 데이터 전송 완료. Kafka UI에서 이상치 이벤트를 확인하세요.`;
+          timelineNotice.innerHTML = `<strong>[시연 완료]</strong> ${timeLabel}T+${m.sec}s: 300초 데이터 전송 완료. Kafka UI에서 이상치 이벤트를 확인하세요.`;
         }
       } else {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-normal";
         badgeStatus.textContent = "정상 대기 (MQTT 발행)";
-        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> T+${m.sec}s: 대기전력 상태 (카프카 토픽 power.raw.v1로 실시간 전송 중)`;
+        timelineNotice.innerHTML = `<strong>[실제 MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 대기전력 상태 (카프카 토픽 power.raw.v1로 실시간 전송 중)`;
       }
 
       // 이벤트 로그 기록
@@ -1431,21 +1444,97 @@
         if (evtSource) { evtSource.close(); evtSource = null; }
         document.getElementById('btnPause').disabled = true;
         badgeStatus.textContent = "시연 완료 (60s 완주)";
+        setSimulationDateInputEnabled(true);
       } else if (currentMode === 'routine_missed' && m.sec >= 300) {
         if (evtSource) { evtSource.close(); evtSource = null; }
         document.getElementById('btnPause').disabled = true;
         badgeStatus.textContent = "시연 완료 (300s 완주)";
+        setSimulationDateInputEnabled(true);
       }
     }
 
     // ==========================================
-    // 5. 버튼 컨트롤 핸들러 (서버 연동 지원)
+    // 5. 버튼 컨트롤 핸들러 및 날짜 헬퍼 (서버 연동 지원)
     // ==========================================
+    function getSimulationDateTimeLabel(m) {
+      if (!m) return '';
+      if (m.simDateTimeKst) {
+        const s = String(m.simDateTimeKst).trim();
+        return s.endsWith('KST') ? `[${s}] ` : `[${s} KST] `;
+      }
+      if (m.simTimeKst) {
+        const s = String(m.simTimeKst).trim();
+        return s.endsWith('KST') ? `[${s}] ` : `[${s} KST] `;
+      }
+      return '';
+    }
+
+    function getKstTodayDateString() {
+      const formatter = new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const parts = formatter.formatToParts(new Date());
+      const year = parts.find(p => p.type === 'year').value;
+      const month = parts.find(p => p.type === 'month').value;
+      const day = parts.find(p => p.type === 'day').value;
+      return `${year}-${month}-${day}`;
+    }
+
+    function setSimulationDateInputEnabled(enabled) {
+      const input = document.getElementById('simDateInput');
+      if (input) {
+        input.disabled = !enabled;
+      }
+    }
+
+    function getStartPayload(scenario, house = 'H001') {
+      const dateInput = document.getElementById('simDateInput');
+      const simDate = dateInput ? dateInput.value : '';
+
+      if (!simDate) {
+        showNoticeError("시뮬레이션 기준 날짜를 입력해주세요 (YYYY-MM-DD).");
+        return null;
+      }
+
+      // 엄격한 YYYY-MM-DD 정규식 검증
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(simDate)) {
+        showNoticeError("올바르지 않은 날짜 형식입니다. YYYY-MM-DD 형식으로 입력해주세요.");
+        return null;
+      }
+
+      const parts = simDate.split('-');
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      const d = parseInt(parts[2], 10);
+      const testDate = new Date(Date.UTC(y, m - 1, d));
+      if (
+        testDate.getUTCFullYear() !== y ||
+        testDate.getUTCMonth() + 1 !== m ||
+        testDate.getUTCDate() !== d
+      ) {
+        showNoticeError("존재하지 않는 유효하지 않은 날짜입니다: " + simDate);
+        return null;
+      }
+
+      return {
+        scenario: scenario,
+        house: house,
+        simulation_date: simDate
+      };
+    }
+
     async function startManualDemo() {
       if (!isServerConnected) {
         showNoticeError("가전 수동 제어는 서버 및 MQTT 브로커 연결 상태에서만 지원됩니다.");
         return;
       }
+
+      const payload = getStartPayload('manual', 'H001');
+      if (!payload) return;
 
       await resetSimulation();
       currentMode = "manual";
@@ -1460,13 +1549,13 @@
       document.getElementById('badgeStatus').textContent = "수동 제어 준비 중";
       document.getElementById('timelineNotice').style.color = "#a78bfa";
       document.getElementById('timelineNotice').style.borderColor = "rgba(167, 139, 250, 0.4)";
-      document.getElementById('timelineNotice').innerHTML = `<strong>[수동 제어 준비]</strong> 서버에 manual 시뮬레이터 시작을 요청하고 있습니다...`;
+      document.getElementById('timelineNotice').innerHTML = `<strong>[수동 제어 준비]</strong> (${payload.simulation_date}) 서버에 manual 시뮬레이터 시작을 요청하고 있습니다...`;
 
       try {
         const res = await fetch('/api/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scenario: 'manual', house: 'H001' })
+          body: JSON.stringify(payload)
         });
 
         if (!res.ok) {
@@ -1481,19 +1570,25 @@
           document.getElementById('badgeStatus').className = "badge-status status-normal";
           document.getElementById('badgeStatus').textContent = "시작 실패";
           updateApplianceButtonsState();
+          setSimulationDateInputEnabled(true);
           return;
         }
 
+        setSimulationDateInputEnabled(false);
         connectServerStream();
       } catch (err) {
         showNoticeError(`수동 제어 요청 네트워크 오류: ${err.message || err}`);
         currentMode = null;
         document.getElementById('btnPause').disabled = true;
         updateApplianceButtonsState();
+        setSimulationDateInputEnabled(true);
       }
     }
 
     async function startPeakDemo() {
+      const payload = getStartPayload('peak', 'H001');
+      if (!payload) return;
+
       await resetSimulation();
       currentMode = 'peak';
       clearAllPendingRequests();
@@ -1509,9 +1604,10 @@
           const res = await fetch('/api/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scenario: 'peak', house: 'H001' })
+            body: JSON.stringify(payload)
           });
           if (res.ok) {
+            setSimulationDateInputEnabled(false);
             connectServerStream();
             return;
           }
@@ -1521,11 +1617,15 @@
       }
 
       // [로컬 모드]: 브라우저 단독 실행
+      setSimulationDateInputEnabled(false);
       tick();
       timerId = setInterval(tick, intervalMs);
     }
 
     async function startRoutineMissedDemo() {
+      const payload = getStartPayload('routine_missed', 'H001');
+      if (!payload) return;
+
       await resetSimulation();
       currentMode = 'routine_missed';
       clearAllPendingRequests();
@@ -1548,9 +1648,10 @@
           const res = await fetch('/api/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scenario: 'routine_missed', house: 'H001' })
+            body: JSON.stringify(payload)
           });
           if (res.ok) {
+            setSimulationDateInputEnabled(false);
             connectServerStream();
             return;
           }
@@ -1560,11 +1661,15 @@
       }
 
       // [로컬 모드]: 브라우저 단독 실행
+      setSimulationDateInputEnabled(false);
       tick();
       timerId = setInterval(tick, intervalMs);
     }
 
     async function startRandomSimulation() {
+      const payload = getStartPayload('random', 'H001');
+      if (!payload) return;
+
       await resetSimulation();
       currentMode = 'random';
       clearAllPendingRequests();
@@ -1579,9 +1684,10 @@
           const res = await fetch('/api/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scenario: 'random', house: 'H001' })
+            body: JSON.stringify(payload)
           });
           if (res.ok) {
+            setSimulationDateInputEnabled(false);
             connectServerStream();
             return;
           }
@@ -1590,6 +1696,7 @@
         }
       }
 
+      setSimulationDateInputEnabled(false);
       tick();
       timerId = setInterval(tick, intervalMs);
     }
@@ -1625,11 +1732,14 @@
             document.getElementById('badgeStatus').textContent = "일시정지됨";
           } else {
             // manual 모드 재생: /api/start 응답 검증
+            const payload = getStartPayload('manual', 'H001');
+            if (!payload) return;
+
             try {
               const res = await fetch('/api/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scenario: 'manual', house: 'H001' })
+                body: JSON.stringify(payload)
               });
               if (!res.ok) {
                 let errMsg = `재생 시작 실패 (${res.status})`;
@@ -1647,6 +1757,7 @@
             }
 
             // start 성공 후에만 isPaused=false로 변경하고 SSE 스트림 연결
+            setSimulationDateInputEnabled(false);
             isPaused = false;
             hasReceivedManualSse = false;
             clearAllPendingRequests();
@@ -1666,12 +1777,15 @@
           document.getElementById('btnPause').textContent = "재생";
           document.getElementById('badgeStatus').textContent = "일시정지됨";
         } else {
+          const payload = getStartPayload(currentMode || 'peak', 'H001');
+          if (!payload) return;
           isPaused = false;
+          setSimulationDateInputEnabled(false);
           document.getElementById('btnPause').textContent = "일시정지";
           await fetch('/api/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scenario: currentMode, house: 'H001' })
+            body: JSON.stringify(payload)
           }).catch(() => { });
           connectServerStream();
         }
@@ -1698,6 +1812,8 @@
         if (evtSource) { evtSource.close(); evtSource = null; }
         await fetch('/api/stop', { method: 'POST' }).catch(() => { });
       }
+
+      setSimulationDateInputEnabled(true);
 
       if (timerId) {
         clearInterval(timerId);
@@ -1764,6 +1880,12 @@
         clearInterval(timerId);
         timerId = setInterval(tick, intervalMs);
       }
+    }
+
+    // 초기 기준 날짜 세팅 (Asia/Seoul 기준 오늘 날짜)
+    const dateInputInit = document.getElementById('simDateInput');
+    if (dateInputInit && !dateInputInit.value) {
+      dateInputInit.value = getKstTodayDateString();
     }
 
     // 초기 서버 연결 상태 감지
