@@ -23,8 +23,13 @@ const scriptCode = scriptMatch[1];
 
 // 2. Mock DOM 및 브라우저 환경 구축
 function createMockElement(id = '', tagName = 'div') {
+  let _id = id;
   const el = {
-    id: id,
+    get id() { return _id; },
+    set id(val) {
+      _id = val;
+      if (val) domElements.set(val, this);
+    },
     tagName: tagName.toUpperCase(),
     textContent: '',
     innerHTML: '',
@@ -56,7 +61,15 @@ function createMockElement(id = '', tagName = 'div') {
     getContext(type) {
       return { canvas: this, type };
     },
-    click() {}
+    click() {},
+    querySelector(sel) {
+      const m = sel.match(/option\[value="([^"]+)"\]/);
+      if (m) {
+        const val = m[1];
+        return this.children.find(c => c.tagName === 'OPTION' && (c.value === val || c.getAttribute('value') === val)) || null;
+      }
+      return null;
+    }
   };
   return el;
 }
@@ -72,13 +85,24 @@ function getOrCreateElement(id, tagName = 'div') {
 // 사전 등록할 필수 DOM 요소들
 const preRegisteredIds = [
   'householdTableBody', 'simDateInput', 'observedHouseBadge', 'observedHouseSelect',
+  'speedSelect',
   'btnPause', 'badgeStatus', 'valPower', 'valApparent', 'valCurrent', 'valVoltage',
   'valPf', 'valReactive', 'valTime', 'valMaxPower', 'cardPower', 'timelineNotice',
   'eventTableBody', 'serverIndicator', 'chartMain', 'chartSecondary',
   'btnPresetPeak', 'btnPresetMissed', 'btnPresetAllRandom', 'btnPresetManual',
-  'btnRunMulti', 'btnResetAll', 'btnManualToggle'
+  'btnRunMulti', 'btnResetAll', 'btnManualToggle',
+  'btnDemoNormalRoutine', 'btnDemoRoutineMissed'
 ];
 preRegisteredIds.forEach(id => getOrCreateElement(id));
+
+// speedSelect 옵션 사전 채우기
+const speedSelectInit = getOrCreateElement('speedSelect', 'select');
+['1000', '500', '200', '100'].forEach(val => {
+  const opt = createMockElement('', 'option');
+  opt.value = val;
+  opt.setAttribute('value', val);
+  speedSelectInit.appendChild(opt);
+});
 
 // 가구별 DOM 요소 사전 등록 (H001 ~ H010)
 const houses = ["H001", "H002", "H003", "H004", "H005", "H006", "H007", "H008", "H009", "H010"];
@@ -189,6 +213,7 @@ try {
 }
 
 const getGlobal = (expr) => vm.runInContext(expr, context);
+const setGlobal = (name, val) => vm.runInContext(`${name} = ${JSON.stringify(val)};`, context);
 
 // ==========================================
 // 검증 시나리오 실행
@@ -397,6 +422,750 @@ async function runTests() {
   assert.strictEqual(getGlobal('activeConfiguredHouseholds').length, 0, "reset 성공 시 activeConfiguredHouseholds가 비워져야 합니다.");
   assert.strictEqual(getGlobal('chartMain').data.datasets[0].data.length, 0, "reset 성공 시 차트 데이터가 비워져야 합니다.");
   console.log("✔ Test 7 통과: resetSimulation 실패 시 SSE/상태 보존 및 성공 시 초기화 검증 완료");
+
+  // Test 8: startNormalRoutineDemo() 원클릭 정상 일상 시나리오 시작 검증
+  console.log("\n[Test 8] startNormalRoutineDemo 원클릭 정상 일상 실행 검증");
+  const startNormalRoutineDemo = getGlobal('startNormalRoutineDemo');
+  assert.ok(typeof startNormalRoutineDemo === 'function', "startNormalRoutineDemo 함수가 존재해야 합니다.");
+
+  fetchCalls.length = 0;
+  mockFetchResponse = {
+    ok: true,
+    status: 200,
+    json: async () => ({ status: "started" })
+  };
+
+  await startNormalRoutineDemo();
+
+  // reset 호출 후 start 호출 확인
+  assert.strictEqual(fetchCalls.length, 2, "reset과 start 총 2회 호출되어야 합니다.");
+  assert.strictEqual(fetchCalls[0].url, "/api/reset", "첫 번째 호출은 /api/reset이어야 합니다.");
+  assert.strictEqual(fetchCalls[1].url, "/api/start", "두 번째 호출은 /api/start이어야 합니다.");
+
+  const startReqNormal = JSON.parse(fetchCalls[1].options.body);
+  assert.strictEqual(startReqNormal.households.length, 1, "H001 가구 1개만 요청되어야 합니다.");
+  assert.strictEqual(startReqNormal.households[0].house, "H001", "요청 가구가 H001이어야 합니다.");
+  assert.strictEqual(startReqNormal.households[0].scenario, "normal_routine", "요청 시나리오가 normal_routine이어야 합니다.");
+  console.log("✔ Test 8 통과: startNormalRoutineDemo가 초기화 후 H001/normal_routine을 정상 요청함");
+
+  // Test 9: startRoutineMissedDemo() 원클릭 루틴 누락 시나리오 시작 검증
+  console.log("\n[Test 9] startRoutineMissedDemo 원클릭 루틴 누락 실행 검증");
+  const startRoutineMissedDemo = getGlobal('startRoutineMissedDemo');
+  assert.ok(typeof startRoutineMissedDemo === 'function', "startRoutineMissedDemo 함수가 존재해야 합니다.");
+
+  fetchCalls.length = 0;
+  await startRoutineMissedDemo();
+
+  assert.strictEqual(fetchCalls.length, 2, "reset과 start 총 2회 호출되어야 합니다.");
+  assert.strictEqual(fetchCalls[0].url, "/api/reset", "첫 번째 호출은 /api/reset이어야 합니다.");
+  assert.strictEqual(fetchCalls[1].url, "/api/start", "두 번째 호출은 /api/start이어야 합니다.");
+
+  const startReqMissed = JSON.parse(fetchCalls[1].options.body);
+  assert.strictEqual(startReqMissed.households.length, 1, "H001 가구 1개만 요청되어야 합니다.");
+  assert.strictEqual(startReqMissed.households[0].house, "H001", "요청 가구가 H001이어야 합니다.");
+  assert.strictEqual(startReqMissed.households[0].scenario, "routine_missed", "요청 시나리오가 routine_missed이어야 합니다.");
+  console.log("✔ Test 9 통과: startRoutineMissedDemo가 초기화 후 H001/routine_missed를 정상 요청함");
+
+  // Test 10: 원클릭 버튼에서 reset 실패 시(503 등) /api/start 중단 및 상태 보존 검증
+  console.log("\n[Test 10] 원클릭 실행 시 초기화 실패(503) 방어 및 SSE/상태 보존 검증");
+  const demoEvtSource = new MockEventSource("/api/stream");
+  sandbox.testDemoEvtSource = demoEvtSource;
+  vm.runInContext('evtSource = testDemoEvtSource', context);
+
+  // 사전에 실행 중 상태 및 가구, 속도 상태 설정
+  setGlobal('isSimulationRunning', true);
+  setGlobal('activeConfiguredHouseholds', [{ house: "H001", scenario: "normal_routine" }]);
+  setGlobal('intervalMs', 200);
+  setGlobal('lastSuccessfulSpeedMs', 200);
+
+  mockFetchResponse = {
+    ok: false,
+    status: 503,
+    json: async () => ({ status: "error", message: "시뮬레이터 초기화 서비스 불가(503)" })
+  };
+
+  fetchCalls.length = 0;
+  noticeErrorCalledWith = null;
+
+  await startNormalRoutineDemo();
+
+  assert.strictEqual(fetchCalls.length, 1, "reset 실패 시 /api/reset 1회만 호출되어야 합니다.");
+  assert.strictEqual(fetchCalls[0].url, "/api/reset", "호출 엔드포인트는 /api/reset이어야 합니다.");
+  assert.strictEqual(demoEvtSource.closeCalled, false, "reset 실패 시 기존 EventSource가 닫히지 않아야 합니다.");
+  assert.ok(getGlobal('evtSource') !== null, "evtSource가 유지되어야 합니다.");
+  assert.ok(noticeErrorCalledWith !== null, "사용자에게 에러 메시지가 표시되어야 합니다.");
+  assert.strictEqual(getGlobal('isSimulationRunning'), true, "reset 실패 후 isSimulationRunning=true 가 유지되어야 합니다.");
+  assert.strictEqual(getGlobal('activeConfiguredHouseholds').length, 1, "가구 설정이 유지되어야 합니다.");
+  assert.strictEqual(getGlobal('intervalMs'), 200, "기존 배속 설정이 유지되어야 합니다.");
+
+  // Reset 실패 후에도 isSimulationRunning이 true이므로 changeSpeed() 호출 시 /api/speed가 실제 호출되어야 함
+  fetchCalls.length = 0;
+  mockFetchResponse = {
+    ok: true,
+    status: 200,
+    json: async () => ({ status: "speed_updated", interval: 0.1, speed: 10.0 })
+  };
+  const changeSpeedFunc = getGlobal('changeSpeed');
+  await changeSpeedFunc("100");
+  assert.strictEqual(fetchCalls.length, 1, "reset 실패 후 실행 유지 상태에서는 changeSpeed()가 /api/speed를 호출해야 합니다.");
+  assert.strictEqual(fetchCalls[0].url, "/api/speed");
+
+  fetchCalls.length = 0;
+  mockFetchResponse = {
+    ok: false,
+    status: 503,
+    json: async () => ({ status: "error", message: "시뮬레이터 초기화 서비스 불가(503)" })
+  };
+  await startRoutineMissedDemo();
+  assert.strictEqual(fetchCalls.length, 1, "routine_missed 원클릭에서도 reset 실패 시 /api/start가 호출되지 않아야 합니다.");
+  assert.strictEqual(fetchCalls[0].url, "/api/reset");
+  assert.strictEqual(getGlobal('isSimulationRunning'), true, "두 번째 reset 실패 후에도 isSimulationRunning=true 유지");
+  console.log("✔ Test 10 통과: 원클릭 시연 버튼의 reset 503 실패 방어 및 SSE 보존 확인");
+
+  // Test 11: normal_routine SSE 이벤트 수신 시 UI 배지 및 전자레인지 칩 상태 검증
+  console.log("\n[Test 11] normal_routine SSE 이벤트 수신 시 UI 배지, 가전 칩, 완료 상태 검증");
+  getGlobal('observedHouse = "H001"');
+  getGlobal('activeConfiguredHouseholds = [{ house: "H001", scenario: "normal_routine" }]');
+
+  // 1) cycle 243: 전자레인지 가동 중
+  const sseNormalRunning = {
+    house: "H001",
+    scenario: "normal_routine",
+    sec: 243,
+    status: "running",
+    totalP: 995.0,
+    totalQ: 180.0,
+    apparentS: 1011.1,
+    currentA: 4.59,
+    pf: 0.984,
+    voltage: 220.0,
+    simTimeKst: "08:09:00",
+    activeNames: ["microwave"],
+    devices: {
+      microwave: { enabled: true, state: "RUNNING", manualHold: false }
+    },
+    eventNoticeText: "08:09 아침 정상 루틴 시작 — 전자레인지 가동"
+  };
+  processServerMetrics(sseNormalRunning);
+
+  const badgeEl = getOrCreateElement('badgeStatus');
+  const chipMw = getOrCreateElement('chip_microwave');
+  const stateMw = getOrCreateElement('state_microwave');
+
+  assert.ok(badgeEl.textContent.includes("정상 루틴"), "전자레인지 가동 중 정상 루틴 배지 텍스트가 표시되어야 합니다.");
+  assert.ok(chipMw.className.includes("active"), "전자레인지 가동 시 chip_microwave에 active 클래스가 적용되어야 합니다.");
+  assert.strictEqual(stateMw.textContent, "ON", "전자레인지 상태 라벨이 ON이어야 합니다.");
+
+  // 2) cycle 303: 전자레인지 종료
+  const sseNormalOff = {
+    house: "H001",
+    scenario: "normal_routine",
+    sec: 303,
+    status: "running",
+    totalP: 55.2,
+    totalQ: 23.0,
+    apparentS: 59.8,
+    currentA: 0.27,
+    pf: 0.923,
+    voltage: 220.0,
+    simTimeKst: "08:10:00",
+    activeNames: [],
+    devices: {
+      microwave: { enabled: false, state: "OFF", manualHold: false }
+    },
+    eventNoticeText: "08:10 이전 전자레인지 60초 사용 완료 — 대기전력 복귀"
+  };
+  processServerMetrics(sseNormalOff);
+
+  assert.ok(!chipMw.className.includes("active"), "전자레인지 종료 시 active 클래스가 해제되어야 합니다.");
+  assert.strictEqual(stateMw.textContent, "OFF", "전자레인지 상태 라벨이 OFF이어야 합니다.");
+  assert.ok(badgeEl.textContent.includes("정상 일상"), "대기전력 복귀 시 정상 일상 루틴 진행 중 텍스트가 표시되어야 합니다.");
+
+  // 3) cycle 308: 시연 완료
+  const sseNormalComplete = {
+    house: "H001",
+    scenario: "normal_routine",
+    sec: 308,
+    status: "completed",
+    totalP: 55.0,
+    totalQ: 23.0,
+    apparentS: 59.6,
+    currentA: 0.27,
+    pf: 0.923,
+    voltage: 220.0,
+    simTimeKst: "08:10:05",
+    activeNames: [],
+    devices: {
+      microwave: { enabled: false, state: "OFF", manualHold: false }
+    },
+    eventNoticeText: "H001 정상 일상 전력 패턴 발행 완료"
+  };
+  processServerMetrics(sseNormalComplete);
+
+  assert.strictEqual(badgeEl.textContent, "H001 정상 일상 전력 패턴 발행 완료", "cycle 308 완료 시 정상 완료 텍스트가 표시되어야 합니다.");
+  console.log("✔ Test 11 통과: normal_routine SSE 배지, 전자레인지 칩 동작, 완료 상태 정상 렌더링 확인");
+
+  // Test 12: applyPreset('normal_single') 프리셋 동작 검증
+  console.log("\n[Test 12] applyPreset normal_single 및 missed_single 검증");
+  const applyPreset = getGlobal('applyPreset');
+  assert.ok(typeof applyPreset === 'function', "applyPreset 함수가 존재해야 합니다.");
+
+  applyPreset('normal_single');
+  assert.strictEqual(getOrCreateElement('chk_H001', 'input').checked, true, "H001은 체크되어야 합니다.");
+  assert.strictEqual(getOrCreateElement('scenario_H001', 'select').value, "normal_routine", "H001 시나리오는 normal_routine이어야 합니다.");
+  for (let i = 2; i <= 10; i++) {
+    const h = `H${String(i).padStart(3, '0')}`;
+    assert.strictEqual(getOrCreateElement(`chk_${h}`, 'input').checked, false, `${h}는 체크 해제되어야 합니다.`);
+  }
+
+  applyPreset('missed_single');
+  assert.strictEqual(getOrCreateElement('chk_H001', 'input').checked, true, "H001은 체크되어야 합니다.");
+  assert.strictEqual(getOrCreateElement('scenario_H001', 'select').value, "routine_missed", "H001 시나리오는 routine_missed이어야 합니다.");
+  for (let i = 2; i <= 10; i++) {
+    const h = `H${String(i).padStart(3, '0')}`;
+    assert.strictEqual(getOrCreateElement(`chk_${h}`, 'input').checked, false, `${h}는 체크 해제되어야 합니다.`);
+  }
+  console.log("✔ Test 12 통과: applyPreset normal_single 및 missed_single 동작 확인");
+
+  // Test 13: H001 선택 목록에는 normal_routine 존재, H002~H010에는 normal_routine 선택 불가 검증
+  console.log("\n[Test 13] H001 선택 목록에는 normal_routine 존재 및 H002~H010 제외 검증");
+  const selH001 = getOrCreateElement('scenario_H001', 'select');
+  const h001Options = (selH001.options || []).map(opt => opt.value);
+  assert.ok(h001Options.includes('normal_routine'), "H001 시나리오 목록에는 normal_routine이 반드시 포함되어야 합니다.");
+
+  for (let i = 2; i <= 10; i++) {
+    const h = `H${String(i).padStart(3, '0')}`;
+    const selH = getOrCreateElement(`scenario_${h}`, 'select');
+    const hOptions = (selH.options || []).map(opt => opt.value);
+    assert.ok(!hOptions.includes('normal_routine'), `${h} 시나리오 목록에는 normal_routine이 포함되지 않아야 합니다.`);
+  }
+  console.log("✔ Test 13 통과: H001만 normal_routine 선택 가능 및 H002~H010 제외 확인");
+
+  // Test 14: 초기 화면 및 resetSimulation 완료 후 timelineNotice 안내 문구 검증
+  console.log("\n[Test 14] 초기 화면 및 resetSimulation 완료 후 timelineNotice 안내 문구 검증");
+  assert.ok(
+    htmlContent.includes("[준비 완료] H001 정상 일상 또는 H001 이상 감지 버튼을 선택하세요."),
+    "초기 HTML의 timelineNotice 배너에 발표용 두 버튼 안내 문구가 포함되어야 합니다."
+  );
+
+  // resetSimulation 성공 시 안내 문구 확인
+  const resetSimulation = getGlobal('resetSimulation');
+  assert.ok(typeof resetSimulation === 'function', "resetSimulation 함수가 존재해야 합니다.");
+  mockFetchResponse = {
+    ok: true,
+    status: 200,
+    json: async () => ({ status: 'reset' })
+  };
+  await resetSimulation();
+  const noticeEl = getOrCreateElement('timelineNotice');
+  assert.strictEqual(
+    noticeEl.innerHTML,
+    "[준비 완료] H001 정상 일상 또는 H001 이상 감지 버튼을 선택하세요.",
+    "resetSimulation 성공 후 timelineNotice가 발표용 두 버튼 안내 문구로 갱신되어야 합니다."
+  );
+  console.log("✔ Test 14 통과: 초기 및 reset 완료 후 발표용 안내 문구 정합성 확인");
+
+  // Test 15: 브라우저 내부 normal_routine 표시 시각 계산식 오프바이원 수정 검증
+  console.log("\n[Test 15] 브라우저 내부 normal_routine tick() 가상 시각 계산식 오프바이원 수정 검증");
+  assert.ok(
+    htmlContent.includes("8 * 3600 + 4 * 60 + 58 + (currentSec - 1)"),
+    "waveform_viewer.html의 normal_routine 가상 시각 계산식이 (currentSec - 1)로 수정되어 있어야 합니다."
+  );
+
+  function calcVirtualKstTime(sec) {
+    const totalSecKst = 8 * 3600 + 4 * 60 + 58 + (sec - 1);
+    const curH = Math.floor(totalSecKst / 3600) % 24;
+    const curM = Math.floor((totalSecKst % 3600) / 60);
+    const curS = totalSecKst % 60;
+    return `${String(curH).padStart(2, '0')}:${String(curM).padStart(2, '0')}:${String(curS).padStart(2, '0')}`;
+  }
+
+  assert.strictEqual(calcVirtualKstTime(1), "08:04:58", "cycle 1 가상 시각은 08:04:58이어야 합니다.");
+  assert.strictEqual(calcVirtualKstTime(242), "08:08:59", "cycle 242 가상 시각은 08:08:59이어야 합니다.");
+  assert.strictEqual(calcVirtualKstTime(243), "08:09:00", "cycle 243 가상 시각은 08:09:00이어야 합니다.");
+  assert.strictEqual(calcVirtualKstTime(302), "08:09:59", "cycle 302 가상 시각은 08:09:59이어야 합니다.");
+  assert.strictEqual(calcVirtualKstTime(303), "08:10:00", "cycle 303 가상 시각은 08:10:00이어야 합니다.");
+  assert.strictEqual(calcVirtualKstTime(308), "08:10:05", "cycle 308 가상 시각은 08:10:05이어야 합니다.");
+  console.log("✔ Test 15 통과: 브라우저 내부 normal_routine 가상 시각 계산식 오프바이원 수정 및 시간표 일치 확인");
+
+  // Test 16: 10x 배속 옵션 존재 및 기존 옵션 유지 검증
+  {
+    console.log("\n[Test 16] 10x 배속 옵션 존재 및 기존 옵션 유지 검증");
+    assert.ok(
+      htmlContent.includes('<option value="100">10x 배속 (0.1초)</option>'),
+      "#speedSelect에 10x 배속(0.1초) 옵션이 반드시 존재해야 합니다."
+    );
+    assert.ok(htmlContent.includes('value="1000"'), "1000ms 옵션 유지");
+    assert.ok(htmlContent.includes('value="500"'), "500ms 옵션 유지");
+    assert.ok(htmlContent.includes('value="200"'), "200ms 옵션 유지");
+    console.log("✔ Test 16 통과: 10x 배속 옵션 및 기존 옵션 완벽 유지 확인");
+  }
+
+  // Test 17: startMultiSimulation()이 선택한 interval을 /api/start에 전달 검증
+  {
+    console.log("\n[Test 17] startMultiSimulation() 선택 interval 전달 검증");
+    const speedSelect = getOrCreateElement('speedSelect', 'select');
+    speedSelect.value = "100"; // 10x (0.1초)
+    fetchCalls.length = 0;
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: "started",
+        households: [{ house: "H001", scenario: "peak" }],
+        interval: 0.1,
+        speed: 10.0
+      })
+    };
+
+    const startMultiSimulation = getGlobal('startMultiSimulation');
+    assert.ok(typeof startMultiSimulation === 'function', "startMultiSimulation 함수 존재");
+    await startMultiSimulation();
+
+    const startCall = fetchCalls.find(c => c.url === '/api/start');
+    assert.ok(startCall, "/api/start 요청이 발생해야 합니다.");
+    const startPayload = JSON.parse(startCall.options.body);
+    assert.strictEqual(startPayload.interval, 0.1, "/api/start에 interval: 0.1이 전달되어야 합니다.");
+    assert.strictEqual(getGlobal('isSimulationRunning'), true, "시작 성공 후 isSimulationRunning=true 여야 합니다.");
+    console.log("✔ Test 17 통과: startMultiSimulation()이 선택한 interval(0.1s)을 /api/start에 정상 전달");
+  }
+
+  // Test 18: 원클릭 정상/이상 버튼에서도 선택 배속 전달 검증
+  {
+    console.log("\n[Test 18] 원클릭 정상/이상 버튼에서도 선택 배속 전달 검증");
+    const speedSelect = getOrCreateElement('speedSelect', 'select');
+    speedSelect.value = "200"; // 5x (0.2초)
+    fetchCalls.length = 0;
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "started" })
+    };
+
+    const startNormalRoutineDemo = getGlobal('startNormalRoutineDemo');
+    await startNormalRoutineDemo();
+    const normalCall = fetchCalls.find(c => c.url === '/api/start');
+    assert.ok(normalCall, "normal_routine 시작 호출 발생");
+    const normalPayload = JSON.parse(normalCall.options.body);
+    assert.strictEqual(normalPayload.interval, 0.2, "정상 루틴 실행 시 interval: 0.2가 전달되어야 합니다.");
+
+    speedSelect.value = "500"; // 2x (0.5초)
+    fetchCalls.length = 0;
+    const startRoutineMissedDemo = getGlobal('startRoutineMissedDemo');
+    await startRoutineMissedDemo();
+    const missedCall = fetchCalls.find(c => c.url === '/api/start');
+    assert.ok(missedCall, "routine_missed 시작 호출 발생");
+    const missedPayload = JSON.parse(missedCall.options.body);
+    assert.strictEqual(missedPayload.interval, 0.5, "이상 감지 실행 시 interval: 0.5가 전달되어야 합니다.");
+    console.log("✔ Test 18 통과: 원클릭 정상/이상 버튼에서 선택 배속 전달 확인");
+  }
+
+  // Test 19: 실행 중 changeSpeed()가 /api/speed 호출 검증
+  {
+    console.log("\n[Test 19] 실행 중 changeSpeed()가 /api/speed 호출 검증");
+    const changeSpeed = getGlobal('changeSpeed');
+    assert.ok(typeof changeSpeed === 'function', "changeSpeed 함수 존재");
+    fetchCalls.length = 0;
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "speed_updated", interval: 0.2, speed: 5.0 })
+    };
+
+    // 실행 중 상태
+    setGlobal('isSimulationRunning', true);
+    await changeSpeed("200");
+
+    const speedCall = fetchCalls.find(c => c.url === '/api/speed');
+    assert.ok(speedCall, "실행 중 /api/speed 요청이 전송되어야 합니다.");
+    const speedPayload = JSON.parse(speedCall.options.body);
+    assert.strictEqual(speedPayload.interval, 0.2, "interval: 0.2가 /api/speed로 전송되어야 합니다.");
+    assert.strictEqual(getGlobal('intervalMs'), 200, "성공 시 intervalMs가 200으로 변경되어야 합니다.");
+    console.log("✔ Test 19 통과: 실행 중 changeSpeed()가 /api/speed 정상 호출 및 intervalMs 반영");
+  }
+
+  // Test 20: 시작 전 변경은 API를 호출하지 않음 검증
+  {
+    console.log("\n[Test 20] 시작 전 배속 변경은 API를 호출하지 않음 검증");
+    const changeSpeed = getGlobal('changeSpeed');
+    setGlobal('isSimulationRunning', false);
+    fetchCalls.length = 0;
+    await changeSpeed("500");
+    const noSpeedCall = fetchCalls.find(c => c.url === '/api/speed');
+    assert.strictEqual(noSpeedCall, undefined, "시뮬레이션 시작 전에는 /api/speed를 호출하지 않아야 합니다.");
+    assert.strictEqual(getGlobal('intervalMs'), 500, "시작 전 변경값은 로컬 intervalMs에 정상 저장되어야 합니다.");
+    console.log("✔ Test 20 통과: 시작 전 배속 변경 시 API 미호출 확인");
+  }
+
+  // Test 21: Pause 중 변경도 API 호출 검증
+  {
+    console.log("\n[Test 21] Pause 중 배속 변경도 API 호출 검증");
+    const changeSpeed = getGlobal('changeSpeed');
+    setGlobal('isSimulationRunning', true);
+    setGlobal('isPaused', true);
+    fetchCalls.length = 0;
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "speed_updated", interval: 0.1, speed: 10.0 })
+    };
+    await changeSpeed("100");
+    const pausedSpeedCall = fetchCalls.find(c => c.url === '/api/speed');
+    assert.ok(pausedSpeedCall, "Pause 상태에서도 /api/speed가 호출되어야 합니다.");
+    assert.strictEqual(getGlobal('intervalMs'), 100, "Pause 상태에서도 intervalMs가 100으로 변경되어야 합니다.");
+    console.log("✔ Test 21 통과: Pause 중 배속 변경 시 API 호출 및 새 배속 적용 확인");
+  }
+
+  // Test 22: API 실패 시 선택값 및 intervalMs 복원 검증
+  {
+    console.log("\n[Test 22] API 실패 시 선택값 및 intervalMs 복원 검증");
+    const changeSpeed = getGlobal('changeSpeed');
+    const speedSelect = getOrCreateElement('speedSelect', 'select');
+    setGlobal('isSimulationRunning', true);
+    setGlobal('isPaused', false);
+    setGlobal('intervalMs', 100);
+    setGlobal('lastSuccessfulSpeedMs', 100);
+    speedSelect.value = "100";
+
+    mockFetchResponse = {
+      ok: false,
+      status: 500,
+      json: async () => ({ message: "서버 내부 오류" })
+    };
+    fetchCalls.length = 0;
+
+    await changeSpeed("500");
+    assert.strictEqual(speedSelect.value, "100", "API 실패 시 speedSelect가 마지막 성공값('100')으로 롤백되어야 합니다.");
+    assert.strictEqual(getGlobal('intervalMs'), 100, "API 실패 시 intervalMs도 마지막 성공값(100)으로 롤백되어야 합니다.");
+    console.log("✔ Test 22 통과: API 실패 시 선택값 및 intervalMs 자동 복원 확인");
+  }
+
+  // Test 23: 로컬 timerId 모드 동작 유지 검증
+  {
+    console.log("\n[Test 23] 로컬 timerId 모드 동작 유지 검증");
+    const changeSpeed = getGlobal('changeSpeed');
+    setGlobal('isServerConnected', false);
+    setGlobal('isSimulationRunning', false);
+    fetchCalls.length = 0;
+    await changeSpeed("200");
+    assert.strictEqual(getGlobal('intervalMs'), 200, "로컬 모드에서 intervalMs가 200으로 변경되어야 합니다.");
+    assert.strictEqual(fetchCalls.length, 0, "로컬 모드에서는 API 호출이 없어야 합니다.");
+    setGlobal('isServerConnected', true); // 복원
+    console.log("✔ Test 23 통과: 로컬 timerId 모드 동작 유지 확인");
+  }
+
+  // Test 24: 완료/Reset/시작 실패 후 isSimulationRunning=false 검증
+  {
+    console.log("\n[Test 24] 완료/Reset/시작 실패 후 isSimulationRunning=false 검증");
+    // 1. Reset 시
+    setGlobal('isSimulationRunning', true);
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "reset" })
+    };
+    const resetSimulationFunc = getGlobal('resetSimulation');
+    await resetSimulationFunc();
+    assert.strictEqual(getGlobal('isSimulationRunning'), false, "reset 후 isSimulationRunning=false");
+
+    // 2. 시작 실패 시
+    mockFetchResponse = {
+      ok: false,
+      status: 400,
+      json: async () => ({ message: "invalid payload" })
+    };
+    const startMultiSimulation = getGlobal('startMultiSimulation');
+    await startMultiSimulation();
+    assert.strictEqual(getGlobal('isSimulationRunning'), false, "시작 실패 후 isSimulationRunning=false");
+
+    // 3. 자연 완료 시
+    setGlobal('activeConfiguredHouseholds', [{ house: "H001", scenario: "peak" }]);
+    setGlobal('isSimulationRunning', true);
+    const processServerMetrics = getGlobal('processServerMetrics');
+    const completeEvent = {
+      house: "H001",
+      scenario: "peak",
+      status: "completed",
+      sec: 60,
+      totalP: 55.0,
+      apparentS: 55.0,
+      totalQ: 0.0,
+      currentA: 0.25,
+      pf: 1.0,
+      voltage: 220.0
+    };
+    processServerMetrics(completeEvent);
+    assert.strictEqual(getGlobal('isSimulationRunning'), false, "모든 가구 완료 후 isSimulationRunning=false");
+    console.log("✔ Test 24 통과: 완료/Reset/시작 실패 후 isSimulationRunning=false 상태 전이 확인");
+  }
+
+  // Test 25: 빠른 연속 변경에 대한 요청 직렬화 또는 드롭다운 잠금 검증
+  {
+    console.log("\n[Test 25] 빠른 연속 변경에 대한 요청 직렬화 및 잠금 검증");
+    const changeSpeed = getGlobal('changeSpeed');
+    const speedSelect = getOrCreateElement('speedSelect', 'select');
+    setGlobal('isSimulationRunning', true);
+    setGlobal('isPaused', false);
+    setGlobal('lastSuccessfulSpeedMs', 1000);
+    speedSelect.value = "1000";
+
+    let resolveSpeedPromise;
+    const delayedPromise = new Promise(resolve => {
+      resolveSpeedPromise = resolve;
+    });
+
+    const origFetch = sandbox.fetch;
+    sandbox.fetch = async (url, options) => {
+      if (url === '/api/speed') {
+        await delayedPromise;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ status: "speed_updated", interval: 0.5, speed: 2.0 })
+        };
+      }
+      return origFetch(url, options);
+    };
+
+    // 1차 요청 발송 (in-flight)
+    const req1 = changeSpeed("500");
+    assert.strictEqual(speedSelect.disabled, true, "요청 처리 중 드롭다운이 disabled 잠금되어야 합니다.");
+    assert.strictEqual(getGlobal('isSpeedUpdating'), true, "isSpeedUpdating=true 로 직렬화되어야 합니다.");
+
+    // 2차 빠른 연속 요청 시도 -> 무시되어야 함
+    await changeSpeed("200");
+
+    // 1차 요청 완료
+    resolveSpeedPromise();
+    await req1;
+
+    assert.strictEqual(speedSelect.disabled, false, "요청 완료 후 드롭다운이 다시 활성화되어야 합니다.");
+    assert.strictEqual(getGlobal('isSpeedUpdating'), false, "isSpeedUpdating=false 로 복원되어야 합니다.");
+    sandbox.fetch = origFetch; // 원복
+    console.log("✔ Test 25 통과: 빠른 연속 변경 시 직렬화 및 잠금 제어 완벽 확인");
+  }
+
+  // Test 26: Stop 실패 상태 보존 검증
+  {
+    console.log("\n[Test 26] Stop 실패 상태 보존 검증");
+    const stopSimulationFunc = getGlobal('stopSimulation');
+    const stopEvtSource = new MockEventSource("/api/stream");
+    sandbox.testStopEvtSource = stopEvtSource;
+    vm.runInContext('evtSource = testStopEvtSource', context);
+
+    // 1. /api/stop 503 실패 시
+    setGlobal('isSimulationRunning', true);
+    mockFetchResponse = {
+      ok: false,
+      status: 503,
+      json: async () => ({ message: "Stop failed 503" })
+    };
+    const res1 = await stopSimulationFunc();
+    assert.strictEqual(res1, false, "Stop 실패 시 false 반환");
+    assert.strictEqual(getGlobal('isSimulationRunning'), true, "Stop 503 실패 시 isSimulationRunning=true 유지");
+    assert.strictEqual(stopEvtSource.closeCalled, false, "Stop 실패 시 EventSource 유지");
+
+    // 2. 네트워크 에러 발생 시
+    const origFetch = sandbox.fetch;
+    sandbox.fetch = async () => { throw new Error("Network error during stop"); };
+    const res2 = await stopSimulationFunc();
+    assert.strictEqual(res2, false, "네트워크 에러 시 false 반환");
+    assert.strictEqual(getGlobal('isSimulationRunning'), true, "네트워크 에러 시 isSimulationRunning=true 유지");
+    assert.strictEqual(stopEvtSource.closeCalled, false, "네트워크 에러 시 EventSource 유지");
+    sandbox.fetch = origFetch;
+
+    // 3. Stop 성공 (HTTP 200)
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "stopped" })
+    };
+    const res3 = await stopSimulationFunc();
+    assert.strictEqual(res3, true, "Stop 성공 시 true 반환");
+    assert.strictEqual(getGlobal('isSimulationRunning'), false, "Stop 성공 시 isSimulationRunning=false 전이");
+    assert.strictEqual(stopEvtSource.closeCalled, true, "Stop 성공 시 EventSource 닫힘");
+    console.log("✔ Test 26 통과: Stop 실패 상태 보존 및 성공 시 정상 종료 처리 확인");
+  }
+
+  // Test 27: 페이지 재접속 상태 동기화 검증
+  {
+    console.log("\n[Test 27] 페이지 재접속 상태 동기화 검증");
+    const checkServerConnection = getGlobal('checkServerConnection');
+    const speedSelect = getOrCreateElement('speedSelect', 'select');
+
+    // 초기 상태 초기화
+    setGlobal('isSimulationRunning', false);
+    setGlobal('isPaused', false);
+    setGlobal('intervalMs', 1000);
+    setGlobal('lastSuccessfulSpeedMs', 1000);
+    speedSelect.value = "1000";
+
+    // /api/status 가 실행 중인 상태 반환
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        is_running: true,
+        is_paused: false,
+        interval: 0.1,
+        speed: 10.0,
+        active_households: {
+          "H001": {
+            scenario: "normal_routine",
+            cycle_count: 100,
+            status: "running"
+          }
+        },
+        broker: "localhost:1883"
+      })
+    };
+
+    fetchCalls.length = 0;
+    await checkServerConnection();
+
+    assert.strictEqual(getGlobal('isSimulationRunning'), true, "서버가 is_running=true이면 UI도 isSimulationRunning=true");
+    assert.strictEqual(getGlobal('intervalMs'), 100, "intervalMs가 100ms로 동기화되어야 합니다.");
+    assert.strictEqual(getGlobal('lastSuccessfulSpeedMs'), 100, "lastSuccessfulSpeedMs가 100ms로 동기화되어야 합니다.");
+    assert.strictEqual(speedSelect.value, "100", "speedSelect 드롭다운 값이 100(10x)으로 갱신되어야 합니다.");
+
+    const activeHh = getGlobal('activeConfiguredHouseholds');
+    assert.strictEqual(activeHh.length, 1, "activeConfiguredHouseholds에 H001이 복원되어야 합니다.");
+    assert.strictEqual(activeHh[0].house, "H001");
+    assert.strictEqual(activeHh[0].scenario, "normal_routine");
+    assert.ok(getGlobal('evtSource') !== null, "실행 중 동기화 시 SSE 스트림이 다시 연결되어야 합니다.");
+
+    // 동기화 후 changeSpeed("200") 호출 시 /api/speed 가 실제로 호출되는지 검증
+    fetchCalls.length = 0;
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "speed_updated", interval: 0.2, speed: 5.0 })
+    };
+    const changeSpeedFunc = getGlobal('changeSpeed');
+    await changeSpeedFunc("200");
+
+    assert.strictEqual(fetchCalls.length, 1, "동기화 후 changeSpeed 호출 시 /api/speed가 호출되어야 합니다.");
+    assert.strictEqual(fetchCalls[0].url, "/api/speed");
+    const sentBody = JSON.parse(fetchCalls[0].options.body);
+    assert.strictEqual(sentBody.interval, 0.2, "새 interval(0.2s)이 전달되어야 합니다.");
+    assert.strictEqual(getGlobal('intervalMs'), 200, "intervalMs가 200ms로 갱신되어야 합니다.");
+    console.log("✔ Test 27 통과: /api/status 상태 동기화 및 SSE 재연결, 배속 제어 정상 연동 확인");
+  }
+
+  // Test 28: 부분 완료 다중 가구 상태 재접속 및 잔여 가구 완료 시 전체 종료 처리 검증
+  {
+    console.log("\n[Test 28] 부분 완료 다중 가구 상태 재접속 및 전체 종료 처리 검증");
+    const checkServerConnection = getGlobal('checkServerConnection');
+    const processServerMetrics = getGlobal('processServerMetrics');
+    const btnPause = getOrCreateElement('btnPause');
+
+    // 1. 초기 상태 설정
+    setGlobal('isSimulationRunning', false);
+    setGlobal('isPaused', false);
+    setGlobal('observedHouse', 'H001');
+
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        is_running: true,
+        is_paused: false,
+        interval: 0.1,
+        active_households: {
+          "H001": {
+            scenario: "normal_routine",
+            cycle_count: 100,
+            status: "running"
+          },
+          "H002": {
+            scenario: "peak",
+            cycle_count: 60,
+            status: "completed"
+          }
+        },
+        last_metrics_by_house: {
+          "H001": {
+            house: "H001",
+            scenario: "normal_routine",
+            status: "running",
+            sec: 100,
+            now_iso: "2026-09-15T00:01:39.000Z",
+            totalP: 75.0,
+            apparentS: 85.0,
+            currentA: 0.38,
+            voltage: 220.0,
+            pf: 0.88,
+            totalQ: 40.0
+          },
+          "H002": {
+            house: "H002",
+            scenario: "peak",
+            status: "completed",
+            sec: 60,
+            now_iso: "2026-09-15T00:00:59.000Z",
+            totalP: 60.0,
+            apparentS: 65.0,
+            currentA: 0.28,
+            voltage: 220.0,
+            pf: 0.92,
+            totalQ: 25.0
+          }
+        }
+      })
+    };
+
+    fetchCalls.length = 0;
+    await checkServerConnection();
+
+    // 검증 1: checkServerConnection() 후 latestMetricsByHouse에 두 가구가 모두 복원됨
+    const metricsMap = getGlobal('latestMetricsByHouse');
+    assert.strictEqual(metricsMap.size, 2, "latestMetricsByHouse에 두 가구가 모두 복원되어야 합니다.");
+    assert.ok(metricsMap.has('H001'), "H001 메트릭이 복원되어야 합니다.");
+    assert.ok(metricsMap.has('H002'), "H002 메트릭이 복원되어야 합니다.");
+
+    // 검증 2: 이미 완료된 H002의 status === 'completed'가 유지됨
+    const h2Metrics = metricsMap.get('H002');
+    assert.strictEqual(h2Metrics.status, 'completed', "H002의 status는 'completed'로 유지되어야 합니다.");
+    assert.strictEqual(h2Metrics.sec, 60, "H002의 sec가 60으로 복원되어야 합니다.");
+
+    const h1Metrics = metricsMap.get('H001');
+    assert.strictEqual(h1Metrics.status, 'running', "H001의 status는 'running'이어야 합니다.");
+    assert.strictEqual(getGlobal('isSimulationRunning'), true, "서버가 실행 중이므로 isSimulationRunning=true여야 합니다.");
+    assert.strictEqual(btnPause.disabled, false, "실행 중 재접속 시 Pause 버튼은 활성화되어야 합니다.");
+
+    const activeEvtSource = getGlobal('evtSource');
+    assert.ok(activeEvtSource !== null, "실행 중 재접속 시 SSE 스트림이 연결되어야 합니다.");
+
+    // 검증 3: 실행 중이던 H001의 completed SSE 이벤트를 processServerMetrics()로 전달
+    const h1CompletedEvent = {
+      house: "H001",
+      scenario: "normal_routine",
+      status: "completed",
+      sec: 308,
+      cycle_count: 308,
+      now_iso: "2026-09-15T00:05:07.000Z",
+      simTimeKst: "08:10:05",
+      totalP: 75.0,
+      apparentS: 85.0,
+      currentA: 0.38,
+      voltage: 220.0,
+      pf: 0.88,
+      totalQ: 40.0
+    };
+    processServerMetrics(h1CompletedEvent);
+
+    // 검증 4 & 5: checkAllHouseholdsFinished()가 전체 완료를 인식하여 isSimulationRunning === false
+    assert.strictEqual(getGlobal('isSimulationRunning'), false, "모든 가구 완료 시 isSimulationRunning=false 전이");
+
+    // 검증 6: EventSource가 정상 종료됨
+    assert.strictEqual(activeEvtSource.closeCalled, true, "모든 가구 완료 시 EventSource.close() 호출 보장");
+    assert.strictEqual(getGlobal('evtSource'), null, "evtSource 참조가 null로 정리되어야 합니다.");
+
+    // 검증 7: Pause 버튼이 비활성화됨
+    assert.strictEqual(btnPause.disabled, true, "전체 가구 완료 후 Pause 버튼은 비활성화되어야 합니다.");
+
+    console.log("✔ Test 28 통과: 부분 완료 상태 재접속 후 복원 및 잔여 가구 완료 시 전체 정상 종료 확인");
+  }
 
   console.log("\n==========================================");
   console.log("🎉 모든 프런트엔드 실제 JavaScript 테스트 통과!");

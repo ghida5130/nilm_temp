@@ -17,6 +17,7 @@ if CURRENT_DIR not in sys.path:
 from scenarios import (
     KST,
     RoutineMissedScenario,
+    NormalRoutineScenario,
     parse_simulation_date,
     resolve_simulation_start_time,
     format_iso_utc,
@@ -64,6 +65,7 @@ from engine.state import (
 )
 from engine.power_model import (
     inject_peak_scenario_event,
+    inject_normal_routine_scenario_event,
     update_house_environment,
     update_and_generate_device_load,
     calculate_main_panel_metrics,
@@ -82,9 +84,9 @@ def parse_args(args=None):
     )
     parser.add_argument(
         "--scenario", "-s",
-        choices=["random", "peak", "routine_missed"],
+        choices=["random", "peak", "routine_missed", "normal_routine"],
         default="random",
-        help="시뮬레이션 시나리오 모드 (random: 확률 기반 연속 시뮬레이션, peak: H001 단일 가구 10초 3,000W+ 피크 시연 모드, routine_missed: H001 08:10 루틴 누락 이상치 검증 모드)"
+        help="시뮬레이션 시나리오 모드 (random: 확률 기반 연속 시뮬레이션, peak: H001 단일 가구 10초 3,000W+ 피크 시연 모드, routine_missed: H001 08:10 루틴 누락 이상치 검증 모드, normal_routine: H001 08:10 이전 정상 아침 루틴 시연 모드)"
     )
     parser.add_argument(
         "--houses", "-n",
@@ -188,14 +190,19 @@ async def run_simulator(args):
     """시뮬레이터 메인 비동기 실행 루프"""
     is_peak_mode = (args.scenario == "peak")
     is_missed_mode = (args.scenario == "routine_missed")
+    is_normal_mode = (args.scenario == "normal_routine")
 
     # TLS 컨텍스트 생성 및 사전 검증 (CA 파일 누락/오류 시 연결 전 즉각 실패)
     tls_context = get_mqtt_tls_context(tls_enabled=args.tls, ca_file=args.ca_file)
     tls_desc = f" [TLS ON | CA: {args.ca_file}]" if args.tls else " [TLS OFF (평문)]"
 
     # 1. 가구 목록 동적 생성 및 상태 머신 초기화
-    if (is_peak_mode or is_missed_mode) and args.houses == 10:
-        houses = ["H001"]  # peak 및 routine_missed 모드는 기본 단일 가구 H001 대상
+    if is_normal_mode:
+        if args.houses > 1 and args.houses != 10:
+            raise ValueError("normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.")
+        houses = ["H001"]
+    elif (is_peak_mode or is_missed_mode) and args.houses == 10:
+        houses = ["H001"]  # 단일 가구 H001 대상 시연 모드
     else:
         houses = [f"H{i:03d}" for i in range(1, args.houses + 1)]
 
@@ -209,10 +216,12 @@ async def run_simulator(args):
         target_count = 60
     elif is_missed_mode:
         target_count = 300  # 299개 슬라이딩 버퍼 완충 후 이상 검증
+    elif is_normal_mode:
+        target_count = NormalRoutineScenario.TOTAL_CYCLES
     else:
         target_count = 0
 
-    allow_random = not (is_peak_mode or is_missed_mode)
+    allow_random = not (is_peak_mode or is_missed_mode or is_normal_mode)
     try:
         sim_date_parsed = parse_simulation_date(args.date) if args.date else None
         base_dt = resolve_simulation_start_time(
@@ -248,8 +257,20 @@ async def run_simulator(args):
         print(f" - 시연 타임라인:")
         print(f"   * 전자레인지 가동 없이 대기전력(약 45~65W) 및 냉장고 주기만 연속 유지")
         print(f"   * T+001s ~ T+298s: 분석 서비스 입력 윈도우(299개) 슬라이딩 버퍼 적재")
-        print(f"   * T+299s: 299초 버퍼 충족 ➡️ Kafka 'analysis.event.v1' (score 86) 이상 이벤트 발행!")
-        print(f"   * T+300s: 검증 완료 후 자동 종료")
+        print(f"   * T+299s: 299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기")
+        print(f"   * T+300s: 검증 완료 후 자동 종료 (H001 루틴 누락 전력 패턴 발행 완료)")
+        print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
+        print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료")
+    elif is_normal_mode:
+        start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각'
+        print(f" NILM IoT 전력 시뮬레이터 시작 [정상 일상(NORMAL_ROUTINE) 아침 루틴 모드]")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
+        print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
+        print(f" - 시작 가상 시각: {start_desc}")
+        print(f" - 시연 타임라인:")
+        print(f"   * T+001s ~ T+242s: 평상시 아침 대기 상태 (약 45~65W)")
+        print(f"   * T+243s ~ T+302s: [아침 루틴 가동] 전자레인지(940W) 정확히 60초간 가동")
+        print(f"   * T+303s ~ T+{NormalRoutineScenario.TOTAL_CYCLES:03d}s: [루틴 완료] 전자레인지 가동 종료 후 대기전력 복귀 및 완료")
         print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
         print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료")
     else:
@@ -292,10 +313,12 @@ async def run_simulator(args):
                 now_iso = format_iso_utc(datetime.now(timezone.utc))
             cycle += 1
 
-            # 피크 시연 모드일 경우 타임라인 이벤트 주입
+            # 시연 모드별 타임라인 이벤트 주입
             event_desc = None
             if is_peak_mode:
                 event_desc = inject_peak_scenario_event(cycle, "H001")
+            elif is_normal_mode:
+                event_desc = inject_normal_routine_scenario_event(cycle, "H001")
 
             # N개 가구 동시 비동기 발행 (Concurrent Publish)
             results = await asyncio.gather(
@@ -328,6 +351,16 @@ async def run_simulator(args):
 
                 status_tag, notice = RoutineMissedScenario.get_cycle_status(cycle)
                 print(f"[{now_iso} | KST {kst_str}] (T+{cycle:03d}s) 소비전력: {power_w:6.1f} W | 상태: {status_tag:<28} | 가전: {dev_str}{notice}", flush=True)
+            elif is_normal_mode:
+                res = results[0]
+                power_w = res["power"]
+                devs = res["devices"]
+                dev_str = ", ".join(devs) if devs else "대기전력(기저부하)"
+                sim_dt = base_dt + timedelta(seconds=cycle - 1) if base_dt else datetime.now(KST)
+                kst_str = sim_dt.astimezone(KST).strftime("%H:%M:%S")
+                status_tag = "전자레인지 가동 중" if "전자레인지" in devs else "정상 대기"
+                event_notice = f"  <== [{event_desc}]" if event_desc else ""
+                print(f"[{now_iso} | KST {kst_str}] (T+{cycle:03d}s) 소비전력: {power_w:6.1f} W | 상태: {status_tag:<20} | 가전: {dev_str}{event_notice}", flush=True)
             elif not args.quiet:
                 active_info = [f"{r['house']}:{','.join(r['devices'])}" for r in results if r["devices"]]
                 active_summary = f" [가전 ON: {'; '.join(active_info)}]" if active_info else ""

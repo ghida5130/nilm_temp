@@ -28,6 +28,11 @@ import aiomqtt
 import scenarios
 import simulator
 
+try:
+    from .config import validate_interval, DEFAULT_INTERVAL
+except ImportError:
+    from server.config import validate_interval, DEFAULT_INTERVAL
+
 
 class ModeConflictError(Exception):
     """시뮬레이터가 실행 중이 아니거나 manual 모드가 아닐 때 발생하는 예외"""
@@ -53,6 +58,7 @@ class SimulatorManager:
         self.tick_lock = threading.Lock()
         self.is_running = False
         self.is_paused = False
+        self.interval = DEFAULT_INTERVAL
         self.current_mode = "idle"  # 단일 가구는 해당 시나리오, 다중 가구는 "multi", 정지 시 "idle"
         self.simulation_date = None
         self.resolved_start_time = None
@@ -112,6 +118,7 @@ class SimulatorManager:
         simulation_date: str | None = None,
         *,
         households: list[dict] | None = None,
+        interval: float | None = None,
     ) -> dict:
         """시뮬레이션을 시작합니다. 단일 가구 위치 인자 및 다중 가구 households keyword-only를 모두 지원합니다."""
         with self.lifecycle_lock:
@@ -123,17 +130,33 @@ class SimulatorManager:
                 normalized_households = sorted(households, key=lambda x: x["house"])
                 is_multi = (len(normalized_households) > 1)
 
+            # 1-A. normal_routine은 H001 가구에서만 실행 가능
+            for h_item in normalized_households:
+                if h_item.get("scenario") == "normal_routine" and h_item.get("house") != "H001":
+                    raise ValueError("normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.")
+
             # 2. TLS 설정 사전 동기 검증 (CA 누락/미존재/권한 오류 시 런타임 start 호출에서 즉각 예외 발생)
             from engine.tls import get_mqtt_tls_context
             cfg = self.get_connection_config()
             tls_context = get_mqtt_tls_context(tls_enabled=cfg["tls_enabled"], ca_file=cfg["ca_file"])
 
             # 3. 공통 가상 시작 시각 결정
+            has_normal = any(h["scenario"] == "normal_routine" for h in normalized_households)
+            has_missed = any(h["scenario"] == "routine_missed" for h in normalized_households)
+            if has_normal and has_missed:
+                raise ValueError("normal_routine과 routine_missed는 동일한 다중 실행에서 함께 사용할 수 없습니다.")
+
             if not is_multi and normalized_households[0]["scenario"] == "routine_missed":
                 base_dt = scenarios.resolve_simulation_start_time(
                     "routine_missed",
                     simulation_date=simulation_date,
                     routine_default_time="08:10:01"
+                )
+            elif not is_multi and normalized_households[0]["scenario"] == "normal_routine":
+                base_dt = scenarios.resolve_simulation_start_time(
+                    "normal_routine",
+                    simulation_date=simulation_date,
+                    routine_default_time=scenarios.NormalRoutineScenario.DEFAULT_START_TIME
                 )
             else:
                 base_dt = scenarios.resolve_multi_simulation_start_time(
@@ -143,6 +166,12 @@ class SimulatorManager:
                 )
 
             resolved_start_iso = scenarios.format_iso_utc(base_dt) if base_dt else None
+
+            # 3-A. interval 사전 검증: 기존 워커를 중지하기 전에 검증하여 잘못된 interval 시 기존 워커를 보호한다.
+            if interval is None:
+                effective_interval = DEFAULT_INTERVAL
+            else:
+                effective_interval = validate_interval(interval)
 
             if not self._stop_and_join():
                 raise RuntimeError("기존 시뮬레이터 워커가 종료되지 않았습니다.")
@@ -166,6 +195,7 @@ class SimulatorManager:
                 self.worker_thread = worker_thread
                 self.is_running = True
                 self.is_paused = False
+                self.interval = effective_interval
                 self.current_mode = current_mode
                 self.house = normalized_households[0]["house"]
                 self.global_cycle_count = 0
@@ -190,7 +220,9 @@ class SimulatorManager:
                 "house": normalized_households[0]["house"],
                 "households": normalized_households,
                 "simulation_date": simulation_date,
-                "resolved_start_time": resolved_start_iso
+                "resolved_start_time": resolved_start_iso,
+                "interval": effective_interval,
+                "speed": round(1.0 / effective_interval, 2),
             }
 
     def set_device(self, house: str, device: str, enabled: bool) -> dict:
@@ -237,12 +269,27 @@ class SimulatorManager:
                 self.is_paused = False
             return {"status": "resumed"}
 
+    def set_interval(self, interval: float) -> dict:
+        """실행 중인 시뮬레이션의 발행 주기(배속)를 동적으로 변경합니다."""
+        valid_interval = validate_interval(interval)
+        with self.lock:
+            if not self.is_running:
+                raise ModeConflictError("시뮬레이터가 실행 중이 아닙니다.")
+            self.interval = valid_interval
+            speed = round(1.0 / valid_interval, 2)
+            return {
+                "status": "speed_updated",
+                "interval": valid_interval,
+                "speed": speed,
+            }
+
     def reset(self) -> dict:
         """시뮬레이터를 정지하고 모든 가구 상태, 메트릭, 날짜를 초기화합니다."""
         with self.lifecycle_lock:
             if not self._stop_and_join():
                 raise RuntimeError("시뮬레이터 워커 종료에 실패하여 리셋할 수 없습니다.")
             with self.lock:
+                self.interval = DEFAULT_INTERVAL
                 self.active_households = {}
                 self.last_metrics_by_house = {}
                 self.last_metrics = None
@@ -263,6 +310,8 @@ class SimulatorManager:
                 return {
                     "is_running": running_exists,
                     "is_paused": self.is_paused,
+                    "interval": self.interval,
+                    "speed": round(1.0 / self.interval, 2),
                     "current_mode": self.current_mode,
                     "scenario": self.current_mode,
                     "cycle_count": self.cycle_count,
@@ -388,7 +437,6 @@ class SimulatorManager:
             simulation_date = tls_or_sim_date
             base_dt = base_dt_or_none
 
-        interval = 1.0
         host = cfg["host"]
         port = cfg["port"]
         user = cfg["username"]
@@ -426,7 +474,7 @@ class SimulatorManager:
                     await asyncio.sleep(0.05)
                     continue
 
-                cycle_start = time.time()
+                cycle_started = time.monotonic()
 
                 # tick_lock으로 전체 틱(메트릭 계산, MQTT 발행, SSE 브로드캐스트)을 보호하여
                 # pause() 및 get_status() 호출 시 현재 틱이 완전히 끝난 후 일관된 상태가 조회되도록 보장한다.
@@ -482,9 +530,16 @@ class SimulatorManager:
                                 elif h_cycle == 200:
                                     event_desc = "대기전력 지속 중 (누적 200초)"
                                 elif h_cycle == scenarios.RoutineMissedScenario.BUFFER_WINDOW_SIZE:
-                                    event_desc = "299초 버퍼 충족 (AI 이상치 감지 조건 도달 -> analysis.event.v1 발행!)"
+                                    event_desc = "299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기"
                                 elif h_cycle == 300:
-                                    event_desc = "시연 완료 (300초 데이터 전송 완료)"
+                                    event_desc = "H001 루틴 누락 전력 패턴 발행 완료 (300초 데이터 전송 완료)"
+                            elif scenario == "normal_routine":
+                                event_desc = simulator.inject_normal_routine_scenario_event(h_cycle, house)
+                                if not event_desc:
+                                    if h_cycle == 1:
+                                        event_desc = "08:04:58 아침 정상 루틴 시뮬레이션 시작 (대기전력 유지)"
+                                    elif h_cycle == scenarios.NormalRoutineScenario.TOTAL_CYCLES:
+                                        event_desc = "H001 정상 일상 전력 패턴 발행 완료"
 
                             metrics = simulator.calculate_main_panel_metrics(house, allow_random=allow_random)
 
@@ -541,6 +596,8 @@ class SimulatorManager:
                                 is_completed = True
                             elif scenario == "routine_missed" and h_cycle >= 300:
                                 is_completed = True
+                            elif scenario == "normal_routine" and h_cycle >= scenarios.NormalRoutineScenario.TOTAL_CYCLES:
+                                is_completed = True
 
                             self.active_households[house]["cycle_count"] = h_cycle
                             if is_completed:
@@ -596,6 +653,10 @@ class SimulatorManager:
                             status_tag, notice = scenarios.RoutineMissedScenario.get_cycle_status(h_cycle)
                             notice_str = f" <== [{event_desc}]" if event_desc else notice
                             print(f"[WebSimulator] (T+{h_cycle:03d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:5.1f} W | {status_tag} [{h_status}]{notice_str}", flush=True)
+                        elif scenario == "normal_routine":
+                            status_tag = "전자레인지 가동 중" if "전자레인지" in metrics["active_devices"] else "정상 대기"
+                            notice_str = f" <== [{event_desc}]" if event_desc else ""
+                            print(f"[WebSimulator] (T+{h_cycle:03d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag} [{h_status}]{notice_str}", flush=True)
                         elif scenario == "manual":
                             act_str = ", ".join(metrics["active_devices"]) if metrics["active_devices"] else "대기(가전 OFF)"
                             print(f"[WebSimulator] (T+{h_cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | 수동 [{act_str}] [{h_status}]", flush=True)
@@ -610,11 +671,20 @@ class SimulatorManager:
                         print(f"[WebSimulator] 모든 가구 시뮬레이션 완주, 워커를 자동 정지합니다.", flush=True)
                         break
 
-                elapsed = time.time() - cycle_start
-                sleep_time = max(0.0, interval - elapsed)
-                end_sleep = time.time() + sleep_time
-                while time.time() < end_sleep and not stop_event.is_set():
-                    with self.lock:
-                        if self.is_paused:
-                            break
-                    await asyncio.sleep(min(0.05, max(0.001, end_sleep - time.time())))
+                await self._sleep_until_next_cycle(cycle_started, stop_event)
+
+    async def _sleep_until_next_cycle(self, cycle_started: float, stop_event: threading.Event) -> None:
+        """현재 interval을 동적으로 반영하여 다음 사이클 마감 시각까지 분할 대기한다."""
+        while not stop_event.is_set():
+            with self.lock:
+                current_interval = self.interval
+                paused = self.is_paused
+
+            if paused:
+                break
+
+            remaining = cycle_started + current_interval - time.monotonic()
+            if remaining <= 0:
+                break
+
+            await asyncio.sleep(min(0.05, remaining))

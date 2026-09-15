@@ -20,7 +20,7 @@ if PARENT_DIR not in sys.path:
 
 import simulator
 import scenarios
-from .config import ALLOWED_SCENARIOS
+from .config import ALLOWED_SCENARIOS, validate_interval
 from .manager import SimulatorManager, ModeConflictError
 
 
@@ -253,6 +253,16 @@ class RequestHandler(BaseHTTPRequestHandler):
                     normalized_households.append({"house": h_id, "scenario": sc})
 
                 normalized_households = sorted(normalized_households, key=lambda x: x["house"])
+
+                if any(item["scenario"] == "normal_routine" and item["house"] != "H001" for item in normalized_households):
+                    self.send_error_json(400, "BAD_REQUEST", "normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.")
+                    return
+
+                has_normal = any(item["scenario"] == "normal_routine" for item in normalized_households)
+                has_missed = any(item["scenario"] == "routine_missed" for item in normalized_households)
+                if has_normal and has_missed:
+                    self.send_error_json(400, "BAD_REQUEST", "normal_routine과 routine_missed는 동일한 다중 실행에서 함께 사용할 수 없습니다.")
+                    return
             else:
                 house = params.get("house", "H001")
                 scenario = params.get("scenario", "peak")
@@ -262,6 +272,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                     return
                 if not isinstance(scenario, str) or scenario not in ALLOWED_SCENARIOS:
                     self.send_error_json(400, "BAD_REQUEST", f"지원하지 않는 시나리오입니다: '{scenario}'. 허용 목록: {sorted(ALLOWED_SCENARIOS)}")
+                    return
+                if scenario == "normal_routine" and house != "H001":
+                    self.send_error_json(400, "BAD_REQUEST", "normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.")
                     return
 
                 normalized_households = [{"house": house, "scenario": scenario}]
@@ -287,17 +300,37 @@ class RequestHandler(BaseHTTPRequestHandler):
                     )
                     return
 
+            # interval 선택 필드 엄격 검증
+            interval = None
+            if "interval" in params:
+                raw_interval = params["interval"]
+                try:
+                    interval = validate_interval(raw_interval)
+                except ValueError as err:
+                    self.send_error_json(
+                        400,
+                        "BAD_REQUEST",
+                        f"잘못된 interval 필드입니다: {err}"
+                    )
+                    return
+
+            kwargs = {}
+            if interval is not None:
+                kwargs["interval"] = interval
+
             try:
                 if has_households:
                     started_info = self.manager.start(
                         simulation_date=simulation_date,
-                        households=normalized_households
+                        households=normalized_households,
+                        **kwargs
                     )
                 else:
                     started_info = self.manager.start(
                         scenario=scenario,
                         house=house,
-                        simulation_date=simulation_date
+                        simulation_date=simulation_date,
+                        **kwargs
                     )
                 self.send_json(200, {
                     "status": "started",
@@ -305,24 +338,93 @@ class RequestHandler(BaseHTTPRequestHandler):
                     "house": started_info.get("house"),
                     "households": started_info.get("households"),
                     "simulation_date": started_info.get("simulation_date"),
-                    "resolved_start_time": started_info.get("resolved_start_time")
+                    "resolved_start_time": started_info.get("resolved_start_time"),
+                    "interval": started_info.get("interval"),
+                    "speed": started_info.get("speed")
                 })
-            except (ValueError, FileNotFoundError, PermissionError) as err:
+            except ValueError as err:
+                err_msg = str(err)
+                code = "CONFIG_ERROR" if ("TLS" in err_msg or "CA" in err_msg) else "BAD_REQUEST"
+                self.send_error_json(400, code, err_msg)
+            except (FileNotFoundError, PermissionError) as err:
                 self.send_error_json(400, "CONFIG_ERROR", str(err))
             except RuntimeError as err:
                 self.send_error_json(409, "START_FAILED", str(err))
             except Exception as err:
                 self.send_error_json(500, "START_FAILED", str(err))
 
+        elif url_path == "/api/speed":
+            # 2. 배속(발행 주기) 동적 변경
+            params, ok = self.read_json_body(allow_empty=False)
+            if not ok:
+                return
+
+            allowed_keys = {"interval", "speed"}
+            extra_keys = set(params.keys()) - allowed_keys
+            if extra_keys:
+                self.send_error_json(400, "BAD_REQUEST", f"허용되지 않은 필드가 포함되어 있습니다: {sorted(extra_keys)}")
+                return
+
+            has_interval = ("interval" in params)
+            has_speed = ("speed" in params)
+
+            if has_interval and has_speed:
+                self.send_error_json(400, "BAD_REQUEST", "interval과 speed 필드는 동시에 전달할 수 없습니다.")
+                return
+
+            if not has_interval and not has_speed:
+                self.send_error_json(400, "BAD_REQUEST", "interval 또는 speed 필드 중 하나는 필수입니다.")
+                return
+
+            if has_interval:
+                raw_interval = params["interval"]
+                try:
+                    target_interval = validate_interval(raw_interval)
+                except ValueError as err:
+                    self.send_error_json(400, "BAD_REQUEST", f"잘못된 interval 값입니다: {err}")
+                    return
+            else:
+                raw_speed = params["speed"]
+                if raw_speed is None:
+                    self.send_error_json(400, "BAD_REQUEST", "speed 필드는 필수입니다.")
+                    return
+                if isinstance(raw_speed, bool):
+                    self.send_error_json(400, "BAD_REQUEST", "speed는 boolean 타입일 수 없습니다.")
+                    return
+                if not isinstance(raw_speed, (int, float)):
+                    self.send_error_json(400, "BAD_REQUEST", f"speed는 숫자여야 합니다. (전달된 타입: {type(raw_speed).__name__})")
+                    return
+                import math
+                val_float = float(raw_speed)
+                if not math.isfinite(val_float) or val_float <= 0:
+                    self.send_error_json(400, "BAD_REQUEST", "speed는 0보다 큰 유한한 숫자여야 합니다.")
+                    return
+                converted_interval = 1.0 / val_float
+                try:
+                    target_interval = validate_interval(converted_interval)
+                except ValueError as err:
+                    self.send_error_json(400, "BAD_REQUEST", f"환산된 interval 값이 유효하지 않습니다: {err}")
+                    return
+
+            try:
+                res = self.manager.set_interval(target_interval)
+                self.send_json(200, res)
+            except ModeConflictError as err:
+                self.send_error_json(409, "INVALID_MODE", str(err))
+            except ValueError as err:
+                self.send_error_json(400, "BAD_REQUEST", str(err))
+            except Exception as err:
+                self.send_error_json(500, "INTERNAL_ERROR", f"서버 내부 오류: {err}")
+
         elif url_path == "/api/stop":
-            # 2. 시뮬레이션 중지
+            # 3. 시뮬레이션 중지
             stopped = self.manager.stop()
             status_code = 200 if stopped else 503
             resp = {"status": "stopped" if stopped else "stop_timeout"}
             self.send_json(status_code, resp)
 
         elif url_path == "/api/pause":
-            # 3. 시뮬레이션 일시정지
+            # 4. 시뮬레이션 일시정지
             try:
                 res = self.manager.pause()
                 self.send_json(200, res)
@@ -332,7 +434,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_error_json(500, "PAUSE_FAILED", str(err))
 
         elif url_path == "/api/resume":
-            # 4. 시뮬레이션 재개
+            # 5. 시뮬레이션 재개
             try:
                 res = self.manager.resume()
                 self.send_json(200, res)
@@ -342,7 +444,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_error_json(500, "RESUME_FAILED", str(err))
 
         elif url_path == "/api/reset":
-            # 5. 시뮬레이터 완전 초기화
+            # 6. 시뮬레이터 완전 초기화
             try:
                 res = self.manager.reset()
                 self.send_json(200, res)

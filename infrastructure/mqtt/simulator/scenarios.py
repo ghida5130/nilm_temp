@@ -83,7 +83,7 @@ class RoutineMissedScenario:
     실시간 분석 서비스(realtime-analysis-service)의 이상 감지 검증 시나리오
     - 기준: H001 가구는 평소 08:10 이전에 전자레인지(MICROWAVE)를 사용하는 루틴이 있음
     - 이상 상태: 08:10이 지났음에도 전자레인지 사용 없이 대기전력만 지속 흐름
-    - 버퍼 요건: 299초 윈도우 완충 시점(T+299s)에 Kafka 'analysis.event.v1' 이상 이벤트 발행
+    - 버퍼 요건: 299개 입력 윈도우 충족 시 AI 이상 감지 판정 조건 제공
     """
     TARGET_HOUSE = "H001"
     EXPECTED_UNTIL = "08:10"
@@ -97,9 +97,82 @@ class RoutineMissedScenario:
         if cycle < cls.BUFFER_WINDOW_SIZE:
             return f"버퍼 적재 중 ({cycle:03d}/{cls.BUFFER_WINDOW_SIZE})", ""
         elif cycle == cls.BUFFER_WINDOW_SIZE:
-            return " 299개 완충 (이상 감지 조건 충족)", "  <== [Kafka 'analysis.event.v1' 이상 이벤트 발행!]"
+            return "299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기", "  <== [299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기]"
         else:
             return "이상 감지 상태 유지", ""
+
+
+# ==========================================
+# 2-A. 정상 일상(NORMAL_ROUTINE) 시나리오
+# ==========================================
+class NormalRoutineScenario:
+    """
+    H001 정상 일상(NORMAL_ROUTINE) 시나리오
+    - 평소 아침 루틴대로 08:10 이전에 전자레인지(MICROWAVE)를 정확히 60초간 가동
+    - 기본 시작 시각: 08:04:58 KST
+    - 전자레인지 ON: 08:09:00 KST (T+243s)
+    - 전자레인지 OFF: 08:10:00 KST (T+303s)
+    - 전자레인지 ON 유지 구간: 08:09:00 ~ 08:09:59 (정확히 60초간 60개 ON 샘플)
+    - 08:10:00 OFF 이후 5초 동안 대기전력 발행 후 자동 완료 (T+308s)
+    """
+    TARGET_HOUSE = "H001"
+    DEFAULT_START_TIME = "08:04:58"
+    MICROWAVE_ON_TIME = "08:09:00"
+    MICROWAVE_OFF_TIME = "08:10:00"
+    MICROWAVE_ON_CYCLE = 243
+    MICROWAVE_OFF_CYCLE = 303
+    MICROWAVE_DURATION_SEC = 60
+    TOTAL_CYCLES = 308
+    DEFAULT_COUNT = 308
+
+
+NORMAL_ROUTINE_SCHEDULE = {
+    NormalRoutineScenario.MICROWAVE_ON_CYCLE: {
+        "event": "MICROWAVE_START",
+        "desc": "08:09 아침 정상 루틴 시작 — 전자레인지 가동",
+        "actions": {
+            "microwave": {
+                "state": "STARTING",
+                "session_remaining": 61,
+                "inrush_remaining": 2,
+                "nominal_w": 940.0,
+                "nominal_pf": 0.91,
+                "manual_hold": False,
+            }
+        }
+    },
+    NormalRoutineScenario.MICROWAVE_OFF_CYCLE: {
+        "event": "MICROWAVE_STOP",
+        "desc": "08:10 이전 전자레인지 60초 사용 완료 — 대기전력 복귀",
+        "actions": {
+            "microwave": {
+                "state": "OFF",
+                "session_remaining": 0,
+                "inrush_remaining": 0,
+                "nominal_w": 0.0,
+                "nominal_pf": 0.0,
+                "manual_hold": False,
+            }
+        }
+    },
+    NormalRoutineScenario.TOTAL_CYCLES: {
+        "event": "NORMAL_ROUTINE_COMPLETE",
+        "desc": "H001 정상 일상 전력 패턴 발행 완료",
+        "actions": {}
+    }
+}
+
+
+def inject_normal_routine_scenario_event(cycle_sec: int, house: str, device_states: dict) -> str | None:
+    """정상 루틴 시나리오 타임라인 이벤트 주입"""
+    if cycle_sec in NORMAL_ROUTINE_SCHEDULE:
+        item = NORMAL_ROUTINE_SCHEDULE[cycle_sec]
+        if house in device_states:
+            for dev_name, dev_conf in item["actions"].items():
+                if dev_name in device_states[house]:
+                    device_states[house][dev_name].update(dev_conf)
+        return item["desc"]
+    return None
 
 
 # ==========================================
@@ -280,6 +353,9 @@ def resolve_simulation_start_time(
         if scenario == "routine_missed":
             def_h, def_m, def_s = _parse_time_parts(routine_default_time)
             return datetime(target_date.year, target_date.month, target_date.day, def_h, def_m, def_s, tzinfo=KST)
+        elif scenario == "normal_routine":
+            def_h, def_m, def_s = _parse_time_parts(NormalRoutineScenario.DEFAULT_START_TIME)
+            return datetime(target_date.year, target_date.month, target_date.day, def_h, def_m, def_s, tzinfo=KST)
         else:
             return datetime(
                 target_date.year, target_date.month, target_date.day,
@@ -291,6 +367,10 @@ def resolve_simulation_start_time(
     if scenario == "routine_missed":
         today = now_dt.date()
         def_h, def_m, def_s = _parse_time_parts(routine_default_time)
+        return datetime(today.year, today.month, today.day, def_h, def_m, def_s, tzinfo=KST)
+    elif scenario == "normal_routine":
+        today = now_dt.date()
+        def_h, def_m, def_s = _parse_time_parts(NormalRoutineScenario.DEFAULT_START_TIME)
         return datetime(today.year, today.month, today.day, def_h, def_m, def_s, tzinfo=KST)
 
     return None
@@ -353,6 +433,15 @@ def resolve_multi_simulation_start_time(
             target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
     has_routine_missed = any(isinstance(h, dict) and h.get("scenario") == "routine_missed" for h in households)
+    has_normal_routine = any(isinstance(h, dict) and h.get("scenario") == "normal_routine" for h in households)
+
+    if has_normal_routine and has_routine_missed:
+        raise ValueError("normal_routine과 routine_missed는 동일한 다중 실행에서 함께 사용할 수 없습니다.")
+
+    if has_normal_routine:
+        base_d = target_date if target_date is not None else now_dt.date()
+        def_h, def_m, def_s = _parse_time_parts(NormalRoutineScenario.DEFAULT_START_TIME)
+        return datetime(base_d.year, base_d.month, base_d.day, def_h, def_m, def_s, tzinfo=KST)
 
     if has_routine_missed:
         base_d = target_date if target_date is not None else now_dt.date()
