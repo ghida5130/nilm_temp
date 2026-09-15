@@ -8,7 +8,13 @@
 
 * **실시간 AI 추론 데이터 공급**: 비침습 가전 분리(NILM) 딥러닝 모델(TCN / Seq2Point)의 299초 슬라이딩 윈도우 추론에 필요한 다변량 교류 전력 데이터(유효전력, 무효전력, 역률, 전류, 전압)를 매초 실시간으로 생성하여 공급합니다.
 * **대규모 인프라 스트레스 테스트**: 최대 1,000가구 동시 발행(1,000 msg/s)을 지원하여 MQTT 브로커, 카프카 브릿지, Flink 스트림 파이프라인의 처리 한계를 검증합니다.
-* **원클릭 피크 시연(Demo) 지원**: 발표 및 대시보드 시연을 위해, 시작 10초 시점에 3,000W 이상의 피크 전력을 정확하게 발생시키는 결정론적 시연 모드와 실시간 웹 대시보드를 제공합니다.
+* **발표용 원클릭 정상/이상 시연(Demo) 지원**: 대시보드 발표를 위해 H001 가구를 대상으로 단 한 번의 클릭으로 초기화부터 MQTT 데이터 발행까지 자동 수행하는 2대 원클릭 시연 모드를 지원합니다:
+  * **`[▶ H001 정상 일상]` (`normal_routine`)**: 08:04:58 KST 시작, 08:09:00 정각에 전자레인지가 가동되어 정확히 60초간(60개 활성 샘플) 동작 후 08:10:00에 복귀하는 정상 일상 전력 패턴을 308사이클 동안 결정론적으로 발행.
+  * **`[▶ H001 이상 감지]` (`routine_missed`)**: 08:10:01 KST(CLI: 08:15:00 KST) 시작, 08:10 이후 전자레인지 미사용 대기전력 상태를 유지하며 299초 분석 윈도우 충족 후 300사이클 완주하는 루틴 누락 패턴 발행.
+* **시뮬레이터 초기화 범위 및 AI 서비스 경계**:
+  * 시뮬레이터의 초기화(Reset)는 **시뮬레이터 내부 상태**(가전 FSM, 가상 타이머, 가구별 상태, 화면 버퍼, 발행 워커)만을 초기화합니다.
+  * AI 서비스의 299개 슬라이딩 버퍼, 당일 활동 기록, analysis DB, Monitoring Incident 알림 및 Kafka/HDFS 데이터는 초기화 대상이 아닙니다.
+  * 현재 AI 실시간 판정 모델과 실제 전력 데이터의 파이프라인 연결은 후속 통합 범위이며, 본 시뮬레이터는 향후 정상/이상 판정에 사용할 결정론적인 초 단위 MQTT 전력 데이터를 발행하는 것을 목적으로 합니다.
 
 ---
 
@@ -48,6 +54,19 @@
 * **전자레인지 (`microwave`)**: 마그네트론/변압기 자화 돌입전류 1.35배 기동 피크 (850 ~ 1,150W, PF 0.88~0.94)
 * **헤어드라이기 (`hair_dryer`)**: 열선 및 소형 팬모터 기동 피크 1.20배 (800 ~ 1,200W, PF 0.94~0.98)
 * **진공청소기 (`vacuum_cleaner`)**: 고속 직권 모터 강한 기동 돌입 1.50배 및 강한 지상 무효전력 (700 ~ 950W, PF 0.75~0.85)
+
+### (4) H001 정상 일상 (`normal_routine`) 결정론적 타임라인
+발표 시연용 `normal_routine` 시나리오는 H001 가구를 대상으로 아침 08:10 이전의 정상 일상 전력 패턴을 1초 단위로 정밀 생성합니다:
+* **대상 가구**: `H001` 전용 (`normal_routine` 시나리오의 할당 대상은 H001로 제한됩니다. CLI `normal_routine` 실행은 H001 단일 가구로 동작합니다. 웹 API와 고급 UI에서는 H001 `normal_routine`을 다른 가구의 `peak`/`random`/`manual` 시나리오와 함께 실행할 수 있지만, 다른 가구에 `normal_routine`을 할당할 수 없으며 `routine_missed`와 함께 실행할 수 없습니다. H001의 랜덤 가전 이벤트는 비활성화되고 전자레인지 외 수동 가전은 OFF로 유지됩니다.)
+* **기본 시작 시각**: `08:04:58 KST`
+* **총 사이클**: 308초 (308개 초 단위 계측 데이터)
+* **정확한 가상 시간표**:
+  * `cycle 1` (08:04:58 KST): 아침 정상 루틴 시뮬레이션 시작 (상시 대기전력 및 냉장고 유지)
+  * `cycle 242` (08:08:59 KST): 전자레인지 가동 직전 대기전력 유지 마지막 샘플
+  * `cycle 243` (08:09:00 KST): **전자레인지 ON** (상태: `STARTING`, `nominal_w: 940.0W`, `pf: 0.91`, `inrush_remaining: 2`, `session_remaining: 61`, `manual_hold: False`)
+  * `cycle 302` (08:09:59 KST): **전자레인지 ON 마지막 샘플** (cycle 243~302까지 **정확히 60개 활성 샘플** 생성)
+  * `cycle 303` (08:10:00 KST): **전자레인지 명시적 OFF** (`state: OFF`, `session_remaining: 0`) ➡️ 평상시 대기전력 복귀
+  * `cycle 308` (08:10:05 KST): 전자레인지 종료 후 5초간 대기전력 발행 후 **시나리오 자동 완료**
 
 ---
 
@@ -100,13 +119,13 @@ python simulator.py --help
 
 | 옵션 | 단축키 | 기본값 | 설명 |
 | :--- | :--- | :--- | :--- |
-| `--scenario` | `-s` | `random` | 실행 시나리오 모드 (`random`: 연속 확률, `peak`: 10초 피크, `routine_missed`: 08:10 루틴 누락 이상치) |
+| `--scenario` | `-s` | `random` | 실행 시나리오 모드 (`random`: 연속 확률, `peak`: 10초 피크, `routine_missed`: 08:10 루틴 누락 이상치, `normal_routine`: H001 정상 일상 루틴) |
 | `--date` | `-d` | `None` | 가상 기준 날짜 (`YYYY-MM-DD`). 미지정 시 오늘 날짜 사용 |
 | `--houses` | `-n` | `10` | 대상 가구 수 (`H001` ~ `H{n:03d}`) |
 | `--interval` | `-i` | `1.0` | 데이터 발행 주기 (초 단위) |
 | `--hz` | | `None` | 가구당 초당 측정 횟수 (지정 시 `interval = 1/hz` 자동 환산) |
-| `--count` | `-c` | `0` | 전송 사이클 수 (`0`: 무한, `N > 0`: N회 전송 종료, peak 기본값: 60, routine_missed 기본값: 300) |
-| `--start-time` | | `None` | 시작 가상 시각 (예: `08:15:00`). CLI routine_missed 기본값: 오늘 08:15:00 KST (웹: 08:10:01 KST) |
+| `--count` | `-c` | `0` | 전송 사이클 수 (`0`: 무한, `N > 0`: N회 전송 종료, peak: 60, routine_missed: 300, normal_routine: 308) |
+| `--start-time` | | `None` | 시작 가상 시각 (예: `08:04:58`). CLI 기본값: normal_routine: 오늘 08:04:58 KST, routine_missed: 오늘 08:15:00 KST (웹: 08:10:01 KST) |
 | `--host` | | `localhost` | MQTT 브로커 호스트 주소 (**TLS 사용 시 인증서 SAN과 반드시 일치해야 함. EC2-A 로컬 실행 시에도 localhost가 아닌 A 사설 IP 사용**) |
 | `--port` | `-p` | `None` | MQTT 브로커 포트 번호 (미지정 시 `MQTT_PORT` 환경변수 또는 TLS 여부에 따라 `8883`/`1883` 자동 결정) |
 | `--user` | `-u` | `simulator_user` | MQTT 인증 계정명 (환경변수: `MQTT_USER`) |
@@ -120,6 +139,20 @@ python simulator.py --help
 > **포트 결정 우선순위**:
 > `--port` CLI 명시 > `MQTT_PORT` 환경변수 > TLS 활성화 시 `8883` > 평문 연결 시 `1883`
 
+> [!NOTE]
+> **`normal_routine` CLI 가구 수 제한 동작**:
+> `normal_routine`은 H001 전용 시나리오입니다.
+> `normal_routine`에서는 `--houses 1`과 레거시 기본값 `10`을 `H001` 단일 실행으로 해석합니다.
+> 그 외 2 이상의 가구 수는 `ValueError("normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.")`로 거절합니다.
+>
+> | `--houses` 인자 | 처리 결과 및 동작 |
+> | :--- | :--- |
+> | `--houses` 생략 | 기본값 10을 레거시 기본값으로 해석하고 H001 단일 실행 |
+> | `--houses 1` | H001 단일 실행 |
+> | `--houses 2~9` | `ValueError` 발생 및 즉시 거절 |
+> | `--houses 10` 명시 | 레거시 기본값과 동일하게 H001 단일 실행 |
+> | `--houses 11` 이상 | `ValueError` 발생 및 즉시 거절 |
+
 ---
 
 ### (3) 환경별 실행 가이드
@@ -129,6 +162,9 @@ python simulator.py --help
 로컬에 구동된 Mosquitto 브로커(`localhost:1883`)로 평문 통신합니다. 별도의 TLS 환경변수 없이 바로 실행할 수 있습니다.
 
 ```bash
+# H001 정상 일상 308초 시연 (08:04:58 KST 시작, 08:09:00 전자레인지 60초 가동)
+python simulator.py --scenario normal_routine
+
 # 피크 60초 시연 모드 (10초 시점 3,000W+ 도달)
 python simulator.py --scenario peak
 
@@ -262,15 +298,19 @@ python web_server.py \
   file:///path/to/infrastructure/mqtt/simulator/waveform_viewer.html
   ```
 
-### (2) 주요 대시보드 기능
-* **`[10초 피크 시연 시작 (3,000W+)]` 버튼 (빨간색)**:
-  * 클릭 즉시 실시간 애니메이션 차트 가동과 함께 **실제 MQTT 발행이 시작**되며, **10초 정각에 3,400~3,500W로 치솟고 붉은색 경보 배지가 점멸**하는 실시간 시연을 재생합니다 (60초 완주 후 자동 정지).
-* **`[루틴 누락 시연 시작 (08:10+)]` 버튼 (주황색)**:
-  * 08:10:01 KST 시점 기준으로 **전자레인지 미가동 대기전력(~60W) 데이터를 300초간 실시간 발행**하며, 실시간 AI 분석 서비스(`realtime-analysis-service`)의 299초 슬라이딩 윈도우 버퍼 충족 및 `ROUTINE_MISSED` 이상치 감지(`analysis.event.v1`)를 검증합니다.
-* **`[연속 실시간 시뮬레이션]` 버튼 (파란색)**: 6대 가전이 확률에 따라 무한 연속 동작 및 MQTT 발행
-* **실시간 제어 바**: 일시정지, 재생, 리셋(발행 중지), 재생 속도 조절(1x, 2x, 5x 배속)
-* **실시간 가전 칩 패널**: 6대 가전의 실시간 ON/OFF 상태 및 소비전력 표시 (루틴 누락 시 전자레인지 칩 "미가동 감시" 강조)
+### (2) 주요 대시보드 기능 및 발표용 원클릭 시연
+* **`[▶ H001 정상 일상]` 원클릭 버튼 (초록색)**:
+  * 클릭 한 번으로 이전 시뮬레이터를 초기화하고, `H001` 가구 상태를 재생성한 후 `normal_routine` 시나리오를 할당하여 실시간 MQTT 발행을 즉시 시작합니다.
+  * 08:04:58 KST부터 대기전력을 발행하고, 08:09:00 정각에 전자레인지가 가동(940W)되어 정확히 60초간(60개 활성 샘플) 유지 후 08:10:00에 OFF 복귀, 08:10:05에 308사이클 완주로 자동 종료됩니다.
+* **`[▶ H001 이상 감지]` 원클릭 버튼 (주황색)**:
+  * 클릭 한 번으로 이전 시뮬레이터를 초기화하고, `H001` 가구 상태를 재생성한 후 `routine_missed` 시나리오를 할당하여 실시간 MQTT 발행을 즉시 시작합니다.
+  * 08:10:01 KST부터 전자레인지 미가동 대기전력 상태를 유지하며 299초 분석 버퍼 충족("299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기") 후 300초에 "H001 루틴 누락 전력 패턴 발행 완료" 상태로 자동 종료됩니다.
+* **초기화 실패 안전장치**:
+  * 원클릭 버튼 실행 시 내부 초기화(reset)가 HTTP 503이나 네트워크 오류로 실패하면 새 시나리오를 시작하지 않으며, 기존 상태와 SSE 스트림을 안전하게 보존하고 오류 안내 메시지를 표시합니다.
+* **실시간 제어 바**: 일시정지, 재생, 리셋(발행 중지), 기준 날짜 선택, 관찰 가구 변경, 재생 속도 조절(1x, 2x, 5x, 10x 배속)
+* **실시간 가전 칩 패널**: 6대 가전의 실시간 ON/OFF 상태 및 소비전력 표시 (`normal_routine` 가동 중 전자레인지 칩 ON 활성화 및 종료 시 OFF 복귀)
 * **CSV 내보내기**: 시뮬레이션된 시계열 데이터를 엑셀 호환 UTF-8 BOM CSV 파일로 즉시 저장
+* **고급 설정 (접이식 UI)**: 다중 가구 동시 설정 테이블 및 기존 개발자 전용 프리셋(피크, 종합, 전체 랜덤, 수동 제어 등)은 `<details>` 영역으로 깔끔하게 접혀 있어 발표 시연에 집중할 수 있습니다.
 
 ### (3) 시뮬레이션 기준 날짜 선택 및 가상 시각 제어 (New)
 
@@ -289,32 +329,38 @@ python web_server.py \
   ```json
   {
     "households": [
-      { "house": "H001", "scenario": "peak" },
-      { "house": "H002", "scenario": "routine_missed" },
+      { "house": "H001", "scenario": "normal_routine" },
       { "house": "H003", "scenario": "random" },
       { "house": "H004", "scenario": "manual" }
     ],
-    "simulation_date": "2026-09-10"
+    "simulation_date": "2026-09-15"
   }
   ```
   * `households`: 1개 이상 10개 이하의 가구 설정 배열 (중복 가구 ID 불허).
-  * 각 원소는 `house`(`H001`~`H010`)와 `scenario`(`peak`, `routine_missed`, `random`, `manual`)를 포함해야 합니다.
+  * 각 원소는 `house`(`H001`~`H010`)와 `scenario`(`normal_routine`, `peak`, `routine_missed`, `random`, `manual`)를 포함해야 합니다.
 
 * **방법 2. 단일 가구 하위 호환 요청 (기존 규격)**:
   ```json
   {
-    "scenario": "peak",
+    "scenario": "normal_routine",
     "house": "H001",
-    "simulation_date": "2026-09-10"
+    "simulation_date": "2026-09-15"
   }
   ```
   * 기존 단일 가구 요청은 내부적으로 `[{"house": house, "scenario": scenario}]`로 정규화되어 동작하므로 100% 하위 호환됩니다.
   * 단일 지정 필드(`house`/`scenario`)와 다중 지정 필드(`households`)를 동시에 전달하면 충돌로 간주하여 HTTP `400 Bad Request`로 거절됩니다.
 
-* **다중 가구 공통 가상 시작 시각(`base_dt`) 결정 규칙**:
-  * **routine_missed가 1개 가구라도 포함된 경우**:
+* **다중 가구 공통 가상 시작 시각(`base_dt`) 결정 규칙 및 충돌 방어**:
+  * **normal_routine의 H001 전용 제한 (HTTP 400 방어)**:
+    `normal_routine` 시나리오는 `H001` 가구에서만 실행 가능합니다. 단일 가구 요청(`{"house": "H002", "scenario": "normal_routine"}`)이나 다중 가구 요청(`households` 배열 내 `{"house": "H002", "scenario": "normal_routine"}`) 모두 HTTP `400 Bad Request` (`normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.`)로 거절됩니다.
+    웹 UI의 고급 가구 설정 테이블에서도 `H001`의 드롭다운 목록에만 `normal_routine`이 제공되며, `H002`~`H010`에서는 선택할 수 없습니다.
+  * **normal_routine과 routine_missed 동시 실행 불가 (HTTP 400 방어)**:
+    `normal_routine`(기본 08:04:58 KST)과 `routine_missed`(기본 08:10:01 KST)는 시작 시각이 서로 상이하여 단일 타임라인을 공유할 수 없습니다. 따라서 `households` 목록에 두 시나리오가 동시에 포함되면 HTTP `400 Bad Request` (`normal_routine과 routine_missed는 동일한 다중 실행에서 함께 사용할 수 없습니다.`)로 즉시 거절됩니다.
+  * **normal_routine만 포함된 경우**:
+    모든 가구의 공통 `base_dt` = 선택한 `simulation_date`의 **08:04:58 KST** (날짜 미지정 시 오늘 날짜의 08:04:58 KST).
+  * **routine_missed만 포함된 경우**:
     모든 가구의 공통 `base_dt` = 선택한 `simulation_date`의 **08:10:01 KST** (날짜 미지정 시 오늘 날짜의 08:10:01 KST).
-  * **routine_missed가 포함되지 않은 경우**:
+  * **둘 다 포함되지 않은 경우**:
     모든 가구의 공통 `base_dt` = 선택한 `simulation_date` + **실행 시작 시점 현재 KST 시각** (날짜 미지정 시 현재 KST 시각).
   * 동일 tick에서 모든 가구의 MQTT `measured_at`, `ts` 및 SSE `now_iso`는 **완전히 동일한 타임스탬프를 공유**합니다.
 
@@ -410,8 +456,9 @@ python web_server.py \
 | **규칙 B** | 시간 형식 `--start-time` (`HH:MM:SS`) 단독 | KST 오늘 날짜 + 지정 시간 결합 (KST) | `--start-time 09:00:00`<br>➡️ `(오늘 날짜) 09:00:00+09:00` |
 | **규칙 C** | 완전한 ISO datetime `--start-time` 단독 | 지정된 ISO datetime 유지 (tz 없으면 KST) | `--start-time 2026-10-01T15:30:00`<br>➡️ `2026-10-01 15:30:00+09:00` |
 | **규칙 D** | `--date` + 완전한 ISO datetime 동시 지정 | **충돌로 간주하여 거절** (`ValueError` / 종료) | `--date와 완전한 ISO --start-time을 함께 사용할 수 없습니다.` |
-| **규칙 E** | `simulation_date`만 단독 지정 | • `routine_missed` 포함: 선택 날짜 + `08:10:01` KST<br>• 기타 시나리오만: 선택 날짜 + 시작 시점 현재 KST 시각 | `--date 2026-09-10`<br>(peak, 14:30:15 실행 시)<br>➡️ `2026-09-10 14:30:15+09:00` |
-| **규칙 F** | 아무 값도 지정하지 않음 | • `routine_missed` 포함: 오늘 날짜 + `08:10:01` KST<br>• 기타 시나리오만: 현재 KST 시각 스트리밍 | `--scenario routine_missed`<br>➡️ `(오늘 날짜) 08:10:01+09:00` |
+| **규칙 E** | `simulation_date`만 단독 지정 | • `normal_routine` 포함: 선택 날짜 + `08:04:58` KST<br>• `routine_missed` 포함: 선택 날짜 + `08:10:01` KST<br>• 기타 시나리오만: 선택 날짜 + 시작 시점 현재 KST 시각 | `--scenario normal_routine --date 2026-09-15`<br>➡️ `2026-09-15 08:04:58+09:00` |
+| **규칙 F** | 아무 값도 지정하지 않음 | • `normal_routine` 포함: 오늘 날짜 + `08:04:58` KST<br>• `routine_missed` 포함: 오늘 날짜 + `08:10:01` KST<br>• 기타 시나리오만: 현재 KST 시각 스트리밍 | `--scenario normal_routine`<br>➡️ `(오늘 날짜) 08:04:58+09:00` |
+| **규칙 G** | 다중 가구에서 `normal_routine`과 `routine_missed` 동시 요청 | **충돌로 간주하여 HTTP 400 거절** | `normal_routine과 routine_missed는 동일한 다중 실행에서 함께 사용할 수 없습니다.` |
 
 > [!CAUTION]
 > **날짜 및 ISO 시간 충돌 방지 (규칙 D)**:
@@ -445,6 +492,104 @@ python simulator.py --scenario routine_missed --start-time 08:15:00
 # 4. 날짜 생략 시 CLI 기본값 사용 (routine_missed: 오늘 08:15:00 KST)
 python simulator.py --scenario routine_missed
 ```
+
+#### 6) 배속(Speed Multiplier) 기능 및 API 규격 (`/api/start`, `/api/speed`)
+
+웹 시뮬레이터는 발표 및 시연 시 긴 대기 시간을 단축할 수 있도록 1x, 2x, 5x, 10x 배속 제어를 지원합니다.
+
+##### A. 배속별 주기 및 예상 소요 시간
+* **1x 배속 (1.0초 간격)**:
+  * H001 정상 일상 (`normal_routine`, 308사이클): 약 5분 8초 (308.0초)
+  * H001 이상 감지 (`routine_missed`, 300사이클): 약 5분 (300.0초)
+* **2x 배속 (0.5초 간격)**:
+  * H001 정상 일상: 약 2분 34초 (154.0초)
+  * H001 이상 감지: 약 2분 30초 (150.0초)
+* **5x 배속 (0.2초 간격)**:
+  * H001 정상 일상: 약 1분 2초 (61.6초)
+  * H001 이상 감지: 약 1분 (60.0초)
+* **10x 배속 (0.1초 간격)**:
+  * H001 정상 일상: 약 30.8초
+  * H001 이상 감지: 약 30.0초
+
+##### B. 가상 시각 불변성 (+1초 사이클 보존 원칙)
+* 배속이 변경되더라도 시뮬레이션의 가상 시각은 실제 경과 시간이 아니라 **사이클을 기준으로 매 tick 정확히 +1초씩 증가**합니다.
+* 다음 필드는 배속 설정과 무관하게 매 사이클 정확히 +1초 연속성을 엄격히 유지합니다:
+  * MQTT 페이로드: `measured_at`, `ts`
+  * 웹 SSE 스트림: `now_iso`, `simTimeKst` 및 가상 시각 관련 필드
+* 10배속에서는 308개의 1초 가상 계측 데이터가 실제 약 30.8초 동안 고속으로 발행됩니다.
+
+##### C. 시작 요청 시 interval 지정 (`POST /api/start`)
+시뮬레이션 시작 시 `interval` 필드를 선택적으로 지정할 수 있습니다:
+```json
+{
+  "households": [
+    { "house": "H001", "scenario": "normal_routine" }
+  ],
+  "simulation_date": "2026-09-15",
+  "interval": 0.1
+}
+```
+* `interval` 미전달 시: 기본값 `1.0`초로 시작됩니다.
+* 허용 범위: `0.1`초 이상 `10.0`초 이하 (숫자 float/int).
+* 잘못된 값(`null`, 문자열, `bool`, 0, 음수, `NaN`, `Infinity`, 0.1 미만, 10.0 초과) 전달 시 HTTP `400 Bad Request`로 거절되며, 기존 실행 중인 워커가 있다면 중지되지 않고 보호됩니다.
+* 단일 가구 하위 호환 요청(`{"scenario": "peak", "house": "H001", "interval": 0.5}`)에서도 동일하게 지원됩니다.
+* **시작 성공 응답 예시 (HTTP 200 OK - H001 단일 실행)**:
+  ```json
+  {
+    "status": "started",
+    "scenario": "normal_routine",
+    "house": "H001",
+    "households": [
+      { "house": "H001", "scenario": "normal_routine" }
+    ],
+    "simulation_date": "2026-09-15",
+    "resolved_start_time": "2026-09-14T23:04:58.000Z",
+    "interval": 0.1,
+    "speed": 10.0
+  }
+  ```
+  *(참고: `scenario` 필드는 단일 가구 실행 시 해당 가구의 시나리오명(`normal_routine`, `peak` 등)이 반환되며, 2개 이상의 가구를 동시에 실행할 때만 `"multi"`로 반환됩니다.)*
+
+##### D. 실행 중 동적 배속 변경 (`POST /api/speed`)
+시뮬레이션 실행 중(또는 일시정지 중) 발행 주기를 동적으로 변경할 수 있습니다. 다음 두 가지 JSON 형식 중 정확히 하나를 사용해야 합니다:
+
+* **방법 1. interval(초) 직접 전달**:
+  ```json
+  {
+    "interval": 0.2
+  }
+  ```
+
+* **방법 2. speed(배속) 전달 (`interval = 1.0 / speed`로 자동 환산)**:
+  ```json
+  {
+    "speed": 5
+  }
+  ```
+
+* **요청 검증 규칙**:
+  * `interval`과 `speed`를 동시에 전달하거나 둘 다 전달하지 않으면 HTTP `400 Bad Request`
+  * 정의되지 않은 알 수 없는 필드가 포함되어 있으면 HTTP `400 Bad Request`
+  * `bool`, 문자열, `null`, 0, 음수, `NaN`, `Infinity` 거절
+  * 최종 환산된 `interval`은 반드시 `0.1`초 이상 `10.0`초 이하 범위여야 함
+  * 시뮬레이터가 실행 중이 아닐 때 호출하면 HTTP `409 Conflict` (`INVALID_MODE`)
+  * 일시정지(Pause) 상태에서도 배속 변경이 허용되며, 재개(Resume) 시 변경된 주기가 즉시 적용됨
+* **성공 응답 (HTTP 200 OK)**:
+  ```json
+  {
+    "status": "speed_updated",
+    "interval": 0.2,
+    "speed": 5.0
+  }
+  ```
+
+##### E. 리셋(Reset) 및 초기 상태 보장
+* `/api/reset` 성공 시 서버의 내부 interval은 기본값인 `1.0`초로 초기화됩니다.
+* 이전 실행에서 10배속을 사용했더라도 `interval`을 생략한 새 시작 요청은 반드시 1배속(`1.0`초)으로 시작됩니다.
+
+##### F. AI 서비스 연동 경계 및 안내
+* 본 시뮬레이터는 향후 AI 모델 정상/이상 판정에 필요한 결정론적 전력 입력 패턴을 고속 공급하는 역할을 담당합니다.
+* AI 실시간 추론 서비스 연결 전 단계이므로 실제 AI 알림이나 Kafka 이벤트 발생을 보장하거나 단정하지 않습니다.
 
 ---
 
