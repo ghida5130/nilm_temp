@@ -1,7 +1,7 @@
-package com.nilm.monitoring.common.api;
+package com.nilm.monitoring.api;
 
 import jakarta.validation.Valid;
-import com.nilm.monitoring.common.dto.EchoRequest;
+import jakarta.validation.constraints.NotBlank;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,4 +33,8 @@ public class PingController {
         return Map.of("echo", request.message());
     }
 
+    public record EchoRequest(
+            @NotBlank(message = "message는 비어 있을 수 없습니다.") String message
+    ) {
+    }
 }

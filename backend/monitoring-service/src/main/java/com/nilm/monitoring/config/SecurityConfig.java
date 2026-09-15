@@ -1,9 +1,5 @@
 package com.nilm.monitoring.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nilm.monitoring.common.ErrorResponse;
-import jakarta.servlet.http.HttpServletResponse;
-import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,10 +8,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.AuthenticationEntryPoint;
-import org.springframework.security.web.access.AccessDeniedHandler;
-import org.springframework.http.MediaType;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -42,9 +36,7 @@ public class SecurityConfig {
 
     @Bean
     @ConditionalOnProperty(name = "app.security.enabled", havingValue = "true")
-    public SecurityFilterChain securedFilterChain(HttpSecurity http,
-            AuthenticationEntryPoint apiAuthenticationEntryPoint,
-            AccessDeniedHandler apiAccessDeniedHandler) throws Exception {
+    public SecurityFilterChain securedFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
@@ -58,31 +50,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/monitoring/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(
-                        jwt -> jwt.jwtAuthenticationConverter(keycloakJwtConverter()))
-                        .authenticationEntryPoint(apiAuthenticationEntryPoint))
-                .exceptionHandling(errors -> errors
-                        .authenticationEntryPoint(apiAuthenticationEntryPoint)
-                        .accessDeniedHandler(apiAccessDeniedHandler));
+                        jwt -> jwt.jwtAuthenticationConverter(keycloakJwtConverter())));
         return http.build();
-    }
-
-    @Bean
-    public AuthenticationEntryPoint apiAuthenticationEntryPoint(ObjectMapper mapper) {
-        return (request, response, exception) -> writeSecurityError(mapper, response,
-                HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다.", request.getRequestURI());
-    }
-
-    @Bean
-    public AccessDeniedHandler apiAccessDeniedHandler(ObjectMapper mapper) {
-        return (request, response, exception) -> writeSecurityError(mapper, response,
-                HttpServletResponse.SC_FORBIDDEN, "FORBIDDEN", "요청을 수행할 권한이 없습니다.", request.getRequestURI());
-    }
-
-    private static void writeSecurityError(ObjectMapper mapper, HttpServletResponse response,
-            int status, String code, String message, String path) throws java.io.IOException {
-        response.setStatus(status);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        mapper.writeValue(response.getOutputStream(), ErrorResponse.of(status, code, message, path, List.of()));
     }
 
     /**
