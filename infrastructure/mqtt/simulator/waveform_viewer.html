@@ -483,6 +483,7 @@
       box-shadow: 0 2px 10px rgba(16, 185, 129, 0.35);
       font-weight: 700;
     }
+
     .btn-execute:hover:not(:disabled) {
       background: linear-gradient(135deg, #34d399, #10b981);
       transform: translateY(-1px);
@@ -496,10 +497,105 @@
       font-size: 0.75rem;
       font-weight: 600;
     }
-    .badge-hh-waiting { background: #334155; color: #94a3b8; }
-    .badge-hh-running { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); }
-    .badge-hh-completed { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
-    .badge-hh-stopped { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+
+    .badge-hh-waiting {
+      background: #334155;
+      color: #94a3b8;
+    }
+
+    .badge-hh-running {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+    }
+
+    .badge-hh-completed {
+      background: rgba(34, 197, 94, 0.2);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+
+    .badge-hh-stopped {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
+    /* 발표용 원클릭 시연 제어 패널 스타일 */
+    .presentation-panel {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .presentation-btn-normal {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: #ffffff;
+      border: 1px solid rgba(52, 211, 153, 0.6);
+      padding: 11px 22px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .presentation-btn-normal:hover:not(:disabled) {
+      background: linear-gradient(135deg, #10b981, #34d399);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.55);
+    }
+    .presentation-btn-normal:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .presentation-btn-missed {
+      background: linear-gradient(135deg, #d97706, #f59e0b);
+      color: #ffffff;
+      border: 1px solid rgba(251, 191, 36, 0.6);
+      padding: 11px 22px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .presentation-btn-missed:hover:not(:disabled) {
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.55);
+    }
+    .presentation-btn-missed:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    details.advanced-config-details summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text-muted);
+      outline: none;
+      padding: 6px 0;
+      user-select: none;
+    }
+    details.advanced-config-details summary:hover {
+      color: var(--accent);
+    }
   </style>
 </head>
 
@@ -528,9 +624,11 @@
         <label for="simDateInput" style="font-size: 0.85rem; font-weight: 600; color: #94a3b8;">기준 날짜:</label>
         <input type="date" id="simDateInput" class="speed-select" style="padding: 6px 10px;" />
       </div>
-      <div class="observe-control-group" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(56, 189, 248, 0.1); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.3);">
+      <div class="observe-control-group"
+        style="display: inline-flex; align-items: center; gap: 6px; background: rgba(56, 189, 248, 0.1); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.3);">
         <label for="observedHouseSelect" style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">관찰 가구:</label>
-        <select id="observedHouseSelect" class="speed-select" style="padding: 4px 8px; font-weight: bold;" onchange="changeObservedHouse(this.value)">
+        <select id="observedHouseSelect" class="speed-select" style="padding: 4px 8px; font-weight: bold;"
+          onchange="changeObservedHouse(this.value)">
           <option value="H001">H001</option>
         </select>
       </div>
@@ -538,51 +636,76 @@
         <option value="1000">1x (실시간 1.0초)</option>
         <option value="500">2x 배속 (0.5초)</option>
         <option value="200">5x 배속 (0.2초)</option>
+        <option value="100">10x 배속 (0.1초)</option>
       </select>
       <button class="btn btn-secondary" onclick="downloadCsv()">CSV 내보내기</button>
     </div>
   </div>
 
-  <!-- 다중 가구 시뮬레이션 설정 카드 (H001 ~ H010) -->
-  <div class="chart-container" id="householdConfigCard" style="padding: 16px 20px; margin-bottom: 20px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-      <div>
-        <div class="chart-title" style="display: flex; align-items: center; gap: 8px;">
-          <span>가구별 시나리오 설정</span>
-          <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">(H001 ~ H010)</span>
-        </div>
-        <div class="chart-desc">각 가구의 실행 여부와 시나리오를 선택하세요. 상단의 [▶ 설정한 가구 실행] 버튼으로 동시 시작됩니다.</div>
+  <!-- 발표용 원클릭 시연 제어 카드 -->
+  <div class="presentation-panel" id="presentationPanel">
+    <div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+        <span style="font-size: 1.05rem; font-weight: 700; color: #f8fafc;">📢 발표 시연 전용 원클릭 시나리오</span>
+        <span class="badge-status status-running" style="font-size: 0.72rem; padding: 2px 8px;">H001 전용</span>
       </div>
-      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
-        <span style="font-size: 0.8rem; color: #94a3b8; margin-right: 4px; font-weight: 600;">프리셋:</span>
-        <button type="button" id="btnPresetPeak" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('peak_single')">H001 피크 단독</button>
-        <button type="button" id="btnPresetMissed" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('missed_single')">H001 루틴누락 단독</button>
-        <button type="button" id="btnPresetManual" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('manual_single')">H001 수동제어 단독</button>
-        <button type="button" id="btnPresetMulti" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('comprehensive')">종합 시연 (H001~H004)</button>
-        <button type="button" id="btnPresetAllRandom" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('all_random')">전체 랜덤 (10가구)</button>
+      <div style="font-size: 0.82rem; color: #94a3b8;">
+        버튼 클릭 시 초기화 ➔ H001 가구 설정 ➔ 시나리오 할당 ➔ MQTT 데이터 발행이 즉시 자동 진행됩니다.
       </div>
     </div>
-    <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
-      <table style="width: 100%; border-collapse: collapse; font-size: 0.84rem;">
-        <thead>
-          <tr>
-            <th style="width: 60px; text-align: center;">실행</th>
-            <th style="width: 100px;">가구</th>
-            <th style="width: 200px;">시나리오</th>
-            <th style="width: 120px;">상태</th>
-            <th>최신 전력</th>
-          </tr>
-        </thead>
-        <tbody id="householdTableBody">
-          <!-- JS에서 H001 ~ H010 행 동적 생성 -->
-        </tbody>
-      </table>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+      <button id="btnDemoNormalRoutine" class="presentation-btn-normal" onclick="startNormalRoutineDemo()">
+        ▶ H001 정상 일상
+      </button>
+      <button id="btnDemoRoutineMissed" class="presentation-btn-missed" onclick="startRoutineMissedDemo()">
+        ▶ H001 이상 감지
+      </button>
     </div>
   </div>
 
+  <!-- 고급 설정 (다중 가구 시뮬레이션 설정 H001 ~ H010 접기/펼치기) -->
+  <details class="advanced-config-details" id="advancedConfigDetails" style="margin-bottom: 20px;">
+    <summary style="font-size: 0.88rem; margin-bottom: 8px;">⚙️ 고급 설정 및 개발 도구 (다중 가구 설정 접기/펼치기)</summary>
+    <div class="chart-container" id="householdConfigCard" style="padding: 16px 20px; margin-bottom: 0;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <div class="chart-title" style="display: flex; align-items: center; gap: 8px;">
+            <span>가구별 시나리오 설정</span>
+            <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">(H001 ~ H010)</span>
+          </div>
+          <div class="chart-desc">각 가구의 실행 여부와 시나리오를 선택하세요. 상단의 [▶ 설정한 가구 실행] 버튼으로 동시 시작됩니다.</div>
+        </div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+          <span style="font-size: 0.8rem; color: #94a3b8; margin-right: 4px; font-weight: 600;">프리셋:</span>
+          <button type="button" id="btnPresetPeak" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('peak_single')">H001 피크 단독</button>
+          <button type="button" id="btnPresetMissed" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('missed_single')">H001 루틴누락 단독</button>
+          <button type="button" id="btnPresetManual" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('manual_single')">H001 수동제어 단독</button>
+          <button type="button" id="btnPresetMulti" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('comprehensive')">종합 시연 (H001~H004)</button>
+          <button type="button" id="btnPresetAllRandom" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('all_random')">전체 랜덤 (10가구)</button>
+        </div>
+      </div>
+      <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.84rem;">
+          <thead>
+            <tr>
+              <th style="width: 60px; text-align: center;">실행</th>
+              <th style="width: 100px;">가구</th>
+              <th style="width: 200px;">시나리오</th>
+              <th style="width: 120px;">상태</th>
+              <th>최신 전력</th>
+            </tr>
+          </thead>
+          <tbody id="householdTableBody">
+            <!-- JS에서 H001 ~ H010 행 동적 생성 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
+
   <!-- 시연 진행 안내 배너 -->
   <div id="timelineNotice" class="timeline-notice">
-    [준비 완료] 가구별 시나리오를 확인한 후 상단의 <strong>[▶ 설정한 가구 실행]</strong> 버튼을 누르면 동시 발행이 시작됩니다.
+    [준비 완료] H001 정상 일상 또는 H001 이상 감지 버튼을 선택하세요.
   </div>
 
   <!-- 2. 실시간 핵심 통계 카드 -->
@@ -613,29 +736,36 @@
 
   <!-- 3. 실시간 가전 기동 상태 칩 패널 -->
   <div class="appliance-bar">
-    <div class="appliance-bar-title">6대 타겟 가전 실시간 동작 상태 (관찰 가구: <span id="observedHouseBadge" style="color:#38bdf8; font-weight:700;">H001</span>) - 수동 제어(manual) 가구일 때 클릭하여 ON/OFF</div>
+    <div class="appliance-bar-title">6대 타겟 가전 실시간 동작 상태 (관찰 가구: <span id="observedHouseBadge"
+        style="color:#38bdf8; font-weight:700;">H001</span>) - 수동 제어(manual) 가구일 때 클릭하여 ON/OFF</div>
     <div class="appliance-grid">
-      <button type="button" class="app-chip" id="chip_kettle" aria-pressed="false" disabled onclick="toggleDevice('kettle')">
+      <button type="button" class="app-chip" id="chip_kettle" aria-pressed="false" disabled
+        onclick="toggleDevice('kettle')">
         <span class="name">전기포트</span>
         <span class="state" id="state_kettle">OFF</span>
       </button>
-      <button type="button" class="app-chip" id="chip_induction" aria-pressed="false" disabled onclick="toggleDevice('induction')">
+      <button type="button" class="app-chip" id="chip_induction" aria-pressed="false" disabled
+        onclick="toggleDevice('induction')">
         <span class="name">인덕션</span>
         <span class="state" id="state_induction">OFF</span>
       </button>
-      <button type="button" class="app-chip" id="chip_microwave" aria-pressed="false" disabled onclick="toggleDevice('microwave')">
+      <button type="button" class="app-chip" id="chip_microwave" aria-pressed="false" disabled
+        onclick="toggleDevice('microwave')">
         <span class="name">전자레인지</span>
         <span class="state" id="state_microwave">OFF</span>
       </button>
-      <button type="button" class="app-chip" id="chip_hair_dryer" aria-pressed="false" disabled onclick="toggleDevice('hair_dryer')">
+      <button type="button" class="app-chip" id="chip_hair_dryer" aria-pressed="false" disabled
+        onclick="toggleDevice('hair_dryer')">
         <span class="name">헤어드라이기</span>
         <span class="state" id="state_hair_dryer">OFF</span>
       </button>
-      <button type="button" class="app-chip" id="chip_vacuum_cleaner" aria-pressed="false" disabled onclick="toggleDevice('vacuum_cleaner')">
+      <button type="button" class="app-chip" id="chip_vacuum_cleaner" aria-pressed="false" disabled
+        onclick="toggleDevice('vacuum_cleaner')">
         <span class="name">진공청소기</span>
         <span class="state" id="state_vacuum_cleaner">OFF</span>
       </button>
-      <button type="button" class="app-chip" id="chip_iron" aria-pressed="false" disabled onclick="toggleDevice('iron')">
+      <button type="button" class="app-chip" id="chip_iron" aria-pressed="false" disabled
+        onclick="toggleDevice('iron')">
         <span class="name">전기다리미</span>
         <span class="state" id="state_iron">OFF</span>
       </button>
@@ -743,6 +873,9 @@
     let isPaused = false;
     let maxPowerRecorded = 0.0;
     let isControlsEnabled = true;
+    let isSimulationRunning = false;
+    let lastSuccessfulSpeedMs = 1000;
+    let isSpeedUpdating = false;
 
     // 수동 제어 모드 및 디바이스 상태 관리 (Map 기반 pending 추적)
     let latestDeviceStates = {};
@@ -794,6 +927,7 @@
         sel.style.padding = '3px 8px';
         sel.style.fontSize = '0.8rem';
         const scenariosList = [
+          ...(house === 'H001' ? [{ val: 'normal_routine', text: 'normal_routine (H001 정상 일상 루틴)' }] : []),
           { val: 'peak', text: 'peak (피크 부하 시연)' },
           { val: 'routine_missed', text: 'routine_missed (루틴 누락 시연)' },
           { val: 'random', text: 'random (랜덤 부하 시뮬레이션)' },
@@ -830,13 +964,15 @@
     }
 
     function applyPreset(type) {
-      if (!isControlsEnabled) return;
       DEFAULT_HOUSES.forEach(house => {
         const chk = document.getElementById(`chk_${house}`);
         const sel = document.getElementById(`scenario_${house}`);
         if (!chk || !sel) return;
 
-        if (type === 'peak_single') {
+        if (type === 'normal_single') {
+          chk.checked = (house === 'H001');
+          if (house === 'H001') sel.value = 'normal_routine';
+        } else if (type === 'peak_single') {
           chk.checked = (house === 'H001');
           if (house === 'H001') sel.value = 'peak';
         } else if (type === 'missed_single') {
@@ -873,6 +1009,11 @@
         const btn = document.getElementById(id);
         if (btn) btn.disabled = !enabled;
       });
+
+      const btnDemoNormal = document.getElementById('btnDemoNormalRoutine');
+      if (btnDemoNormal) btnDemoNormal.disabled = !enabled;
+      const btnDemoMissed = document.getElementById('btnDemoRoutineMissed');
+      if (btnDemoMissed) btnDemoMissed.disabled = !enabled;
 
       setSimulationDateInputEnabled(enabled);
     }
@@ -944,10 +1085,10 @@
       const isObservedRunning = curMetrics ? (curMetrics.status === "running") : false;
 
       return isServerConnected &&
-             isObservedManual &&
-             isObservedRunning &&
-             !isPaused &&
-             !pendingDeviceRequests.has(device);
+        isObservedManual &&
+        isObservedRunning &&
+        !isPaused &&
+        !pendingDeviceRequests.has(device);
     }
 
     function updateApplianceButtonsState() {
@@ -980,7 +1121,10 @@
         stateText = isPending ? "처리 중..." : "기동 중";
         ariaPressed = "true";
       } else if (stState === "RUNNING") {
-        if (manualHold) {
+        if (mode === 'normal_routine' && dev === 'microwave') {
+          chipClass = "app-chip active";
+          stateText = isPending ? "처리 중..." : "ON";
+        } else if (manualHold) {
           chipClass = "app-chip active manual-hold";
           stateText = isPending ? "처리 중..." : "ON · 수동 유지";
         } else {
@@ -1054,7 +1198,7 @@
           try {
             const errData = await res.json();
             if (errData && errData.message) errMsg = errData.message;
-          } catch (_) {}
+          } catch (_) { }
           clearPendingRequest(device);
           updateApplianceButtonsState();
           renderDeviceState(device);
@@ -1276,11 +1420,25 @@
           eventNoticeText = `대기전력 지속 중 (누적 200초, KST ${timeStr})`;
           addEventRow(sec, "루틴 감시", "전자레인지 미가동", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
         } else if (sec === 299) {
-          eventNoticeText = "299초 완충 (AI 이상치 감지 조건 도달 -> analysis.event.v1 발행!)";
-          addEventRow(sec, "이상치 감지", "ROUTINE_MISSED", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
+          eventNoticeText = "299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기";
+          addEventRow(sec, "이상 감시", "299개 충족", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
         } else if (sec === 300) {
-          eventNoticeText = "시연 완료 (300초 데이터 수집 완료)";
+          eventNoticeText = "H001 루틴 누락 전력 패턴 발행 완료";
           addEventRow(sec, "시연 완료", "전체 완주", `${(baseP + houseEnv.fridge_p).toFixed(0)} W`, eventNoticeText);
+        }
+      } else if (currentMode === 'normal_routine') {
+        if (sec === 243) {
+          deviceStates.microwave = { state: "RUNNING", p: 940.0, pf: 0.91, session_remaining: 60 };
+          eventNoticeText = "08:09 아침 정상 루틴 시작 — 전자레인지 가동";
+          addEventRow(sec, "정상 루틴", "전자레인지", "940W 가동", eventNoticeText);
+        } else if (sec === 303) {
+          deviceStates.microwave.state = "OFF";
+          deviceStates.microwave.p = 0;
+          eventNoticeText = "08:10 이전 전자레인지 60초 사용 완료 — 대기전력 복귀";
+          addEventRow(sec, "정상 복귀", "전자레인지 종료", "대기전력 복귀", eventNoticeText);
+        } else if (sec === 308) {
+          eventNoticeText = "H001 정상 일상 전력 패턴 발행 완료";
+          addEventRow(sec, "시연 완료", "전체 완주", "대기전력 유지", eventNoticeText);
         }
       } else if (currentMode === 'random') {
         // 랜덤 가전 트리거
@@ -1405,12 +1563,33 @@
             timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
             timelineNotice.innerHTML = `<strong>[루틴 누락 시연]</strong> KST <strong>${timeStr}</strong>: 08:10 경과 후 전자레인지 미사용 (대기전력 <strong>${metrics.totalP.toFixed(1)} W</strong> 유지 중 / AI 버퍼: ${currentSec}/299)`;
           } else if (currentSec === 299) {
-            badgeStatus.textContent = "이상치 감지 트리거 (299s 완충)";
-            timelineNotice.style.color = "#ef4444";
-            timelineNotice.style.borderColor = "#ef4444";
-            timelineNotice.innerHTML = `<strong>[이상치 감지!]</strong> KST <strong>${timeStr}</strong>: 299초 버퍼 충족! <strong>ROUTINE_MISSED</strong> 이벤트가 Kafka로 발행됩니다!`;
+            badgeStatus.textContent = "299개 데이터 충족 (판정 대기)";
+            timelineNotice.style.color = "#fbbf24";
+            timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
+            timelineNotice.innerHTML = `<strong>[분석 충족]</strong> KST <strong>${timeStr}</strong>: 299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기`;
           } else {
-            badgeStatus.textContent = "이상치 감지 상태 지속";
+            badgeStatus.textContent = "루틴 누락 감시 지속";
+          }
+        } else if (currentMode === 'normal_routine') {
+          const simDateVal = (document.getElementById('simDateInput') && document.getElementById('simDateInput').value) || getKstTodayDateString();
+          const totalSecKst = 8 * 3600 + 4 * 60 + 58 + (currentSec - 1);
+          const curH = Math.floor(totalSecKst / 3600) % 24;
+          const curM = Math.floor((totalSecKst % 3600) / 60);
+          const curS = totalSecKst % 60;
+          const timeStr = `${simDateVal} ${String(curH).padStart(2, '0')}:${String(curM).padStart(2, '0')}:${String(curS).padStart(2, '0')}`;
+
+          if (currentSec >= 243 && currentSec <= 302) {
+            badgeStatus.className = "badge-status status-running";
+            badgeStatus.textContent = `정상 루틴 (${currentSec - 242}/60s)`;
+            timelineNotice.style.color = "#38bdf8";
+            timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.4)";
+            timelineNotice.innerHTML = `<strong>[정상 루틴 가동]</strong> KST <strong>${timeStr}</strong>: 전자레인지 가동 중 (소비전력 <strong>${metrics.totalP.toFixed(1)} W</strong> / ${currentSec - 242}/60s)`;
+          } else {
+            badgeStatus.className = "badge-status status-normal";
+            badgeStatus.textContent = "정상 일상 진행 중";
+            timelineNotice.style.color = "#4ade80";
+            timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.3)";
+            timelineNotice.innerHTML = `<strong>[정상 일상]</strong> KST <strong>${timeStr}</strong>: 대기전력 유지 중 (소비전력 <strong>${metrics.totalP.toFixed(1)} W</strong>)`;
           }
         }
       }
@@ -1427,7 +1606,7 @@
           stLabel.textContent = `ON (${deviceStates[dev].p.toFixed(0)}W)`;
         } else if (currentMode === 'routine_missed' && dev === 'microwave') {
           chip.className = "app-chip missed-target";
-          stLabel.textContent = "미가동 (루틴 누락)";
+          stLabel.textContent = "미가동 (이상 감시)";
         } else {
           chip.className = "app-chip";
           stLabel.textContent = "대기";
@@ -1447,18 +1626,27 @@
       chartSecondary.data.datasets[1].data.push(metrics.pf);
       chartSecondary.update('none');
 
-      // 종료 조건 (피크: 60s, 루틴 누락: 300s)
+      // 종료 조건 (피크: 60s, 루틴 누락: 300s, 정상 일상: 308s)
       if (currentMode === 'peak' && currentSec >= 60) {
         clearInterval(timerId);
         timerId = null;
+        isSimulationRunning = false;
         document.getElementById('btnPause').disabled = true;
         badgeStatus.textContent = "시연 완료 (60s 완주)";
         setSimulationDateInputEnabled(true);
       } else if (currentMode === 'routine_missed' && currentSec >= 300) {
         clearInterval(timerId);
         timerId = null;
+        isSimulationRunning = false;
         document.getElementById('btnPause').disabled = true;
-        badgeStatus.textContent = "시연 완료 (300s 완주)";
+        badgeStatus.textContent = "H001 루틴 누락 전력 패턴 발행 완료";
+        setSimulationDateInputEnabled(true);
+      } else if (currentMode === 'normal_routine' && currentSec >= 308) {
+        clearInterval(timerId);
+        timerId = null;
+        isSimulationRunning = false;
+        document.getElementById('btnPause').disabled = true;
+        badgeStatus.textContent = "H001 정상 일상 전력 패턴 발행 완료";
         setSimulationDateInputEnabled(true);
       }
     }
@@ -1517,7 +1705,100 @@
           const indicator = document.getElementById('serverIndicator');
           if (indicator) {
             indicator.className = "badge-status status-normal";
-            indicator.innerHTML = `MQTT 브로커 연동 모드 (${data.broker}) - 실제 발행 활성화`;
+            indicator.innerHTML = `MQTT 브로커 연동 모드 (${data.broker || 'MQTT'}) - 실제 발행 활성화`;
+          }
+
+          // 서버 상태 동기화
+          isSimulationRunning = Boolean(data.is_running);
+          isPaused = Boolean(data.is_paused);
+
+          if (typeof data.interval === 'number' && data.interval > 0) {
+            const serverMs = Math.round(data.interval * 1000);
+            intervalMs = serverMs;
+            lastSuccessfulSpeedMs = serverMs;
+            const speedSelectEl = document.getElementById('speedSelect');
+            if (speedSelectEl) {
+              const opt = speedSelectEl.querySelector ? speedSelectEl.querySelector(`option[value="${serverMs}"]`) : null;
+              if (opt || (speedSelectEl.options && Array.from(speedSelectEl.options).some(o => o.value === String(serverMs)))) {
+                speedSelectEl.value = String(serverMs);
+              }
+            }
+          }
+
+          if (data.active_households && typeof data.active_households === 'object') {
+            const restored = Object.entries(data.active_households).map(([house, info]) => ({
+              house: house,
+              scenario: (info && info.scenario) ? info.scenario : 'random'
+            }));
+            if (restored.length > 0) {
+              activeConfiguredHouseholds = restored;
+              if (restored.length === 1) {
+                currentMode = restored[0].scenario;
+              } else {
+                currentMode = (data.current_mode) ? data.current_mode : 'multi';
+              }
+
+              // 관찰 가구 드롭다운 옵션 복원
+              const obsSelect = document.getElementById('observedHouseSelect');
+              if (obsSelect) {
+                obsSelect.replaceChildren();
+                restored.forEach(item => {
+                  const opt = document.createElement('option');
+                  opt.value = item.house;
+                  opt.textContent = `${item.house} (${item.scenario})`;
+                  obsSelect.appendChild(opt);
+                });
+                if (restored.some(item => item.house === observedHouse)) {
+                  obsSelect.value = observedHouse;
+                } else {
+                  observedHouse = restored[0].house;
+                  obsSelect.value = observedHouse;
+                }
+                const obsBadge = document.getElementById('observedHouseBadge');
+                if (obsBadge) obsBadge.textContent = observedHouse;
+              }
+            }
+          }
+
+          // last_metrics_by_house 복원: 다중 가구 중 일부 완료된 가구 및 최신 메트릭 복원
+          latestMetricsByHouse.clear();
+          if (data.last_metrics_by_house && typeof data.last_metrics_by_house === 'object') {
+            Object.entries(data.last_metrics_by_house).forEach(([house, metrics]) => {
+              if (metrics && typeof metrics === 'object') {
+                latestMetricsByHouse.set(house, metrics);
+                updateHouseholdTableRow(house, metrics.status, metrics.sec, metrics.totalP);
+                if (typeof metrics.totalP === 'number') {
+                  const curMax = maxPowerByHouse.get(house) || 0.0;
+                  if (metrics.totalP > curMax) {
+                    maxPowerByHouse.set(house, metrics.totalP);
+                  }
+                }
+              }
+            });
+          }
+
+          // 현재 관찰 가구의 최신 메트릭이 존재하면 화면 상태 복원
+          const obsMetrics = latestMetricsByHouse.get(observedHouse);
+          if (obsMetrics) {
+            renderObservedHouseMetrics(obsMetrics);
+          }
+
+          if (isSimulationRunning) {
+            connectServerStream();
+            setTableAndControlsEnabled(false);
+            setSimulationDateInputEnabled(false);
+            const btnPause = document.getElementById('btnPause');
+            if (btnPause) {
+              btnPause.disabled = false;
+              btnPause.textContent = isPaused ? "재생" : "일시정지";
+            }
+            const badge = document.getElementById('badgeStatus');
+            if (badge) {
+              badge.className = isPaused ? "badge-status status-normal" : "badge-status status-running";
+              badge.textContent = isPaused ? "일시정지됨" : `시뮬레이션 실행 중 (${activeConfiguredHouseholds.length}개 가구)`;
+            }
+          } else {
+            checkAllHouseholdsFinished();
           }
         } else {
           throw new Error("서버 상태 응답 실패");
@@ -1565,10 +1846,22 @@
 
       if (status === 'completed') {
         badgeStatus.className = "badge-status status-normal";
-        badgeStatus.textContent = `${m.house} 시연 완료 (${m.sec}s)`;
-        timelineNotice.style.color = "#4ade80";
-        timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.4)";
-        timelineNotice.innerHTML = `<strong>[가구 ${m.house} 완료]</strong> ${timeLabel}T+${m.sec}s: 시연 목표 달성 후 정상 완료되었습니다.`;
+        if (scenario === 'normal_routine') {
+          badgeStatus.textContent = "H001 정상 일상 전력 패턴 발행 완료";
+          timelineNotice.style.color = "#4ade80";
+          timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.4)";
+          timelineNotice.innerHTML = `<strong>[시연 완료]</strong> ${timeLabel}H001 정상 일상 전력 패턴 발행 완료`;
+        } else if (scenario === 'routine_missed') {
+          badgeStatus.textContent = "H001 루틴 누락 전력 패턴 발행 완료";
+          timelineNotice.style.color = "#fbbf24";
+          timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
+          timelineNotice.innerHTML = `<strong>[시연 완료]</strong> ${timeLabel}H001 루틴 누락 전력 패턴 발행 완료`;
+        } else {
+          badgeStatus.textContent = `${m.house} 시연 완료 (${m.sec}s)`;
+          timelineNotice.style.color = "#4ade80";
+          timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.4)";
+          timelineNotice.innerHTML = `<strong>[가구 ${m.house} 완료]</strong> ${timeLabel}T+${m.sec}s: 시연 목표 달성 후 정상 완료되었습니다.`;
+        }
       } else if (m.totalP >= 3000.0) {
         cardPower.className = "stat-card alert-card";
         badgeStatus.className = "badge-status status-peak";
@@ -1576,6 +1869,22 @@
         timelineNotice.style.color = "#f87171";
         timelineNotice.style.borderColor = "#ef4444";
         timelineNotice.innerHTML = `<strong>[피크 발생]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 소비전력 <strong>${m.totalP.toFixed(1)} W</strong> - 3,000W+ 초과 피크 발생!`;
+      } else if (scenario === 'normal_routine') {
+        cardPower.className = "stat-card";
+        const isMicrowaveOn = m.devices && m.devices.microwave && m.devices.microwave.enabled;
+        if (isMicrowaveOn) {
+          badgeStatus.className = "badge-status status-running";
+          badgeStatus.textContent = `${m.house} 정상 루틴 (전자레인지 가동 중)`;
+          timelineNotice.style.color = "#38bdf8";
+          timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.4)";
+          timelineNotice.innerHTML = `<strong>[아침 루틴 가동]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 전자레인지 가동 중 (총 전력: <strong>${m.totalP.toFixed(1)} W</strong>, 08:10 이전 정상 루틴 60초)`;
+        } else {
+          badgeStatus.className = "badge-status status-normal";
+          badgeStatus.textContent = `${m.house} 정상 일상 루틴 진행 중`;
+          timelineNotice.style.color = "#4ade80";
+          timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.3)";
+          timelineNotice.innerHTML = `<strong>[정상 일상 진행 중]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 대기전력 유지 중 (총 전력: <strong>${m.totalP.toFixed(1)} W</strong>)`;
+        }
       } else if (scenario === 'manual') {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-running";
@@ -1587,17 +1896,10 @@
       } else if (scenario === 'routine_missed') {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-missed";
-        if (m.sec < 299) {
-          badgeStatus.textContent = `${m.house} 루틴 누락 감시 (${m.sec}/299s)`;
-          timelineNotice.style.color = "#fbbf24";
-          timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
-          timelineNotice.innerHTML = `<strong>[루틴 감시]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 전자레인지 미사용 대기전력 <strong>${m.totalP.toFixed(1)} W</strong> (AI 버퍼: ${m.sec}/299s)`;
-        } else {
-          badgeStatus.textContent = `${m.house} 이상치 감지 조건 충족 (299s+)`;
-          timelineNotice.style.color = "#ef4444";
-          timelineNotice.style.borderColor = "#ef4444";
-          timelineNotice.innerHTML = `<strong>[이상치 발생]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 299초 버퍼 충족 완료!`;
-        }
+        badgeStatus.textContent = "H001 루틴 누락 전력 패턴 발행 중";
+        timelineNotice.style.color = "#fbbf24";
+        timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
+        timelineNotice.innerHTML = `<strong>[루틴 누락 감시]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 루틴 누락 전력 패턴 발행 중 (총 전력: <strong>${m.totalP.toFixed(1)} W</strong>, 대기전력 유지)`;
       } else {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-normal";
@@ -1614,7 +1916,8 @@
         else if (m.eventNoticeText.includes("피크 해소")) evType = "피크 해소";
         else if (m.eventNoticeText.includes("정상 복귀")) evType = "정상 복귀";
         else if (m.eventNoticeText.includes("이상치") || m.eventNoticeText.includes("버퍼 충족")) evType = "이상치 감지";
-        else if (m.eventNoticeText.includes("루틴 검증")) evType = "루틴 감시";
+        else if (m.eventNoticeText.includes("루틴 검증") || m.eventNoticeText.includes("루틴 누락")) evType = "루틴 감시";
+        else if (m.eventNoticeText.includes("아침 루틴") || m.eventNoticeText.includes("정상 일상")) evType = "정상 루틴";
         addEventRow(m.sec, `[${m.house}] ${evType}`, m.activeNames.join(', ') || (scenario === 'routine_missed' ? '전자레인지 미가동' : '가전 정지'), `${m.totalP.toFixed(0)} W`, m.eventNoticeText);
       }
 
@@ -1715,9 +2018,23 @@
           evtSource.close();
           evtSource = null;
         }
+        isSimulationRunning = false;
         document.getElementById('btnPause').disabled = true;
         document.getElementById('badgeStatus').className = "badge-status status-normal";
-        document.getElementById('badgeStatus').textContent = "전체 가구 시연 완료";
+        if (activeConfiguredHouseholds.length === 1) {
+          const m = latestMetricsByHouse.get(activeConfiguredHouseholds[0].house);
+          const singleScenario = (m && (m.scenario || m.mode)) || activeConfiguredHouseholds[0].scenario;
+          const singleHouse = activeConfiguredHouseholds[0].house;
+          if (singleScenario === 'normal_routine') {
+            document.getElementById('badgeStatus').textContent = "H001 정상 일상 전력 패턴 발행 완료";
+          } else if (singleScenario === 'routine_missed') {
+            document.getElementById('badgeStatus').textContent = "H001 루틴 누락 전력 패턴 발행 완료";
+          } else {
+            document.getElementById('badgeStatus').textContent = `${singleHouse} 시연 완료`;
+          }
+        } else {
+          document.getElementById('badgeStatus').textContent = "전체 가구 시연 완료";
+        }
         setTableAndControlsEnabled(true);
       }
     }
@@ -1838,8 +2155,15 @@
         return;
       }
 
+      const speedSelectEl = document.getElementById('speedSelect');
+      const selectedMs = speedSelectEl ? parseInt(speedSelectEl.value, 10) : intervalMs;
+      const targetInterval = (selectedMs && !isNaN(selectedMs)) ? (selectedMs / 1000.0) : (intervalMs / 1000.0);
+      intervalMs = (selectedMs && !isNaN(selectedMs)) ? selectedMs : intervalMs;
+      lastSuccessfulSpeedMs = intervalMs;
+
       const payload = {
-        households: selected
+        households: selected,
+        interval: targetInterval
       };
       if (simDate && simDate.trim()) {
         payload.simulation_date = simDate.trim();
@@ -1891,11 +2215,12 @@
         });
 
         if (!res.ok) {
+          isSimulationRunning = false;
           let errMsg = `시작 실패 (${res.status})`;
           try {
             const errData = await res.json();
             if (errData && errData.message) errMsg = errData.message;
-          } catch (_) {}
+          } catch (_) { }
           showNoticeError(`시뮬레이션 시작 오류: ${errMsg}`);
           setTableAndControlsEnabled(true);
           document.getElementById('btnPause').disabled = true;
@@ -1904,22 +2229,30 @@
           return;
         }
 
+        isSimulationRunning = true;
         connectServerStream();
       } catch (err) {
+        isSimulationRunning = false;
         showNoticeError(`시작 요청 네트워크 오류: ${err.message || err}`);
         setTableAndControlsEnabled(true);
         document.getElementById('btnPause').disabled = true;
       }
     }
 
+    // 발표용 원클릭 시연 제어 함수
+    async function startNormalRoutineDemo() {
+      applyPreset('normal_single');
+      await startMultiSimulation();
+    }
+
+    async function startRoutineMissedDemo() {
+      applyPreset('missed_single');
+      await startMultiSimulation();
+    }
+
     // 기존 단일 실행 프리셋 래퍼 (하위 호환)
     function startPeakDemo() {
       applyPreset('peak_single');
-      startMultiSimulation();
-    }
-
-    function startRoutineMissedDemo() {
-      applyPreset('missed_single');
       startMultiSimulation();
     }
 
@@ -1944,7 +2277,7 @@
             try {
               const errData = await res.json();
               if (errData && errData.message) errMsg = errData.message;
-            } catch (_) {}
+            } catch (_) { }
             showNoticeError(errMsg);
             return;
           }
@@ -1966,7 +2299,7 @@
             try {
               const errData = await res.json();
               if (errData && errData.message) errMsg = errData.message;
-            } catch (_) {}
+            } catch (_) { }
             showNoticeError(errMsg);
             return;
           }
@@ -1983,20 +2316,67 @@
       }
     }
 
+    async function stopSimulation() {
+      const wasRunning = isSimulationRunning;
+
+      if (isServerConnected) {
+        try {
+          const res = await fetch('/api/stop', { method: 'POST' });
+          if (!res.ok) {
+            isSimulationRunning = wasRunning;
+            let errMsg = `정지 실패 (${res.status})`;
+            try {
+              const errData = await res.json();
+              if (errData && errData.message) errMsg = errData.message;
+            } catch (_) { }
+            showNoticeError(`시뮬레이터 정지 오류: ${errMsg}`);
+            return false;
+          }
+        } catch (err) {
+          isSimulationRunning = wasRunning;
+          showNoticeError(`정지 요청 네트워크 오류: ${err.message || err}`);
+          return false;
+        }
+
+        // 서버 Stop 성공
+        isSimulationRunning = false;
+        if (evtSource) { evtSource.close(); evtSource = null; }
+        setTableAndControlsEnabled(true);
+        const pauseBtn = document.getElementById('btnPause');
+        if (pauseBtn) pauseBtn.disabled = true;
+        return true;
+      }
+
+      // 브라우저 로컬 모드
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+      isSimulationRunning = false;
+      setTableAndControlsEnabled(true);
+      const pauseBtn = document.getElementById('btnPause');
+      if (pauseBtn) pauseBtn.disabled = true;
+      return true;
+    }
+
     async function resetSimulation() {
+      const wasRunning = isSimulationRunning;
+
       if (isServerConnected) {
         try {
           const res = await fetch('/api/reset', { method: 'POST' });
           if (!res.ok) {
+            isSimulationRunning = wasRunning;
             let errMsg = `초기화 실패 (${res.status})`;
             try {
               const errData = await res.json();
               if (errData && errData.message) errMsg = errData.message;
-            } catch (_) {}
+            } catch (_) { }
             showNoticeError(`시뮬레이터 초기화 오류: ${errMsg}`);
             return false;
           }
         } catch (err) {
+          isSimulationRunning = wasRunning;
           showNoticeError(`초기화 요청 네트워크 오류: ${err.message || err}`);
           return false;
         }
@@ -2004,6 +2384,9 @@
         // reset 성공 후에만 기존 SSE 연결을 닫는다.
         if (evtSource) { evtSource.close(); evtSource = null; }
       }
+
+      // 서버 Reset 성공 또는 로컬 Reset인 경우에만 false로 전이
+      isSimulationRunning = false;
 
       if (timerId) {
         clearInterval(timerId);
@@ -2078,16 +2461,69 @@
       setTableAndControlsEnabled(true);
 
       document.getElementById('eventTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center; color:#94a3b8;">시뮬레이션을 시작하면 실시간 이벤트가 기록됩니다.</td></tr>';
-      document.getElementById('timelineNotice').innerHTML = '[초기화 완료] 가구별 시나리오를 설정한 후 상단의 [▶ 설정한 가구 실행] 버튼을 누르세요.';
+      document.getElementById('timelineNotice').innerHTML = '[준비 완료] H001 정상 일상 또는 H001 이상 감지 버튼을 선택하세요.';
 
       return true;
     }
 
-    function changeSpeed(val) {
-      intervalMs = parseInt(val, 10);
-      if (timerId && !isPaused) {
-        clearInterval(timerId);
-        timerId = setInterval(tick, intervalMs);
+    async function changeSpeed(val) {
+      const speedSelect = document.getElementById('speedSelect');
+      const newMs = parseInt(val, 10);
+      if (isNaN(newMs) || newMs <= 0) return;
+
+      // 브라우저 로컬 타이머 모드 (서버 미연결이거나 시뮬레이션 미실행 상태)
+      if (!isServerConnected || !isSimulationRunning) {
+        intervalMs = newMs;
+        lastSuccessfulSpeedMs = newMs;
+        if (timerId && !isPaused) {
+          clearInterval(timerId);
+          timerId = setInterval(tick, intervalMs);
+        }
+        return;
+      }
+
+      // 서버 연결 + 시뮬레이션 실행 중 (Pause 상태 포함)
+      if (isSpeedUpdating) return; // 요청 직렬화: 중복 요청 방지
+      isSpeedUpdating = true;
+      if (speedSelect) speedSelect.disabled = true;
+
+      const targetInterval = newMs / 1000.0;
+      try {
+        const res = await fetch('/api/speed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ interval: targetInterval })
+        });
+
+        if (!res.ok) {
+          let errMsg = `배속 변경 실패 (${res.status})`;
+          try {
+            const errData = await res.json();
+            if (errData && errData.message) errMsg = errData.message;
+          } catch (_) { }
+          throw new Error(errMsg);
+        }
+
+        intervalMs = newMs;
+        lastSuccessfulSpeedMs = newMs;
+        if (timerId && !isPaused) {
+          clearInterval(timerId);
+          timerId = setInterval(tick, intervalMs);
+        }
+      } catch (err) {
+        showNoticeError(`배속 변경 오류: ${err.message || err}`);
+        // 마지막 성공값으로 복원
+        intervalMs = lastSuccessfulSpeedMs;
+        if (speedSelect) {
+          speedSelect.value = String(lastSuccessfulSpeedMs);
+        }
+        if (timerId && !isPaused) {
+          clearInterval(timerId);
+          timerId = setInterval(tick, intervalMs);
+        }
+      } finally {
+        isSpeedUpdating = false;
+        if (speedSelect) speedSelect.disabled = false;
       }
     }
 
