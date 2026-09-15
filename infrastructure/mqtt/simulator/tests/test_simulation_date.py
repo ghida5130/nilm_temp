@@ -395,10 +395,20 @@ class TestApiStartValidation(unittest.TestCase):
         )
 
     def test_status_endpoint_reflects_simulation_date(self):
-        self.mock_manager.is_running = True
-        self.mock_manager.current_mode = "routine_missed"
-        self.mock_manager.simulation_date = "2026-09-10"
-        self.mock_manager.resolved_start_time = "2026-09-09T23:10:01.000Z"
+        self.mock_manager.get_status.return_value = {
+            "is_running": True,
+            "is_paused": False,
+            "current_mode": "routine_missed",
+            "scenario": "routine_missed",
+            "house": "H001",
+            "cycle_count": 0,
+            "global_cycle_count": 0,
+            "active_households": {"H001": {"scenario": "routine_missed", "status": "running", "cycle_count": 0}},
+            "last_metrics_by_house": {},
+            "last_metrics": None,
+            "simulation_date": "2026-09-10",
+            "resolved_start_time": "2026-09-09T23:10:01.000Z",
+        }
 
         handler = DummyRequestHandler(self.mock_manager, method="GET", path="/api/status")
         handler.send_response = MagicMock()
@@ -411,8 +421,8 @@ class TestApiStartValidation(unittest.TestCase):
         self.assertEqual(resp.get("simulation_date"), "2026-09-10")
         self.assertEqual(resp.get("resolved_start_time"), "2026-09-09T23:10:01.000Z")
 
-        # 정지 시 null 확인
-        self.mock_manager.is_running = False
+        # 정지(is_running: False) 후에도 다음 실행/reset 전까지 날짜 및 시작 시각 보존 확인
+        self.mock_manager.get_status.return_value["is_running"] = False
         handler2 = DummyRequestHandler(self.mock_manager, method="GET", path="/api/status")
         handler2.send_response = MagicMock()
         handler2.send_header = MagicMock()
@@ -420,8 +430,21 @@ class TestApiStartValidation(unittest.TestCase):
 
         handler2.do_GET()
         resp2 = handler2.get_response_json()
-        self.assertIsNone(resp2.get("simulation_date"))
-        self.assertIsNone(resp2.get("resolved_start_time"))
+        self.assertEqual(resp2.get("simulation_date"), "2026-09-10")
+        self.assertEqual(resp2.get("resolved_start_time"), "2026-09-09T23:10:01.000Z")
+
+        # reset 시에만 None 확인
+        self.mock_manager.get_status.return_value["simulation_date"] = None
+        self.mock_manager.get_status.return_value["resolved_start_time"] = None
+        handler3 = DummyRequestHandler(self.mock_manager, method="GET", path="/api/status")
+        handler3.send_response = MagicMock()
+        handler3.send_header = MagicMock()
+        handler3.end_headers = MagicMock()
+
+        handler3.do_GET()
+        resp3 = handler3.get_response_json()
+        self.assertIsNone(resp3.get("simulation_date"))
+        self.assertIsNone(resp3.get("resolved_start_time"))
 
 
 class TestManagerDateIntegration(unittest.TestCase):
@@ -440,6 +463,12 @@ class TestManagerDateIntegration(unittest.TestCase):
         self.assertEqual(manager.resolved_start_time, "2026-09-09T23:10:01.000Z")
 
         manager.stop()
+        # stop 후에도 날짜 및 시작 시각 보존 검증
+        self.assertEqual(manager.simulation_date, "2026-09-10")
+        self.assertEqual(manager.resolved_start_time, "2026-09-09T23:10:01.000Z")
+
+        # reset 시에만 초기화 검증
+        manager.reset()
         self.assertIsNone(manager.simulation_date)
         self.assertIsNone(manager.resolved_start_time)
 

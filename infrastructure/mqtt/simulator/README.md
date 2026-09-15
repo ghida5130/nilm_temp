@@ -284,7 +284,23 @@ python web_server.py \
 
 ##### A. 시뮬레이션 시작 (`POST /api/start`)
 * **요청 헤더**: `Content-Type: application/json`
-* **요청 본문 (JSON)**:
+
+* **방법 1. 다중 가구 동시 실행 요청 (신규)**:
+  ```json
+  {
+    "households": [
+      { "house": "H001", "scenario": "peak" },
+      { "house": "H002", "scenario": "routine_missed" },
+      { "house": "H003", "scenario": "random" },
+      { "house": "H004", "scenario": "manual" }
+    ],
+    "simulation_date": "2026-09-10"
+  }
+  ```
+  * `households`: 1개 이상 10개 이하의 가구 설정 배열 (중복 가구 ID 불허).
+  * 각 원소는 `house`(`H001`~`H010`)와 `scenario`(`peak`, `routine_missed`, `random`, `manual`)를 포함해야 합니다.
+
+* **방법 2. 단일 가구 하위 호환 요청 (기존 규격)**:
   ```json
   {
     "scenario": "peak",
@@ -292,44 +308,98 @@ python web_server.py \
     "simulation_date": "2026-09-10"
   }
   ```
+  * 기존 단일 가구 요청은 내부적으로 `[{"house": house, "scenario": scenario}]`로 정규화되어 동작하므로 100% 하위 호환됩니다.
+  * 단일 지정 필드(`house`/`scenario`)와 다중 지정 필드(`households`)를 동시에 전달하면 충돌로 간주하여 HTTP `400 Bad Request`로 거절됩니다.
+
+* **다중 가구 공통 가상 시작 시각(`base_dt`) 결정 규칙**:
+  * **routine_missed가 1개 가구라도 포함된 경우**:
+    모든 가구의 공통 `base_dt` = 선택한 `simulation_date`의 **08:10:01 KST** (날짜 미지정 시 오늘 날짜의 08:10:01 KST).
+  * **routine_missed가 포함되지 않은 경우**:
+    모든 가구의 공통 `base_dt` = 선택한 `simulation_date` + **실행 시작 시점 현재 KST 시각** (날짜 미지정 시 현재 KST 시각).
+  * 동일 tick에서 모든 가구의 MQTT `measured_at`, `ts` 및 SSE `now_iso`는 **완전히 동일한 타임스탬프를 공유**합니다.
+
 * **입력 검증 규칙**:
   * `simulation_date` 필드는 선택(optional)입니다.
   * 전달된 경우 문자열이어야 하며, 엄격한 `YYYY-MM-DD` 형식 및 실제 존재하는 유효한 날짜(윤년 `2024-02-29` 허용, `2026-02-30` 또는 `2026-9-1` 불허)여야 합니다.
-  * 유효하지 않은 값이 전달되면 HTTP `400 Bad Request` 에러 응답을 반환합니다:
-    ```json
-    {
-      "status": "error",
-      "code": "BAD_REQUEST",
-      "message": "simulation_date 형식이 올바르지 않습니다. YYYY-MM-DD 형식(예: 2026-09-10)의 실제 존재하는 날짜여야 합니다."
-    }
-    ```
-  * `simulation_date` 필드가 생략된 기존 요청은 이전과 100% 동일하게 동작합니다 (하위 호환성 유지).
+  * 유효하지 않은 값이 전달되면 HTTP `400 Bad Request` 에러 응답을 반환합니다.
+
 * **성공 응답 (HTTP 200 OK)**:
   ```json
   {
     "status": "started",
-    "scenario": "peak",
+    "scenario": "multi",
     "house": "H001",
+    "households": [
+      { "house": "H001", "scenario": "peak" },
+      { "house": "H002", "scenario": "routine_missed" }
+    ],
     "simulation_date": "2026-09-10",
-    "resolved_start_time": "2026-09-10T05:30:15.000Z"
+    "resolved_start_time": "2026-09-09T23:10:01.000Z"
   }
   ```
 
-##### B. 시뮬레이터 상태 조회 (`GET /api/status`)
-현재 시뮬레이터의 실행 상태와 적용된 가상 기준 일시 정보를 조회합니다.
+##### B. 가전 수동 제어 (`PUT /api/device`)
+* **요청 본문 (JSON)**:
+  ```json
+  {
+    "house": "H004",
+    "device": "kettle",
+    "enabled": true
+  }
+  ```
+  * `house`: 제어 대상 가구 ID (`H001`~`H010`)
+  * `device`: 6대 타겟 가전 (`kettle`, `induction`, `iron`, `microwave`, `hair_dryer`, `vacuum_cleaner`)
+  * `enabled`: `true` (ON/기동) 또는 `false` (OFF/정지)
+  * **검증 및 동시성 제어**: HTTP 핸들러는 형식 유효성을 검증하고, `SimulatorManager.set_device()`가 라이프사이클 및 시뮬레이션 락 안에서 원자적으로 가구의 `running` 상태 및 `manual` 시나리오 여부를 검증하므로 경쟁 상태가 발생하지 않습니다. 비 manual 가구 제어 시 HTTP `409 Conflict`를 반환합니다.
+
+##### C. 시뮬레이터 상태 조회 (`GET /api/status`)
+현재 시뮬레이터의 실행 상태, 전체/가구별 진행 상황 및 최신 메트릭을 조회합니다.
 * **응답 본문 (HTTP 200 OK)**:
   ```json
   {
     "is_running": true,
-    "scenario": "peak",
-    "house": "H001",
+    "is_paused": false,
+    "current_mode": "multi",
     "cycle_count": 15,
+    "global_cycle_count": 15,
+    "active_households": {
+      "H001": { "scenario": "peak", "status": "completed", "cycle_count": 60 },
+      "H002": { "scenario": "routine_missed", "status": "running", "cycle_count": 15 }
+    },
+    "last_metrics_by_house": {
+      "H001": { ... },
+      "H002": { ... }
+    },
     "simulation_date": "2026-09-10",
-    "resolved_start_time": "2026-09-10T05:30:15.000Z",
-    "last_metrics": { ... }
+    "resolved_start_time": "2026-09-09T23:10:01.000Z"
   }
   ```
-  *(시뮬레이터가 유휴(idle) 상태인 경우 `simulation_date`와 `resolved_start_time`은 `null`로 반환됩니다.)*
+  * `is_running`: `running` 상태인 가구가 1개라도 존재하면 `true`, 전체 완료 또는 정지 시 `false`
+  * `is_paused`: 일시정지 상태 여부 (`true` / `false`)
+  * `current_mode`: 단일 가구는 해당 시나리오 이름(`peak` 등), 다중 가구는 `"multi"`
+  * `active_households`: 가구별 독립 라이프사이클 상태 (`running`, `completed`, `stopped`)
+  * `last_metrics_by_house`: 가구별 최신 메트릭의 신뢰할 수 있는(authoritative) 상태 (완료 후에도 조회 가능)
+
+##### D. 시뮬레이션 일시정지 / 재개 (`POST /api/pause`, `POST /api/resume`)
+* **일시정지 (`POST /api/pause`)**: 실행 중인 시뮬레이터를 일시정지합니다. Manager 락 및 `tick_lock`으로 보호되어 응답 반환 이후에는 추가적인 MQTT/SSE 발행과 cycle 및 가상 시각 증가가 일절 발생하지 않습니다.
+  * 성공 응답 (HTTP 200 OK): `{"status": "paused"}`
+* **재개 (`POST /api/resume`)**: 일시정지된 시뮬레이터를 기존 상태(cycle, 가전 상태, 가상 시각)에서 정확히 다음 1초 tick으로 재개합니다.
+  * 성공 응답 (HTTP 200 OK): `{"status": "resumed"}`
+
+##### E. 시뮬레이션 중지 및 초기화 (`POST /api/stop`, `POST /api/reset`)
+* **중지 (`POST /api/stop`)**: 실행 중이거나 일시정지 상태인 워커를 안전하게 중지합니다. 완료된 가구는 `completed` 상태를 보존하고, 실행 중이던 가구만 `stopped`로 마킹됩니다.
+  * 성공 응답 (HTTP 200 OK): `{"status": "stopped"}`
+* **초기화 (`POST /api/reset`)**: 시뮬레이터를 중지하고 모든 가구 상태, 메트릭, 일시정지 플래그, 시뮬레이션 날짜를 초기화합니다.
+  * **reset 성공 (HTTP 200 OK)**:
+    * 워커 종료 완료
+    * `active_households`, `last_metrics_by_house`, `last_metrics`, `simulation_date`, `resolved_start_time`, `cycle_count` 완전 초기화
+    * 응답: `{"status": "reset"}`
+  * **reset 실패 (HTTP 503 Service Unavailable)**:
+    * 워커 종료 대기(join 타임아웃 10초) 후에도 워커가 여전히 살아있는 경우 발생
+    * reset 초기화는 수행되지 않으며 가구·메트릭·날짜·cycle 데이터는 보존됩니다.
+    * 단, 종료 요청(`stop_event.set()`)은 이미 워커에 전달된 상태이므로 워커는 이후 종료될 수 있으며, `is_paused`는 `false`로 전이될 수 있습니다.
+    * 응답: `{"error": "RESET_FAILED", "code": "RESET_FAILED", "message": "시뮬레이터 워커 종료에 실패하여 리셋할 수 없습니다."}`
+    * **클라이언트는 HTTP 503 수신 후 `GET /api/status`로 최종 상태를 확인해야 합니다.**
 
 #### 3) 가상 시작 시각 결정 우선순위 및 규칙
 시뮬레이터는 `--date`(`simulation_date`)와 `--start-time` 입력에 대해 다음의 명확한 우선순위 규칙을 적용합니다:
@@ -340,8 +410,8 @@ python web_server.py \
 | **규칙 B** | 시간 형식 `--start-time` (`HH:MM:SS`) 단독 | KST 오늘 날짜 + 지정 시간 결합 (KST) | `--start-time 09:00:00`<br>➡️ `(오늘 날짜) 09:00:00+09:00` |
 | **규칙 C** | 완전한 ISO datetime `--start-time` 단독 | 지정된 ISO datetime 유지 (tz 없으면 KST) | `--start-time 2026-10-01T15:30:00`<br>➡️ `2026-10-01 15:30:00+09:00` |
 | **규칙 D** | `--date` + 완전한 ISO datetime 동시 지정 | **충돌로 간주하여 거절** (`ValueError` / 종료) | `--date와 완전한 ISO --start-time을 함께 사용할 수 없습니다.` |
-| **규칙 E** | `simulation_date`만 단독 지정 | • `routine_missed`: 선택 날짜 + 기본 시간 (웹: `08:10:01`, CLI: `08:15:00`)<br>• `peak` / `random` / `manual`: 선택 날짜 + 시작 시점 현재 KST 시각 | `--date 2026-09-10`<br>(peak, 14:30:15 실행 시)<br>➡️ `2026-09-10 14:30:15+09:00` |
-| **규칙 F** | 아무 값도 지정하지 않음 | • `routine_missed`: 오늘 날짜 + 기본 시간 (웹: `08:10:01`, CLI: `08:15:00`)<br>• `peak` / `random` / `manual`: 실제 시스템 시각(wall-clock) 스트리밍 | `--scenario routine_missed`<br>➡️ `(오늘 날짜) 08:15:00+09:00` |
+| **규칙 E** | `simulation_date`만 단독 지정 | • `routine_missed` 포함: 선택 날짜 + `08:10:01` KST<br>• 기타 시나리오만: 선택 날짜 + 시작 시점 현재 KST 시각 | `--date 2026-09-10`<br>(peak, 14:30:15 실행 시)<br>➡️ `2026-09-10 14:30:15+09:00` |
+| **규칙 F** | 아무 값도 지정하지 않음 | • `routine_missed` 포함: 오늘 날짜 + `08:10:01` KST<br>• 기타 시나리오만: 현재 KST 시각 스트리밍 | `--scenario routine_missed`<br>➡️ `(오늘 날짜) 08:10:01+09:00` |
 
 > [!CAUTION]
 > **날짜 및 ISO 시간 충돌 방지 (규칙 D)**:

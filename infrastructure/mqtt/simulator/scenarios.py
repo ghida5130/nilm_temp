@@ -321,3 +321,49 @@ def parse_simulation_start_time(start_time_str: str | None, is_missed_mode: bool
         return datetime(today.year, today.month, today.day, 8, 15, 0, tzinfo=KST)
 
     return None
+
+
+def resolve_multi_simulation_start_time(
+    households: list[dict],
+    simulation_date: str | date | datetime | None = None,
+    now: datetime | None = None,
+    routine_default_time: str = "08:10:01"
+) -> datetime | None:
+    """
+    다중 가구 실행 시 모든 가구가 공유할 단일 공통 가상 시작 시각(base_dt)을 결정합니다.
+    - 실행 대상 가구 중 'routine_missed' 시나리오가 하나라도 포함된 경우:
+        선택한 simulation_date의 08:10:01 KST (미지정 시 오늘 날짜의 08:10:01 KST).
+    - 'routine_missed'가 포함되지 않은 경우:
+        simulation_date가 지정되었으면 해당 날짜 + 실행 시작 시점의 현재 KST 시각.
+        simulation_date가 없으면 None (실시간 현재 시각 사용).
+    """
+    if now is None:
+        now_dt = datetime.now(KST)
+    else:
+        now_dt = now.astimezone(KST)
+
+    target_date: date | None = None
+    if simulation_date:
+        if isinstance(simulation_date, datetime):
+            target_date = simulation_date.date()
+        elif isinstance(simulation_date, date):
+            target_date = simulation_date
+        else:
+            date_str = parse_simulation_date(simulation_date)
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    has_routine_missed = any(isinstance(h, dict) and h.get("scenario") == "routine_missed" for h in households)
+
+    if has_routine_missed:
+        base_d = target_date if target_date is not None else now_dt.date()
+        def_h, def_m, def_s = _parse_time_parts(routine_default_time)
+        return datetime(base_d.year, base_d.month, base_d.day, def_h, def_m, def_s, tzinfo=KST)
+
+    if target_date is not None:
+        return datetime(
+            target_date.year, target_date.month, target_date.day,
+            now_dt.hour, now_dt.minute, now_dt.second,
+            tzinfo=KST
+        )
+
+    return now_dt
