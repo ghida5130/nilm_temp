@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -45,6 +46,23 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.of(
                 HttpStatus.NOT_FOUND.value(), "NOT_FOUND",
                 "요청한 리소스를 찾을 수 없습니다.", request.getRequestURI(), List.of()));
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(
+            ResponseStatusException e,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.status(e.getStatusCode())
+                .body(ErrorResponse.of(
+                        e.getStatusCode().value(),
+                        "REQUEST_REJECTED",
+                        e.getReason() == null
+                                ? "요청을 처리할 수 없습니다."
+                                : e.getReason(),
+                        request.getRequestURI(),
+                        List.of()
+                ));
     }
 
     @ExceptionHandler(Exception.class)

@@ -1,6 +1,7 @@
 package com.nilm.monitoring.domain;
 
 import jakarta.persistence.*;
+import lombok.Getter;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -9,6 +10,7 @@ import java.util.UUID;
  * 알림 발송 Entity
  * 알림 응답과 상태, 기한 관리
  * */
+@Getter
 @Entity
 @Table(name = "notifications")
 public class Notification {
@@ -20,10 +22,10 @@ public class Notification {
     }
 
     public enum ResponseStatus {
-        NOT_REQUIRED,
-        PENDING,
-        ANSWERED,
-        EXPIRED
+        NOT_REQUIRED, // 응답 불필요 일일 알림
+        PENDING, // 응답 대기
+        ANSWERED, // 예 또는 아니오 응답 완료
+        EXPIRED // 미응답 상태로 기한 만료
     }
 
     @Id
@@ -38,18 +40,18 @@ public class Notification {
     private String authSub;
 
     @Column(name = "response_deadline")
-    private OffsetDateTime responseDeadline;
+    private OffsetDateTime responseDeadline; // 응답 기한
 
     @Column(name = "user_response")
     private Boolean userResponse; // 예: true 아니오: false 미응답: null
 
     @Enumerated(EnumType.STRING)
     @Column(name = "send_status", nullable = false)
-    private SendStatus sendStatus = SendStatus.PENDING;
+    private SendStatus sendStatus = SendStatus.PENDING; // 발송 상태
 
     @Enumerated(EnumType.STRING)
     @Column(name = "response_status", nullable = false)
-    private ResponseStatus responseStatus = ResponseStatus.NOT_REQUIRED;
+    private ResponseStatus responseStatus = ResponseStatus.NOT_REQUIRED; // 응답 상태
 
     protected Notification() {
     }
