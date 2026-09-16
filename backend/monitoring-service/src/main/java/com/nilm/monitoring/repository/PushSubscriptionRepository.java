@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
+
 public interface PushSubscriptionRepository extends JpaRepository<PushSubscription, Long> {
 
     // ON CONFLICT (endpoint)
@@ -37,4 +39,6 @@ public interface PushSubscriptionRepository extends JpaRepository<PushSubscripti
             @Param("p256dh") String p256dh,
             @Param("auth") String auth
     );
+
+    List<PushSubscription> findAllByAuthSub(String authSub);
 }

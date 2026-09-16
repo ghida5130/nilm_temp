@@ -1,11 +1,13 @@
 package com.nilm.monitoring.domain;
 
 import jakarta.persistence.*;
+import lombok.Getter;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 @Entity
+@Getter
 @Table(name = "subjects")
 public class Subject {
 

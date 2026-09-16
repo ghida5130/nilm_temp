@@ -2,11 +2,13 @@ package com.nilm.monitoring.domain;
 
 import com.nilm.monitoring.config.enums.RiskLevel;
 import jakarta.persistence.*;
+import lombok.Getter;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
+@Getter
 @Table(name = "analysis_events")
 public class AnalysisEvent {
 
@@ -19,10 +21,10 @@ public class AnalysisEvent {
     @Column(name = "household_id", nullable = false)
     private String householdId;
 
-    @Column(name = "event_type", nullable = false)
+    @Column(name = "event_type")
     private String eventType;
 
-    @Column(name = "appliance_type", nullable = false)
+    @Column(name = "appliance_type")
     private String applianceType;
 
     @Column(name = "risk_score", nullable = false)
@@ -42,5 +44,21 @@ public class AnalysisEvent {
     private Long riskPolicyId;
 
     protected AnalysisEvent() {
+    }
+
+    public AnalysisEvent(UUID id, Long subjectId, String householdId,
+                         String eventType, String applianceType, int riskScore,
+                         RiskLevel riskLevel, OffsetDateTime occurredAt,
+                         String reason, Long riskPolicyId) {
+        this.id = id;
+        this.subjectId = subjectId;
+        this.householdId = householdId;
+        this.eventType = eventType;
+        this.applianceType = applianceType;
+        this.riskScore = riskScore;
+        this.riskLevel = riskLevel;
+        this.occurredAt = occurredAt;
+        this.reason = reason;
+        this.riskPolicyId = riskPolicyId;
     }
 }

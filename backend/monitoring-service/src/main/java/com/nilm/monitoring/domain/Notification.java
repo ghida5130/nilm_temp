@@ -56,6 +56,15 @@ public class Notification {
     protected Notification() {
     }
 
+    public Notification(UUID eventId, String authSub) {
+        if (authSub == null || authSub.isBlank()) {
+            throw new IllegalArgumentException("알림 수신자 ID가 필요합니다.");
+        }
+
+        this.eventId = eventId;
+        this.authSub = authSub;
+    }
+
     public void requestResponse(OffsetDateTime deadline) {
         if (responseStatus != ResponseStatus.NOT_REQUIRED) {
             throw new IllegalStateException("이미 응답 요청이 설정되었습니다.");

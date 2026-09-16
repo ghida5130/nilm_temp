@@ -20,7 +20,7 @@ public class PushSubscriptionController {
 
     public PushSubscriptionController(
             PushSubscriptionService service,
-            @Value("${app.push.test-user-id}") String testAuthSub
+            @Value("${app.push.test-auth-sub}") String testAuthSub
     ) {
         this.service = service;
         this.testAuthSub = testAuthSub;

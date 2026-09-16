@@ -1,7 +1,9 @@
 package com.nilm.monitoring.domain;
 
 import jakarta.persistence.*;
+import lombok.Getter;
 
+@Getter
 @Entity
 @Table(name = "push_subscriptions")
 public class PushSubscription {
