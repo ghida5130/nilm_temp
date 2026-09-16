@@ -104,6 +104,7 @@ services:
       KC_HEALTH_ENABLED: "true"
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN required}
       NILM_SMOKE_CLIENT_SECRET: ${NILM_SMOKE_CLIENT_SECRET:?NILM_SMOKE_CLIENT_SECRET required}
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
     volumes:
       - ../keycloak/nilm-realm.json:/opt/keycloak/data/import/nilm-realm.json:ro
     ports:
@@ -266,6 +267,9 @@ services:
     container_name: nilm-iot-device
     restart: unless-stopped
     environment:
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: nilm
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
       SERVER_PORT: 8081
       APP_SECURITY_ENABLED: "${APP_SECURITY_ENABLED:-true}"
       JWT_ISSUER_URI: ${JWT_ISSUER_URI:?JWT_ISSUER_URI required}
