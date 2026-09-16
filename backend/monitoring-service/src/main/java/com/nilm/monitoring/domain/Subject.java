@@ -34,23 +34,26 @@ public class Subject {
     private String address;
 
     @Column(name = "risk_policy_id")
-    private Long riskPolicyId;
+    private Long riskPolicyId; // 위험 정책 ID
 
     @Column(name = "monitoring_enabled", nullable = false)
-    private boolean monitoringEnabled = true;
+    private boolean monitoringEnabled = true; // 모니터링 활성화 여부
 
     @Column(name = "away_started_at")
-    private OffsetDateTime awayStartedAt;
+    private OffsetDateTime awayStartedAt; // 외출 시작 시간
 
     @Column(name = "away_until")
-    private OffsetDateTime awayUntil;
+    private OffsetDateTime awayUntil; // 외출 종료 시간
 
     @Column(name = "manager_memo", columnDefinition = "text")
-    private String managerMemo;
+    private String managerMemo; // 담당자 메모
 
     @Column(name = "manager_id")
-    private Long managerId;
+    private Long managerId; // 배정 담당자 ID, 대상자 1명 -> 담당자 1명만 배정
 
+    // 집주소 좌표, 성별, 사생활모드 여부, 위험 상태(위험,주의,정상) 추가
+    // 마지막 활동 시간 ( On/Off 감지시 update )
+    // 마지막 활동 가전 종류 ( 마지막 활동 시간 갱신시 )
     protected Subject() {
     }
 
