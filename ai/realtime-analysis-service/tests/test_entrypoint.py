@@ -8,6 +8,8 @@ def test_default_topic_contracts() -> None:
     assert settings.kafka_analysis_event_topic == "analysis.event.v1"
     assert settings.kafka_analysis_snapshot_topic == "analysis.snapshot.v1"
     assert settings.consumer_config()["enable.auto.commit"] is False
+    assert settings.http_host == "0.0.0.0"
+    assert settings.http_port == 8000
 
 
 def test_fake_appliance_setting_is_parsed() -> None:

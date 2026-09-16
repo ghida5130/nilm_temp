@@ -12,13 +12,17 @@ dependencies = [
     "confluent-kafka==2.6.0",
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
+    "prometheus-client>=0.21,<1",
     "psycopg[binary]>=3.2,<4",
     "SQLAlchemy>=2.0,<3",
     "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9"]
+dev = [
+    "pytest>=8,<9",
+    "pytest-cov>=6,<7",
+]
 
 [project.scripts]
 realtime-analysis = "realtime_analysis.__main__:main"
@@ -29,3 +33,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+relative_files = true

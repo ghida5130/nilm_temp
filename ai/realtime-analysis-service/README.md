@@ -271,6 +271,24 @@ python -m realtime_analysis
 실제 Kafka 환경에 맞게 `.env`의 접속 주소와 토픽을 수정합니다. 기본 baseline은
 `config/baselines.json`에 있으며, 현재 예시는 `H001`의 `MICROWAVE` 루틴입니다.
 
+## 상태 확인과 Prometheus 메트릭
+
+분석 프로세스는 기본적으로 `0.0.0.0:8000`에서 내부 관측용 HTTP 서버를 함께 실행합니다.
+
+| 경로 | 성공 상태 | 용도 |
+| --- | --- | --- |
+| `GET /health` | `200` | 프로세스 생존 확인 |
+| `GET /ready` | `200`, 미준비 시 `503` | Kafka, PostgreSQL, 모델 준비 확인 |
+| `GET /metrics` | `200` | Prometheus exposition format |
+
+바인딩은 `HTTP_HOST`, `HTTP_PORT`, `READINESS_TIMEOUT_SECONDS` 환경변수로 변경할 수
+있습니다. Prometheus는 Compose 내부에서 `realtime-analysis-service:8000/metrics`를
+수집하며 이 포트를 공용 인터넷에 공개하지 않습니다.
+
+Grafana의 단계별 레이턴시, E2E 지연, Consumer Lag, 처리량 패널에는 각각
+`nilm_analysis_stage_duration_seconds`, `nilm_analysis_e2e_duration_seconds`,
+`nilm_analysis_consumer_lag_messages`, `nilm_analysis_messages_total`을 사용합니다.
+
 ## analysis_db 스키마
 
 `analysis_db` 접근에는 SQLAlchemy를 사용하고, 테이블 변경 이력은 Alembic으로 관리합니다.

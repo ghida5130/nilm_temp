@@ -188,7 +188,11 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:${ANALYSIS_HTTP_PORT:-8000}:8000"
     environment:
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8000
       KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       KAFKA_INPUT_TOPIC: ${KAFKA_RAW_TOPIC:-power.raw.v1}
       KAFKA_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
@@ -311,6 +315,11 @@ services:
       WEB_PUSH_VAPID_PUBLIC_KEY: "${WEB_PUSH_VAPID_PUBLIC_KEY:-}"
       WEB_PUSH_VAPID_PRIVATE_KEY: "${WEB_PUSH_VAPID_PRIVATE_KEY:-}"
       WEB_PUSH_SUBJECT: "${WEB_PUSH_SUBJECT:-mailto:admin@example.com}"
+      PUSH_TEST_AUTH_SUB: "${PUSH_TEST_AUTH_SUB:-test-subject-3}"
+      TEST_SUBJECT_ENABLED: "${TEST_SUBJECT_ENABLED:-true}"
+      TEST_SUBJECT_HOUSEHOLD_ID: "${TEST_SUBJECT_HOUSEHOLD_ID:-H001}"
+      RISK_WARNING_THRESHOLD: "${RISK_WARNING_THRESHOLD:-70}"
+      RISK_DANGER_THRESHOLD: "${RISK_DANGER_THRESHOLD:-90}"
     ports:
       - "127.0.0.1:8082:8082"
     depends_on:

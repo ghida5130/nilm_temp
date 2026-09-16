@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     appliance_on_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_threshold_margin: float = Field(default=0.05, ge=0, le=1)
+    http_host: str = "0.0.0.0"
+    http_port: int = Field(default=8000, ge=1, le=65535)
+    readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
+    consumer_lag_refresh_seconds: float = Field(default=5.0, gt=0, le=300)
     log_level: str = "INFO"
 
     @property
