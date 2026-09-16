@@ -18,24 +18,42 @@ public class DomainExceptionHandler {
 
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(NotFoundException e, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.of(
-                HttpStatus.NOT_FOUND.value(), "RESOURCE_NOT_FOUND",
-                e.getMessage(), request.getRequestURI(), List.of()));
+        return build(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", e.getMessage(), request);
     }
 
     @ExceptionHandler(InvalidStateTransitionException.class)
     public ResponseEntity<ErrorResponse> handleInvalidTransition(
             InvalidStateTransitionException e, HttpServletRequest request) {
-        return ResponseEntity.badRequest().body(ErrorResponse.of(
-                HttpStatus.BAD_REQUEST.value(), "INVALID_STATE_TRANSITION",
-                e.getMessage(), request.getRequestURI(), List.of()));
+        return build(HttpStatus.BAD_REQUEST, "INVALID_STATE_TRANSITION", e.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidOperationException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidOperation(
+            InvalidOperationException e, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "INVALID_OPERATION", e.getMessage(), request);
     }
 
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ErrorResponse> handleDuplicate(
             DuplicateResourceException e, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
-                HttpStatus.CONFLICT.value(), "DUPLICATE_RESOURCE",
-                e.getMessage(), request.getRequestURI(), List.of()));
+        return build(HttpStatus.CONFLICT, "DUPLICATE_RESOURCE", e.getMessage(), request);
+    }
+
+    @ExceptionHandler(UnauthenticatedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthenticated(
+            UnauthenticatedException e, HttpServletRequest request) {
+        return build(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", e.getMessage(), request);
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbidden(
+            ForbiddenException e, HttpServletRequest request) {
+        return build(HttpStatus.FORBIDDEN, "FORBIDDEN", e.getMessage(), request);
+    }
+
+    private ResponseEntity<ErrorResponse> build(HttpStatus status, String code,
+                                                String message, HttpServletRequest request) {
+        return ResponseEntity.status(status).body(ErrorResponse.of(
+                status.value(), code, message, request.getRequestURI(), List.of()));
     }
 }

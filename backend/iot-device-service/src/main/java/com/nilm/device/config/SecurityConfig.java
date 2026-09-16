@@ -45,7 +45,11 @@ public class SecurityConfig {
                                 "/actuator/info",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
-                                "/swagger-ui.html"
+                                "/swagger-ui.html",
+                                // 가입·로그인·토큰 갱신은 토큰이 없는 상태에서 호출된다
+                                "/api/auth/signup",
+                                "/api/auth/login",
+                                "/api/auth/refresh"
                         ).permitAll()
                         .requestMatchers("/api/devices/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
