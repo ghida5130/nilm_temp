@@ -1,8 +1,5 @@
 package com.nilm.monitoring.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nilm.monitoring.config.enums.ApplianceType;
 import com.nilm.monitoring.domain.AnalysisEvent;
 import com.nilm.monitoring.domain.Notification;
 import com.nilm.monitoring.domain.Subject;
@@ -20,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +26,6 @@ import org.springframework.web.server.ResponseStatusException;
  * 대상자 상세 화면의 이상 징후 기록 영역.
  * 발생 시각 최신순으로 위험 이벤트를 읽고, 연결된 알림의 처리 상태를 함께 붙인다.
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SubjectEventService {
@@ -42,18 +37,10 @@ public class SubjectEventService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final String CURSOR_SEPARATOR = "|";
 
-    /**
-     * 이벤트 유형별 화면 문구. 분석 서비스가 새 유형을 추가해도 화면이 비지 않도록
-     * 표에 없는 값은 일반 문구로 되돌린다.
-     */
-    private static final Map<String, String> DESCRIPTIONS = Map.of(
-            "ROUTINE_MISSED", "%s 미작동 감지"
-    );
-
     private final SubjectAccessGuard accessGuard;
     private final AnalysisEventRepository events;
     private final NotificationRepository notifications;
-    private final ObjectMapper objectMapper;
+    private final AnalysisEventNarrator narrator;
 
     @Transactional(readOnly = true)
     public SubjectEventsResponse getEvents(
@@ -173,11 +160,11 @@ public class SubjectEventService {
                 event.getId().toString(),
                 event.getEventType(),
                 event.getApplianceType(),
-                describe(event),
+                narrator.describe(event),
                 event.getRiskLevel(),
                 event.getRiskScore(),
                 event.getOccurredAt(),
-                parseReason(event),
+                narrator.parseReason(event),
                 toAlert(alert)
         );
     }
@@ -200,38 +187,6 @@ public class SubjectEventService {
                         alert.getRespondedAt()
                 )
         );
-    }
-
-    private String describe(AnalysisEvent event) {
-        String template = event.getEventType() == null
-                ? null
-                : DESCRIPTIONS.get(event.getEventType());
-        if (template == null) {
-            return event.getApplianceType() == null || event.getApplianceType().isBlank()
-                    ? "이상 징후 감지"
-                    : ApplianceType.labelOf(event.getApplianceType()) + " 사용 이상 감지";
-        }
-        return String.format(template, ApplianceType.labelOf(event.getApplianceType()));
-    }
-
-    /**
-     * reason은 분석 서비스가 보낸 JSON을 문자열로 보관한다.
-     * 이벤트 유형마다 구조가 달라 화면에 그대로 넘기고, 깨진 값이면 원문을 담아 돌려준다.
-     */
-    private Map<String, Object> parseReason(AnalysisEvent event) {
-        String reason = event.getReason();
-        if (reason == null || reason.isBlank()) {
-            return Map.of();
-        }
-        try {
-            Map<String, Object> parsed = objectMapper.readValue(
-                    reason, new TypeReference<Map<String, Object>>() {
-                    });
-            return parsed == null ? Map.of() : parsed;
-        } catch (Exception e) {
-            log.warn("이벤트 사유를 JSON으로 읽지 못했습니다: eventId={}", event.getId());
-            return Map.of("raw", reason);
-        }
     }
 
     private String encodeCursor(AnalysisEvent last) {

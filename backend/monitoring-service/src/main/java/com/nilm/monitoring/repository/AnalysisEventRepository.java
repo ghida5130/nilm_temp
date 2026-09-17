@@ -2,6 +2,7 @@ package com.nilm.monitoring.repository;
 import com.nilm.monitoring.domain.AnalysisEvent;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,22 @@ public interface AnalysisEventRepository extends JpaRepository<AnalysisEvent, UU
             OffsetDateTime from,
             OffsetDateTime until
     );
+
+    /** 실시간 스트림이 내려보내는 최근 이상 징후 건수. */
+    long countBySubjectIdAndOccurredAtGreaterThanEqual(
+            Long subjectId,
+            OffsetDateTime from
+    );
+
+    /** 가장 최근에 발생한 이상 징후 한 건. 같은 시각은 id로 순서를 고정한다. */
+    @Query(value = """
+            select e.*
+            from analysis_events e
+            where e.subject_id = :subjectId
+            order by e.occurred_at desc, e.id desc
+            limit 1
+            """, nativeQuery = true)
+    Optional<AnalysisEvent> findLatestBySubjectId(@Param("subjectId") Long subjectId);
 
     /**
      * 이상 징후 기록의 첫 페이지. 발생 시각 최신순이고, 같은 시각은 id로 순서를 고정해

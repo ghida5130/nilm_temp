@@ -26,6 +26,19 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             """, nativeQuery = true)
     Optional<Notification> findLatestAlertBySubjectId(@Param("subjectId") Long subjectId);
 
+    /**
+     * 담당자가 아직 조치를 끝내지 않은 알림 수 = 미해결 사건 수.
+     * 일일 요약처럼 이벤트가 없는 알림은 대상자를 특정할 수 없어 제외된다.
+     */
+    @Query(value = """
+            select count(*)
+            from notifications n
+            join analysis_events e on e.id = n.event_id
+            where e.subject_id = :subjectId
+              and n.manager_response_status <> 'RESOLVED'
+            """, nativeQuery = true)
+    long countUnresolvedBySubjectId(@Param("subjectId") Long subjectId);
+
     // 이상 징후 목록에서 이벤트마다 연결된 알림을 한 번에 채운다.
     List<Notification> findAllByEventIdIn(Collection<UUID> eventIds);
 

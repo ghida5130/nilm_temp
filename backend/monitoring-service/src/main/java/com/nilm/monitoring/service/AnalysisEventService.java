@@ -1,6 +1,7 @@
 package com.nilm.monitoring.service;
 
 import com.nilm.monitoring.config.enums.RiskLevel;
+import com.nilm.monitoring.config.enums.StateChangeTrigger;
 import com.nilm.monitoring.dto.kafka.AnalysisEventMessage;
 import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -70,6 +71,8 @@ public class AnalysisEventService {
         events.saveAndFlush(new AnalysisEvent(message.eventId(), subject.getId(),
                 message.householdId(), message.eventType(), message.applianceType(),
                 message.score(), level, message.occurredAt(), reason, subject.getRiskPolicyId()));
+        // 커밋 후 한 번만 내보낸다. 아래에서 알림이 더 만들어져도 듣는 쪽이 DB를 다시 읽는다.
+        publisher.publishEvent(new SubjectStateChanged(subject.getId(), StateChangeTrigger.DETECTION));
         // 이력은 보존하고 외출/중지/정상 상태에서는 알림을 생성하지 않는다.
         if (!subject.isMonitoringEnabled() || occurredWhileAway || level == RiskLevel.NORMAL) return;
         if (subject.getAuthSub() == null || subject.getAuthSub().isBlank()) {
