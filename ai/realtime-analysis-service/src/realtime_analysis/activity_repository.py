@@ -74,13 +74,6 @@ class SqlAlchemyApplianceActivityRepository:
 
         observation_date = observed_at.astimezone(self._timezone).date()
         with self._session_factory.begin() as session:
-            # 다음 날짜의 데이터가 들어오면 아직 COLLECTING인 이전 날짜를 마감한다.
-            self._finalize_observations_before(
-                session,
-                observation_date,
-                observed_at,
-            )
-
             observation = session.scalar(
                 select(HouseholdObservationDaily)
                 .where(
@@ -100,6 +93,10 @@ class SqlAlchemyApplianceActivityRepository:
                     updated_at=observed_at,
                 )
                 session.add(observation)
+                return
+
+            # 00:10 일일 마감 이후 도착한 지연 샘플은 이미 발행한 지수를 바꾸지 않는다.
+            if observation.observation_status != "COLLECTING":
                 return
 
             # Consumer는 가구별 메시지를 순서대로 처리한다. Snapshot 발행 후 Offset 커밋
@@ -183,6 +180,8 @@ class SqlAlchemyApplianceActivityRepository:
             activity_date,
             transition.confirmed_at,
         )
+        if observation.observation_status != "COLLECTING":
+            return
         activity = self._get_or_create_activity(
             session,
             observation,
@@ -293,34 +292,6 @@ class SqlAlchemyApplianceActivityRepository:
         session.add(observation)
         session.flush()
         return observation
-
-    def _finalize_observations_before(
-        self,
-        session: Session,
-        current_date: date,
-        finalized_at: datetime,
-    ) -> None:
-        observations = session.scalars(
-            select(HouseholdObservationDaily)
-            .where(
-                HouseholdObservationDaily.observation_date < current_date,
-                HouseholdObservationDaily.observation_status == "COLLECTING",
-            )
-            .with_for_update()
-        ).all()
-
-        for observation in observations:
-            observation.coverage_ratio = self._coverage_ratio(
-                observation.sample_count,
-                observation.expected_sample_count,
-            )
-            if observation.sample_count == 0:
-                observation.observation_status = "SENSOR_GAP"
-            elif observation.coverage_ratio >= self._valid_coverage_ratio:
-                observation.observation_status = "VALID"
-            else:
-                observation.observation_status = "INSUFFICIENT_DATA"
-            observation.updated_at = finalized_at
 
     def _coverage_ratio(
         self,

@@ -12,6 +12,8 @@ def test_default_topic_contracts() -> None:
     assert settings.consumer_config()["enable.auto.commit"] is False
     assert settings.http_host == "0.0.0.0"
     assert settings.http_port == 8000
+    assert settings.activity_index_publish_hour == 0
+    assert settings.activity_index_publish_minute == 10
 
 
 def test_fake_appliance_setting_is_parsed() -> None:

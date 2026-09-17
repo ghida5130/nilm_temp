@@ -9,12 +9,18 @@ from confluent_kafka.admin import AdminClient
 from realtime_analysis.activity_repository import (
     SqlAlchemyApplianceActivityRepository,
 )
+from realtime_analysis.activity_publisher import ActivityIndexPublisher
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.config import get_settings
 from realtime_analysis.consumer import AnalysisConsumer
 from realtime_analysis.database import create_session_factory
+from realtime_analysis.daily_activity_index import (
+    DailyActivityIndexRepository,
+    DailyActivityIndexScheduler,
+    DailyActivityIndexService,
+)
 from realtime_analysis.dlq import DlqPublisher
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
@@ -65,6 +71,17 @@ def main() -> None:
         ),
         timezone_name=settings.analysis_timezone,
     )
+    baseline_repository = BaselineRepository.from_json_file(
+        settings.baseline_file
+    )
+    activity_repository = SqlAlchemyApplianceActivityRepository(
+        session_factory=session_factory,
+        timezone_name=settings.analysis_timezone,
+        expected_samples_per_day=settings.analysis_expected_samples_per_day,
+        valid_coverage_ratio=(
+            settings.analysis_observation_valid_coverage_ratio
+        ),
+    )
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(settings.model_window_size),
         # 실제 모델 Predictor로 교체해도 동일하게 Manifest의 mean/std를 적용한다.
@@ -80,17 +97,8 @@ def main() -> None:
         ),
         # 환경변수의 analysis_db 접속 정보로 SessionFactory를 만들고
         # 실제 SQLAlchemy Repository를 Handler에 주입한다.
-        activity_repository=SqlAlchemyApplianceActivityRepository(
-            session_factory=session_factory,
-            timezone_name=settings.analysis_timezone,
-            expected_samples_per_day=settings.analysis_expected_samples_per_day,
-            valid_coverage_ratio=(
-                settings.analysis_observation_valid_coverage_ratio
-            ),
-        ),
-        baseline_repository=BaselineRepository.from_json_file(
-            settings.baseline_file  
-        ),
+        activity_repository=activity_repository,
+        baseline_repository=baseline_repository,
         tracker=tracker,
         detector=detector,
         event_publisher=AnalysisEventPublisher(settings),
@@ -107,9 +115,14 @@ def main() -> None:
     )
     readiness = ReadinessProbe(
         {
-            "kafka": kafka_readiness_check(
+            "kafka_input": kafka_readiness_check(
                 kafka_admin,
                 settings.kafka_input_topic,
+                settings.readiness_timeout_seconds,
+            ),
+            "kafka_activity": kafka_readiness_check(
+                kafka_admin,
+                settings.kafka_analysis_activity_topic,
                 settings.readiness_timeout_seconds,
             ),
             "database": database_readiness_check(session_factory),
@@ -123,10 +136,32 @@ def main() -> None:
         settings.http_port,
         readiness,
     )
+    daily_activity_service = DailyActivityIndexService(
+        repository=DailyActivityIndexRepository(
+            session_factory=session_factory,
+            timezone_name=settings.analysis_timezone,
+            expected_samples_per_day=settings.analysis_expected_samples_per_day,
+            valid_coverage_ratio=(
+                settings.analysis_observation_valid_coverage_ratio
+            ),
+        ),
+        publisher=ActivityIndexPublisher(settings),
+        configured_household_ids=baseline_repository.household_ids,
+    )
+    daily_activity_scheduler = DailyActivityIndexScheduler(
+        service=daily_activity_service,
+        timezone_name=settings.analysis_timezone,
+        publish_hour=settings.activity_index_publish_hour,
+        publish_minute=settings.activity_index_publish_minute,
+        poll_seconds=settings.activity_index_scheduler_poll_seconds,
+    )
     observability_server.start()
+    daily_activity_scheduler.start(stop_event)
     try:
         consumer.run(stop_event)
     finally:
+        stop_event.set()
+        daily_activity_scheduler.stop()
         observability_server.stop()
 
 

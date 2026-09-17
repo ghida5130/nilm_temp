@@ -268,15 +268,15 @@ household_id + occurred_at의 한국 날짜 + reason.expected_until
   "message_id": "8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6",
   "household_id": "H001",
   "activity_date": "2026-09-16",
-  "activity_index": 62,
+  "activity_index": 85,
   "data_status": "VALID",
   "components": {
     "usage_count": 5,
     "appliance_type_count": 3,
     "usage_duration_seconds": 2400,
-    "usage_count_score": 65,
-    "appliance_diversity_score": 75,
-    "usage_duration_score": 60
+    "usage_count_score": 83,
+    "appliance_diversity_score": 100,
+    "usage_duration_score": 67
   }
 }
 ```
@@ -294,8 +294,75 @@ household_id + occurred_at의 한국 날짜 + reason.expected_until
 }
 ```
 
-현재 변경에는 이 계약과 Publisher가 포함됩니다. 지수 산식과 일일 실행 시각은 확정된
-설정이 없으므로 아직 구현하지 않습니다.
+### 계산 및 발행 시점
+
+기본값은 한국 시간 `00:10`에 전날 지수를 한 번 계산해 발행하는 것입니다. 자정 직후
+도착하는 지연 샘플을 받을 수 있도록 10분의 마감 여유를 둡니다. 실행 시각은
+`ACTIVITY_INDEX_PUBLISH_HOUR`, `ACTIVITY_INDEX_PUBLISH_MINUTE`로 변경할 수 있습니다.
+
+관측률이 `ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO` 이상인 날만 지수를 계산합니다.
+관측이 부족하거나 하루 전체가 비어 있으면 `INSUFFICIENT_DATA`로 발행합니다.
+
+```text
+usage_count_score
+  = min(논리적 사용 횟수 / 6, 1) × 100
+
+appliance_diversity_score
+  = min(사용한 가전 종류 수 / 3, 1) × 100
+
+usage_duration_score
+  = min(가전별 상한이 적용된 사용시간 합계 / 3,600초, 1) × 100
+
+activity_index
+  = 0.50 × usage_count_score
+  + 0.30 × appliance_diversity_score
+  + 0.20 × usage_duration_score
+```
+
+ON/OFF 히스테리시스가 샘플 단위 노이즈를 제거한 뒤, 일일 집계에서 같은 가전의 가까운
+세션을 하나의 논리적 사용으로 다시 묶습니다. 기본 병합 간격은 일반 가전 60초,
+인덕션 120초, 다리미 300초입니다. 인버터·온도조절 주기를 여러 번 사용한 것으로
+계산하지 않기 위한 값입니다. 10초 미만 논리적 사용은 활동 지수에서 제외합니다.
+
+`usage_duration_seconds`에는 실제 측정 시간을 저장합니다. 점수 계산에만 아래 가전별
+상한을 적용하여 장시간 방치가 활동 점수를 계속 올리지 않게 합니다.
+
+| 가전 | 점수 반영 일일 상한 |
+| --- | ---: |
+| 전기포트 | 10분 |
+| 전자레인지 | 30분 |
+| 헤어드라이기 | 30분 |
+| 다리미 | 60분 |
+| 진공청소기 | 90분 |
+| 인덕션 | 180분 |
+
+전기포트는 짧은 물 끓이기, 전자레인지·헤어드라이기는 짧은 단발 작업, 다리미·청소기는
+가사 작업, 인덕션은 식사 준비라는 사용 특성을 기준으로 MVP 상한을 다르게 두었습니다.
+운영 데이터가 쌓이면 이 값은 분포의 상위 분위수로 조정합니다.
+
+같은 가전의 사용 횟수도 점수에는 하루 최대 3회까지만 반영합니다. 원본 횟수와 원본
+사용시간은 `components`에 제한 전 값으로 전달합니다. 사용시간은 각 가전의 활성 시간을
+합한 값이므로 여러 가전이 동시에 켜져 있으면 겹친 시간도 가전별로 각각 포함됩니다.
+
+`message_id`는 `household_id + activity_date`로 결정적으로 생성합니다. 서비스 재시작이나
+재시도로 같은 날짜 메시지가 다시 전달돼도 같은 ID이므로 수신 서비스가 멱등 처리할 수
+있습니다.
+
+### 모니터링 서비스 전달 사항
+
+- 이 값은 위험 점수가 아니라 그날의 절대 활동량입니다.
+- `VALID`인 메시지만 위험 점수와 EWMA 계산에 사용합니다.
+- `INSUFFICIENT_DATA`의 `activity_index=null`을 0점으로 바꾸면 안 됩니다.
+- 저장 및 갱신 키는 `message_id` 또는 `household_id + activity_date`를 사용합니다.
+- EWMA는 모니터링 서비스에서 유효한 일일 지수에만 적용합니다. 시작값은 첫 유효 지수,
+  초기 `alpha`는 `0.3`을 권장합니다.
+- 급락은 직전 한 건보다 이전 EWMA와 현재 지수의 차이로 판단하면 일시적 변동에 덜
+  민감합니다.
+- 일일 발행이므로 기존의 `15분 × 4회` 규칙은 적용할 수 없습니다. 연속 저하는
+  `연속 N일` 기준으로 다시 정의해야 합니다.
+- 위험 점수를 계산할 때 `activity_index`와 세 component 점수를 동시에 합산하면 같은
+  활동을 중복 반영하게 됩니다. 위험 계산에는 최종 지수만 사용하고 components는 설명과
+  디버깅에 사용합니다.
 
 ## 데이터 품질 이벤트 계약
 

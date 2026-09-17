@@ -49,6 +49,13 @@ class Settings(BaseSettings):
         ge=0,
         le=1,
     )
+    activity_index_publish_hour: int = Field(default=0, ge=0, le=23)
+    activity_index_publish_minute: int = Field(default=10, ge=0, le=59)
+    activity_index_scheduler_poll_seconds: float = Field(
+        default=30,
+        gt=0,
+        le=300,
+    )
     appliance_on_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_threshold_margin: float = Field(default=0.05, ge=0, le=1)

@@ -27,3 +27,7 @@ class BaselineRepository:
             for baseline in self._by_household.get(household_id, [])
             if baseline.enabled
         ]
+
+    @property
+    def household_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._by_household))

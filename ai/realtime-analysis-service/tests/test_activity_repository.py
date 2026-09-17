@@ -248,7 +248,36 @@ def test_replayed_timestamp_is_not_counted_twice(
         assert observation.coverage_ratio == Decimal("0.2500")
 
 
-def test_previous_day_observations_are_finalized(
+def test_finalized_observation_ignores_late_sample(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = SqlAlchemyApplianceActivityRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=4,
+    )
+    with session_factory.begin() as session:
+        session.add(
+            HouseholdObservationDaily(
+                household_id="H001",
+                observation_date=START.date(),
+                sample_count=3,
+                expected_sample_count=4,
+                coverage_ratio=Decimal("0.7500"),
+                observation_status="VALID",
+                updated_at=START,
+            )
+        )
+
+    repository.record_observation("H001", START + timedelta(seconds=1))
+
+    with session_factory() as session:
+        observation = session.scalar(select(HouseholdObservationDaily))
+        assert observation is not None
+        assert observation.sample_count == 3
+
+
+def test_next_day_input_keeps_previous_day_collecting_until_daily_job(
     session_factory: sessionmaker[Session],
 ) -> None:
     repository = SqlAlchemyApplianceActivityRepository(
@@ -282,15 +311,9 @@ def test_previous_day_observations_are_finalized(
             (item.household_id, item.observation_date.isoformat()): item
             for item in session.scalars(select(HouseholdObservationDaily)).all()
         }
-        assert observations[("H001", "2026-09-10")].observation_status == "VALID"
-        assert (
-            observations[("H002", "2026-09-10")].observation_status
-            == "INSUFFICIENT_DATA"
-        )
-        assert (
-            observations[("H003", "2026-09-10")].observation_status
-            == "SENSOR_GAP"
-        )
+        assert observations[("H001", "2026-09-10")].observation_status == "COLLECTING"
+        assert observations[("H002", "2026-09-10")].observation_status == "COLLECTING"
+        assert observations[("H003", "2026-09-10")].observation_status == "COLLECTING"
         current = observations[("H001", "2026-09-11")]
         assert current.observation_status == "COLLECTING"
         assert current.sample_count == 1
