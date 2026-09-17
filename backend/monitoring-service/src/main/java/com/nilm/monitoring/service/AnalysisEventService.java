@@ -34,26 +34,47 @@ public class AnalysisEventService {
     @Value("${app.push.enabled:false}")
     private boolean pushEnabled;
 
+
+    /**
+     * Kakfa Consumer -> 이벤트메시지를 받아 DB 상태 갱신 후 알림 발송
+     * */
     @Transactional
     public void handle(AnalysisEventMessage message) {
         validate(message);
-        // 같은 가구의 처리를 직렬화해 동시 재수신도 중복 알림을 만들지 않는다.
+        // 이벤트의 가구 ID에 해당하는 대상자 조회
         var matches = subjects.findHouseholdForUpdate(message.householdId());
+
+        // 대상자가 1명이 아니면 예외
         if (matches.size() != 1) {
             throw new IllegalStateException("가구에 정확히 한 명의 대상자를 등록해야 합니다: "
                     + message.householdId());
         }
+
+        // 이미 처리된 위험 이벤트가 있으면 중복으로 알림 처리 하지않음
         if (events.existsById(message.eventId())) return;
+
         var subject = matches.get(0);
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+
+        // 모니터링이 꺼져 있음 + 외출 시작 기록이 있음 + 외출 종료 시각이 있음 + 시간이 지남
+        // 외출 종료 시각이 지났으면 endAway를 통해 모니터링을 살림
         if (!subject.isMonitoringEnabled() && subject.getAwayStartedAt() != null
                 && subject.getAwayUntil() != null && !now.isBefore(subject.getAwayUntil())) {
             subject.endAway(now);
         }
+
+
+        // 사건이 일어난 시간에 외출 중이였는지 검사
+        // 위험 발생 시각이랑 이벤트 메시지가 도착하는 시간이 다른 경우
         boolean occurredWhileAway = subject.getAwayStartedAt() != null
                 && subject.getAwayUntil() != null
                 && !message.occurredAt().isBefore(subject.getAwayStartedAt())
                 && message.occurredAt().isBefore(subject.getAwayUntil());
+
+        /**
+         *  위험 스코어 계산 & 집계로 알림 조건 트리거 -> 추후 조건 확정 후 구현
+         */
+
         RiskLevel level = calculateRiskLevel(message.score(), warningThreshold, dangerThreshold);
         subject.applyMonitoringEvent(
                 level,
@@ -68,6 +89,8 @@ public class AnalysisEventService {
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("이벤트 사유를 저장할 수 없습니다.", e);
         }
+
+
         events.saveAndFlush(new AnalysisEvent(message.eventId(), subject.getId(),
                 message.householdId(), message.eventType(), message.applianceType(),
                 message.score(), level, message.occurredAt(), reason, subject.getRiskPolicyId()));
