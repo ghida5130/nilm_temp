@@ -51,10 +51,46 @@ public class Subject {
     @Column(name = "manager_id")
     private Long managerId; // 배정 담당자 ID, 대상자 1명 -> 담당자 1명만 배정
 
+    @Column(name = "address_detail", length = 100)
+    private String addressDetail;
+
     // 집주소 좌표, 성별, 사생활모드 여부, 위험 상태(위험,주의,정상) 추가
     // 마지막 활동 시간 ( On/Off 감지시 update )
     // 마지막 활동 가전 종류 ( 마지막 활동 시간 갱신시 )
     protected Subject() {
+    }
+
+    public Subject(
+            String householdId,
+            String name,
+            LocalDate birthDate,
+            String phone,
+            String address,
+            String addressDetail,
+            String managerMemo,
+            Long managerId
+    ) {
+        if (managerId == null) {
+            throw new IllegalArgumentException(
+                    "대상자를 등록할 담당자가 필요합니다."
+            );
+        }
+
+        this.householdId = householdId;
+        this.name = name;
+        this.birthDate = birthDate;
+        this.phone = phone;
+        this.address = address;
+        this.addressDetail = addressDetail;
+        this.managerMemo = managerMemo;
+
+        // 로그인한 담당자의 DB ID를 배정한다.
+        this.managerId = managerId;
+
+        this.monitoringEnabled = true;
+
+        // authSub에는 값을 넣지 않는다.
+        // 대상자 본인의 로그인 계정 연결 시 별도로 설정한다.
     }
 
     public void assignManager(Long managerId) {
