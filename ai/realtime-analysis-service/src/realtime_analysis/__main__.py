@@ -10,7 +10,10 @@ from realtime_analysis.activity_repository import (
     SqlAlchemyApplianceActivityRepository,
 )
 from realtime_analysis.activity_publisher import ActivityIndexPublisher
-from realtime_analysis.anomaly_detector import RoutineMissedDetector
+from realtime_analysis.anomaly_detector import (
+    RealtimeAnomalyDetector,
+    SqlAlchemyEventDetectionRepository,
+)
 from realtime_analysis.baseline import (
     BaselineRepository,
     SqlAlchemyBaselineRepository,
@@ -33,12 +36,19 @@ from realtime_analysis.metrics import METRICS
 from realtime_analysis.model_manifest import ModelManifest
 from realtime_analysis.predictor import FakePredictor
 from realtime_analysis.preprocessing import StandardizingPredictor
+from realtime_analysis.policy import (
+    PolicyRepository,
+    SqlAlchemyPolicyRepository,
+)
 from realtime_analysis.readiness import (
     ReadinessProbe,
     database_readiness_check,
     kafka_readiness_check,
 )
 from realtime_analysis.snapshot_publisher import AnalysisSnapshotPublisher
+from realtime_analysis.routine_change_detector import (
+    RoutineChangeDetectionService,
+)
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
 from realtime_analysis.state_transition import ApplianceStateTransitionDetector
@@ -67,12 +77,24 @@ def main() -> None:
     manifest = ModelManifest.from_json_file(settings.model_manifest_file)
     METRICS.set_model_info(manifest.model_name, manifest.version)
     session_factory = create_session_factory(settings)
-    # Fake Predictor 생성 
-    detector = RoutineMissedDetector(
-        tracker=tracker,
-        minimum_baseline_strength=(
-            settings.routine_missed_minimum_baseline_strength
+    bootstrap_policies = PolicyRepository.from_json_file(
+        settings.analysis_policy_file
+    )
+    policy_repository = SqlAlchemyPolicyRepository(session_factory)
+    seeded_policies = policy_repository.seed_missing(
+        bootstrap_policies.policies
+    )
+    if seeded_policies:
+        logger.info(
+            "Bootstrap analysis policies inserted: rows=%s",
+            seeded_policies,
+        )
+    detector = RealtimeAnomalyDetector(
+        repository=SqlAlchemyEventDetectionRepository(
+            session_factory=session_factory,
+            timezone_name=settings.analysis_timezone,
         ),
+        policy_repository=policy_repository,
         timezone_name=settings.analysis_timezone,
     )
     bootstrap_baselines = BaselineRepository.from_json_file(
@@ -98,6 +120,7 @@ def main() -> None:
             settings.analysis_observation_valid_coverage_ratio
         ),
     )
+    event_publisher = AnalysisEventPublisher(settings)
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(settings.model_window_size),
         # 실제 모델 Predictor로 교체해도 동일하게 Manifest의 mean/std를 적용한다.
@@ -117,7 +140,7 @@ def main() -> None:
         baseline_repository=baseline_repository,
         tracker=tracker,
         detector=detector,
-        event_publisher=AnalysisEventPublisher(settings),
+        event_publisher=event_publisher,
         snapshot_publisher=AnalysisSnapshotPublisher(settings),
         timezone_name=settings.analysis_timezone,
     )
@@ -177,6 +200,12 @@ def main() -> None:
             minimum_daily_use_probability=(
                 settings.routine_baseline_minimum_daily_use_probability
             ),
+        ),
+        daily_event_detector=RoutineChangeDetectionService(
+            session_factory=session_factory,
+            policy_repository=policy_repository,
+            publisher=event_publisher,
+            timezone_name=settings.analysis_timezone,
         ),
     )
     daily_activity_scheduler = DailyActivityIndexScheduler(

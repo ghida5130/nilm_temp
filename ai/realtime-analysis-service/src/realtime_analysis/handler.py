@@ -5,7 +5,7 @@ import logging
 from zoneinfo import ZoneInfo
 
 from realtime_analysis.activity_repository import ApplianceActivityRepository
-from realtime_analysis.anomaly_detector import RoutineMissedDetector
+from realtime_analysis.anomaly_detector import AnomalyDetector
 from realtime_analysis.baseline import RoutineBaselineProvider
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.event_producer import AnalysisEventPublisher
@@ -33,7 +33,7 @@ class MeasurementHandler:
         activity_repository: ApplianceActivityRepository,
         baseline_repository: RoutineBaselineProvider,
         tracker: DailyActivityTracker,
-        detector: RoutineMissedDetector,
+        detector: AnomalyDetector,
         event_publisher: AnalysisEventPublisher,
         snapshot_publisher: AnalysisSnapshotPublisher,
         timezone_name: str,

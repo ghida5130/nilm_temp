@@ -157,6 +157,24 @@ class RoutineBaseline(BaseModel):
         return self
 
 
+class AnalysisPolicyDefinition(BaseModel):
+    """Bootstrap and runtime shape of an enabled anomaly policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    policy_code: str = Field(min_length=1, max_length=50)
+    algorithm_type: str = Field(min_length=1, max_length=50)
+    parameters: dict[str, Any]
+    event_type: Literal[
+        "ROUTINE_MISSED",
+        "PROLONGED_INACTIVITY",
+        "PROLONGED_APPLIANCE_USE",
+        "ROUTINE_CHANGED",
+    ]
+    cooldown_hours: int = Field(default=0, ge=0)
+    enabled: bool = True
+
+
 # 이상 이벤트 형식 
 class AnalysisEvent(BaseModel):
     """MVP contract published to analysis.event.v1."""

@@ -117,7 +117,10 @@ class AnalysisPolicy(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     policy_code: Mapped[str] = mapped_column(String(50), nullable=False)
     algorithm_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     cooldown_hours: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))

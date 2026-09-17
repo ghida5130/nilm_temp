@@ -11,6 +11,7 @@ from realtime_analysis.baseline import SqlAlchemyBaselineRepository
 from realtime_analysis.baseline_updater import (
     RoutineBaselineCalculator,
     RoutineBaselineUpdateService,
+    first_valid_logical_use,
 )
 from realtime_analysis.database import Base
 from realtime_analysis.models import (
@@ -224,7 +225,7 @@ def test_bootstrap_baseline_is_inserted_only_when_missing(
 def test_nearby_short_sessions_form_one_valid_baseline_use() -> None:
     started_at = datetime(2026, 9, 16, 0, tzinfo=timezone.utc)
 
-    first_use = RoutineBaselineUpdateService._first_valid_logical_use(
+    first_use = first_valid_logical_use(
         "MICROWAVE",
         [
             (started_at, started_at + timedelta(seconds=6)),

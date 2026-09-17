@@ -34,6 +34,39 @@ BASELINE_TYPE = "ROUTINE_MISSED"
 WEEKDAY_NAMES = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 
 
+def first_valid_logical_use(
+    appliance_type: str,
+    sessions: list[tuple[datetime, datetime]],
+) -> datetime | None:
+    merge_gap = SESSION_MERGE_GAP_SECONDS.get(appliance_type, 60)
+    current_start: datetime | None = None
+    current_end: datetime | None = None
+    active_seconds = 0.0
+
+    for started_at, ended_at in sorted(sessions):
+        if current_start is None or current_end is None:
+            current_start = started_at
+            current_end = ended_at
+            active_seconds = (ended_at - started_at).total_seconds()
+            continue
+
+        gap_seconds = (started_at - current_end).total_seconds()
+        if gap_seconds <= merge_gap:
+            current_end = max(current_end, ended_at)
+            active_seconds += (ended_at - started_at).total_seconds()
+            continue
+
+        if active_seconds >= MINIMUM_SESSION_SECONDS:
+            return current_start
+        current_start = started_at
+        current_end = ended_at
+        active_seconds = (ended_at - started_at).total_seconds()
+
+    if current_start is not None and active_seconds >= MINIMUM_SESSION_SECONDS:
+        return current_start
+    return None
+
+
 @dataclass(frozen=True)
 class BaselineCandidate:
     appliance_type: str
@@ -323,7 +356,7 @@ class RoutineBaselineUpdateService:
 
         result: dict[str, dict[date, int]] = defaultdict(dict)
         for (appliance_type, observation_date), sessions in grouped_sessions.items():
-            first_start = self._first_valid_logical_use(appliance_type, sessions)
+            first_start = first_valid_logical_use(appliance_type, sessions)
             if first_start is None:
                 continue
             local_start = first_start.astimezone(self._timezone)
@@ -334,39 +367,6 @@ class RoutineBaselineUpdateService:
             )
             result[appliance_type][observation_date] = seconds
         return result
-
-    @staticmethod
-    def _first_valid_logical_use(
-        appliance_type: str,
-        sessions: list[tuple[datetime, datetime]],
-    ) -> datetime | None:
-        merge_gap = SESSION_MERGE_GAP_SECONDS.get(appliance_type, 60)
-        current_start: datetime | None = None
-        current_end: datetime | None = None
-        active_seconds = 0.0
-
-        for started_at, ended_at in sorted(sessions):
-            if current_start is None or current_end is None:
-                current_start = started_at
-                current_end = ended_at
-                active_seconds = (ended_at - started_at).total_seconds()
-                continue
-
-            gap_seconds = (started_at - current_end).total_seconds()
-            if gap_seconds <= merge_gap:
-                current_end = max(current_end, ended_at)
-                active_seconds += (ended_at - started_at).total_seconds()
-                continue
-
-            if active_seconds >= MINIMUM_SESSION_SECONDS:
-                return current_start
-            current_start = started_at
-            current_end = ended_at
-            active_seconds = (ended_at - started_at).total_seconds()
-
-        if current_start is not None and active_seconds >= MINIMUM_SESSION_SECONDS:
-            return current_start
-        return None
 
     @staticmethod
     def _as_utc(value: datetime) -> datetime:

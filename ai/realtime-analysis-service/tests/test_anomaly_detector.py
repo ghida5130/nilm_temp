@@ -28,6 +28,7 @@ def test_detects_routine_missed_after_deadline() -> None:
     assert len(anomalies) == 1
     assert anomalies[0].event.event_type == "ROUTINE_MISSED"
     assert anomalies[0].event.reason == {
+        "appliance_type": "MICROWAVE",
         "expected_until": "08:10",
         "normal_days": 12,
         "window_days": 14,

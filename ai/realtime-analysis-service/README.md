@@ -1,7 +1,7 @@
 # Realtime Analysis Service
 
 Kafka 전력 데이터를 검증하고, 가구별 입력 버퍼와 MVP용 가전 ON/OFF 예측을 거쳐
-평소 루틴이 누락된 가구의 이상 이벤트를 `analysis.event.v1`로 발행합니다.
+위험 이벤트와 생활 패턴 변화 이벤트를 `analysis.event.v1`로 발행합니다.
 
 이 문서는 전력 데이터 시뮬레이터·MQTT-Kafka Bridge 담당자와
 `analysis.event.v1` 이상 이벤트 수신 담당자가 함께 사용하는 연동 계약입니다.
@@ -173,7 +173,7 @@ Kafka Key: H001
 | Kafka 토픽 | `analysis.event.v1` |
 | Kafka Record Key | `household_id` |
 | Value 형식 | UTF-8 JSON Object |
-| 현재 MVP 이벤트 의미 | 가구의 평소 활동 루틴 누락 후보 |
+| 현재 이벤트 유형 | `ROUTINE_MISSED`, `PROLONGED_INACTIVITY`, `PROLONGED_APPLIANCE_USE`, `ROUTINE_CHANGED` |
 | 전달 보장 | At-least-once, 논리적 중복 가능 |
 
 ### MVP 출력 계약
@@ -185,6 +185,7 @@ Kafka Key: H001
   "event_type": "ROUTINE_MISSED",
   "occurred_at": "2026-09-08T03:41:06.120000Z",
   "reason": {
+    "appliance_type": "MICROWAVE",
     "expected_until": "08:10",
     "normal_days": 12,
     "window_days": 14
@@ -202,6 +203,17 @@ Kafka Key: H001
 
 `reason`은 사용자에게 바로 노출할 한국어 문장이 아니라 알고리즘별 근거 데이터입니다.
 화면 문구가 필요하면 수신 서비스에서 해당 값을 이용해 만듭니다.
+
+| 이벤트 | 분류 | 판단 기준 | `reason` 주요 필드 |
+| --- | --- | --- | --- |
+| `ROUTINE_MISSED` | 위험 | 기대 시각 전까지 해당 가전 사용 없음 | `appliance_type`, `expected_until`, `normal_days`, `window_days` |
+| `PROLONGED_INACTIVITY` | 위험 | 전체 가전의 마지막 사용 종료 후 기본 12시간 경과 | `last_activity_at`, `threshold_hours` |
+| `PROLONGED_APPLIANCE_USE` | 위험 | 위험 가전의 열린 세션이 허용 시간 초과 | `appliance_type`, `started_at`, `allowed_duration_minutes` |
+| `ROUTINE_CHANGED` | 정보 | 최근 7일 첫 사용 중앙시각이 이전 21일보다 기본 120분 이상 이동 | `appliance_type`, `previous_time`, `recent_time`, `shift_minutes` |
+
+세 위험 이벤트는 측정 시각을 기준으로 가구별 기본 60초마다 평가합니다.
+`ROUTINE_CHANGED`는 전날 관측 마감 후 하루 한 번 평가하며 위험 점수에 직접 반영하지
+않습니다. 임계값은 `analysis_policy`의 `parameters`에서 읽습니다.
 
 ```text
 최근 14일 중 12일 동안 08:10 이전에 확인된 활동이 오늘은 감지되지 않았습니다.
@@ -229,16 +241,12 @@ baseline_strength = normal_days / window_days × 100 × reliability_weight
 - Kafka Consumer Group은 수신 서비스 전용 이름을 사용합니다.
 - 비즈니스 처리가 끝난 뒤에 Offset을 커밋합니다.
 - `event_id`가 같은 이벤트를 다시 받으면 중복 처리하지 않습니다.
-- 분석 서비스 재시작 시 같은 날짜의 논리적으로 동일한 이벤트가 새 `event_id`로 다시 발행될 수 있습니다.
-- 현재 계약에는 `appliance_type`이 없습니다. 알고리즘별 세부 근거는 `reason`에 둡니다.
+- `event_id`는 논리 이벤트 키로부터 결정적으로 생성하므로 재시작 후 같은 이벤트도 같은 ID를 사용합니다.
+- 가전별 이벤트의 `appliance_type`은 `reason`에 둡니다.
 - 위험 점수와 심각도는 분석 서비스가 발행하지 않습니다.
 
-MVP에서 논리적 중복을 줄이려면 `event_id` 외에도 다음 조합을 임시 중복 기준으로 사용할 수
-있습니다.
-
-```text
-household_id + occurred_at의 한국 날짜 + reason.expected_until
-```
+프로세스 안에서는 정책의 `cooldown_hours`와 이벤트 ID로 반복 발행을 제한합니다. 재시작
+후 재전달될 수 있으므로 수신 서비스도 반드시 `event_id`로 멱등 처리해야 합니다.
 
 ### 이상 이벤트 수신 체크리스트
 
@@ -397,7 +405,7 @@ reliability_weight = min(sample_days / 최소 표본일, 1)
 대체합니다.
 
 일 사용확률이 기본 `0.70` 이상이고 첫 사용 시각이 있는 행만 `enabled=true`가 됩니다.
-탐지 시에는 기존 `ROUTINE_MISSED_MINIMUM_BASELINE_STRENGTH` 검사도 적용되므로 드물게
+탐지 시에는 `analysis_policy`의 `minimum_baseline_strength` 검사도 적용되므로 드물게
 사용하는 가전은 이벤트 대상에서 제외됩니다.
 
 같은 `household_id + appliance_type + baseline_type` 행을 갱신하므로 같은 날짜 작업이

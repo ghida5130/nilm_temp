@@ -66,6 +66,10 @@ class DailyBaselineUpdater(Protocol):
     def update(self, as_of_date: date) -> int: ...
 
 
+class DailyEventDetector(Protocol):
+    def detect_and_publish(self, as_of_date: date) -> int: ...
+
+
 @dataclass(frozen=True)
 class SessionSlice:
     appliance_type: str
@@ -395,11 +399,13 @@ class DailyActivityIndexService:
         publisher: ActivityMessagePublisher,
         configured_household_ids: Collection[str],
         baseline_updater: DailyBaselineUpdater | None = None,
+        daily_event_detector: DailyEventDetector | None = None,
     ) -> None:
         self._repository = repository
         self._publisher = publisher
         self._configured_household_ids = tuple(configured_household_ids)
         self._baseline_updater = baseline_updater
+        self._daily_event_detector = daily_event_detector
 
     def publish_date(self, activity_date: date) -> int:
         messages = self._repository.build_messages(
@@ -413,6 +419,8 @@ class DailyActivityIndexService:
             activity_date,
             len(messages),
         )
+        if self._daily_event_detector is not None:
+            self._daily_event_detector.detect_and_publish(activity_date)
         if self._baseline_updater is not None:
             self._baseline_updater.update(activity_date)
         return len(messages)

@@ -37,11 +37,7 @@ class Settings(BaseSettings):
     model_manifest_file: str = "config/model_manifest.json"
     fake_on_appliances: str = ""
     baseline_file: str = "config/baselines.json"
-    routine_missed_minimum_baseline_strength: int = Field(
-        default=80,
-        ge=0,
-        le=100,
-    )
+    analysis_policy_file: str = "config/analysis_policies.json"
     analysis_timezone: str = "Asia/Seoul"
     analysis_expected_samples_per_day: int = Field(default=86_400, ge=1)
     analysis_observation_valid_coverage_ratio: float = Field(

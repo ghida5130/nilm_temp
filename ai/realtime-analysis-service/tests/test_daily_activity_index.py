@@ -251,14 +251,20 @@ def test_baseline_is_updated_after_daily_activity_messages(
     publisher.publish.side_effect = lambda message: calls.append("publish")
     updater = Mock()
     updater.update.side_effect = lambda activity_date: calls.append("baseline")
+    daily_detector = Mock()
+    daily_detector.detect_and_publish.side_effect = (
+        lambda activity_date: calls.append("daily-event")
+    )
     service = DailyActivityIndexService(
         repository,
         publisher,
         ["H001"],
         baseline_updater=updater,
+        daily_event_detector=daily_detector,
     )
 
     service.publish_date(date(2026, 9, 16))
 
-    assert calls == ["publish", "baseline"]
+    assert calls == ["publish", "daily-event", "baseline"]
+    daily_detector.detect_and_publish.assert_called_once_with(date(2026, 9, 16))
     updater.update.assert_called_once_with(date(2026, 9, 16))
