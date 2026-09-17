@@ -54,6 +54,13 @@ public class AnalysisEventService {
                 && !message.occurredAt().isBefore(subject.getAwayStartedAt())
                 && message.occurredAt().isBefore(subject.getAwayUntil());
         RiskLevel level = calculateRiskLevel(message.score(), warningThreshold, dangerThreshold);
+        subject.applyMonitoringEvent(
+                level,
+                message.score(),
+                message.applianceType(),
+                message.occurredAt(),
+                now
+        );
         String reason;
         try {
             reason = objectMapper.writeValueAsString(message.reason());

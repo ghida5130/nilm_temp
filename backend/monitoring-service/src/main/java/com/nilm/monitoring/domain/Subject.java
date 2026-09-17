@@ -1,10 +1,12 @@
 package com.nilm.monitoring.domain;
 
+import com.nilm.monitoring.config.enums.RiskLevel;
 import jakarta.persistence.*;
 import lombok.Getter;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Getter
@@ -54,9 +56,25 @@ public class Subject {
     @Column(name = "address_detail", length = 100)
     private String addressDetail;
 
-    // 집주소 좌표, 성별, 사생활모드 여부, 위험 상태(위험,주의,정상) 추가
-    // 마지막 활동 시간 ( On/Off 감지시 update )
-    // 마지막 활동 가전 종류 ( 마지막 활동 시간 갱신시 )
+    @Column(name = "state_version", nullable = false)
+    private long stateVersion = 1;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "current_risk_level", nullable = false)
+    private RiskLevel currentRiskLevel = RiskLevel.NORMAL;
+
+    @Column(name = "current_risk_score", nullable = false)
+    private int currentRiskScore;
+
+    @Column(name = "last_activity_at")
+    private OffsetDateTime lastActivityAt;
+
+    @Column(name = "last_activity_appliance")
+    private String lastActivityAppliance;
+
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
+
     protected Subject() {
     }
 
@@ -88,6 +106,10 @@ public class Subject {
         this.managerId = managerId;
 
         this.monitoringEnabled = true;
+        this.stateVersion = 1;
+        this.currentRiskLevel = RiskLevel.NORMAL;
+        this.currentRiskScore = 0;
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC);
 
         // authSub에는 값을 넣지 않는다.
         // 대상자 본인의 로그인 계정 연결 시 별도로 설정한다.
@@ -95,6 +117,28 @@ public class Subject {
 
     public void assignManager(Long managerId) {
         this.managerId = managerId;
+    }
+
+    public void applyMonitoringEvent(
+            RiskLevel riskLevel,
+            int riskScore,
+            String applianceType,
+            OffsetDateTime occurredAt,
+            OffsetDateTime updatedAt
+    ) {
+        this.currentRiskLevel = riskLevel;
+        this.currentRiskScore = riskScore;
+        if (applianceType != null && !applianceType.isBlank()
+                && (lastActivityAt == null || !occurredAt.isBefore(lastActivityAt))) {
+            this.lastActivityAt = occurredAt;
+            this.lastActivityAppliance = applianceType;
+        }
+        touch(updatedAt);
+    }
+
+    public void touch(OffsetDateTime updatedAt) {
+        this.stateVersion++;
+        this.updatedAt = updatedAt;
     }
 
     public void startAway(

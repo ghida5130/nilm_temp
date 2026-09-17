@@ -45,6 +45,9 @@ public class Notification {
     @Column(name = "user_response")
     private Boolean userResponse; // 예: true 아니오: false 미응답: null
 
+    @Column(name = "responded_at")
+    private OffsetDateTime respondedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "send_status", nullable = false)
     private SendStatus sendStatus = SendStatus.PENDING; // 발송 상태
@@ -86,6 +89,7 @@ public class Notification {
         }
 
         this.userResponse = answer;
+        this.respondedAt = now;
         this.responseStatus = ResponseStatus.ANSWERED;
     }
 
