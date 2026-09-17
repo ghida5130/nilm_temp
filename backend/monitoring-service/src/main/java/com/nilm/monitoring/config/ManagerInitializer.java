@@ -57,19 +57,20 @@ public class ManagerInitializer implements SmartInitializingSingleton {
             );
 
             jdbc.update("""
-                    INSERT INTO managers (auth_sub, name, organization, phone)
-                    SELECT ?, ?, ?, ?
+                    INSERT INTO managers (auth_sub, name, organization, phone, email)
+                    SELECT ?, ?, ?, ?, ?
                     WHERE NOT EXISTS (
                         SELECT 1 FROM managers WHERE auth_sub = ?
                     )
-                    """, account.userId().toString(), name, ORGANIZATION, phone,
+                    """, account.userId().toString(), name, ORGANIZATION, phone, email,
                     account.userId().toString());
 
             jdbc.update("""
                     UPDATE managers
-                    SET phone = COALESCE(phone, ?)
+                    SET phone = COALESCE(phone, ?),
+                        email = COALESCE(email, ?)
                     WHERE auth_sub = ?
-                    """, phone, account.userId().toString());
+                    """, phone, email, account.userId().toString());
 
             Long managerId = jdbc.queryForObject(
                     "SELECT id FROM managers WHERE auth_sub = ?",

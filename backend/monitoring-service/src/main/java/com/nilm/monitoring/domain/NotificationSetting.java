@@ -1,8 +1,10 @@
 package com.nilm.monitoring.domain;
 
 import jakarta.persistence.*;
+import lombok.Getter;
 
 @Entity
+@Getter
 @Table(
         name = "notification_settings",
         uniqueConstraints = @UniqueConstraint(
@@ -41,6 +43,18 @@ public class NotificationSetting {
     private boolean enabled = true;
 
     protected NotificationSetting() {
+    }
+
+    public NotificationSetting(
+            Long managerId,
+            Type notificationType,
+            Channel channel,
+            boolean enabled
+    ) {
+        this.managerId = managerId;
+        this.notificationType = notificationType;
+        this.channel = channel;
+        this.enabled = enabled;
     }
 
     public void changeEnabled(boolean enabled) {

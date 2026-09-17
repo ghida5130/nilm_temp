@@ -22,6 +22,9 @@ public class Manager {
     @Column(nullable = false)
     private String organization;
 
+    @Column(unique = true, length = 100)
+    private String email;
+
     @Column(length = 20)
     private String phone;
 
@@ -41,5 +44,14 @@ public class Manager {
 
     public void changeSoundSetting(boolean enabled) {
         this.soundEnabled = enabled;
+    }
+
+    public void updateProfile(String email, String organization) {
+        if (email != null) {
+            this.email = email;
+        }
+        if (organization != null) {
+            this.organization = organization;
+        }
     }
 }

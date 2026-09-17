@@ -9,4 +9,6 @@ public interface ManagerRepository
         extends JpaRepository<Manager, Long> {
 
     Optional<Manager> findByAuthSub(String authSub); // JWT sub와 담당자 auth_sub 연결
+
+    boolean existsByEmailIgnoreCaseAndIdNot(String email, Long id);
 }
