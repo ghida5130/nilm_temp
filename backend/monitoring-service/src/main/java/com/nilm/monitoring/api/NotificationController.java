@@ -5,6 +5,8 @@ import com.nilm.monitoring.dto.NotificationResponseRequest;
 import com.nilm.monitoring.service.NotificationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,9 +18,11 @@ public class NotificationController {
 
     @PutMapping("/{notificationId}/responses")
     public NotificationResponseDto respond(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable("notificationId") Long notificationId,
             @Valid @RequestBody NotificationResponseRequest request
     ) {
-        return service.respond(notificationId, request);
+        String authSub = jwt == null ? null : jwt.getSubject();
+        return service.respond(notificationId, authSub, request);
     }
 }

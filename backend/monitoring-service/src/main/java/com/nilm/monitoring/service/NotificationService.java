@@ -34,14 +34,27 @@ public class NotificationService {
     @Transactional
     public NotificationResponseDto respond(
             Long notificationId,
+            String authSub,
             NotificationResponseRequest request
     ) {
+        if (authSub == null || authSub.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다.");
+        }
+
         Notification notification = repository
                 .findForResponse(notificationId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "알림을 찾을 수 없습니다."
                 ));
+
+        // 토큰 주인에게 온 알림만 응답할 수 있다.
+        if (!authSub.equals(notification.getAuthSub())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "본인에게 온 알림만 응답할 수 있습니다."
+            );
+        }
 
         boolean answer = request.answer().equals("yes");
 

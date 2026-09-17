@@ -188,8 +188,8 @@ class SubjectMonitoringApiTest {
         var request = new NotificationResponseRequest(
                 "yes", "user", OffsetDateTime.now());
 
-        notificationService.respond(notificationId, request);
-        notificationService.respond(notificationId, request);
+        notificationService.respond(notificationId, "subject-H001", request);
+        notificationService.respond(notificationId, "subject-H001", request);
 
         assertThat(jdbc.queryForObject(
                 "select state_version from subjects where id = ?",
