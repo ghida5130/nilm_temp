@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     kafka_input_topic: str = "power.raw.v1"
     kafka_dlq_topic: str = "dlq.analysis"
     kafka_analysis_event_topic: str = "analysis.event.v1"
+    kafka_analysis_activity_topic: str = "analysis.activity.v1"
+    kafka_analysis_data_quality_topic: str = "analysis.data-quality.v1"
     kafka_analysis_snapshot_topic: str = "analysis.snapshot.v1"
     kafka_group_id: str = "realtime-analysis-service-v1"
     kafka_auto_offset_reset: str = "earliest"
@@ -35,7 +37,11 @@ class Settings(BaseSettings):
     model_manifest_file: str = "config/model_manifest.json"
     fake_on_appliances: str = ""
     baseline_file: str = "config/baselines.json"
-    analysis_score_threshold: int = Field(default=80, ge=0, le=100)
+    routine_missed_minimum_baseline_strength: int = Field(
+        default=80,
+        ge=0,
+        le=100,
+    )
     analysis_timezone: str = "Asia/Seoul"
     analysis_expected_samples_per_day: int = Field(default=86_400, ge=1)
     analysis_observation_valid_coverage_ratio: float = Field(

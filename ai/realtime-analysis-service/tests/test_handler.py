@@ -113,7 +113,7 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
 
     assert len(publisher.events) == 1
     assert publisher.events[0].household_id == "H001"
-    assert publisher.events[0].score == 86
+    assert publisher.events[0].event_type == "ROUTINE_MISSED"
     # 모델 버퍼 준비 여부와 관계없이 검증된 원본 샘플은 모두 관측 집계로 전달한다.
     assert activity_repository.record_observation.call_count == 4
     assert len(snapshot_publisher.snapshots) == 2

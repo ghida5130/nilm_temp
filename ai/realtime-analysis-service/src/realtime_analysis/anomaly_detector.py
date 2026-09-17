@@ -9,7 +9,6 @@ from realtime_analysis.schemas import AnalysisEvent, RoutineBaseline
 from realtime_analysis.state_tracker import DailyActivityTracker
 
 
-# 이상 점수 계산
 @dataclass(frozen=True)
 class PendingAnomaly:
     event: AnalysisEvent
@@ -22,11 +21,11 @@ class RoutineMissedDetector:
     def __init__(
         self,
         tracker: DailyActivityTracker,
-        score_threshold: int,
+        minimum_baseline_strength: int,
         timezone_name: str,
     ) -> None:
         self._tracker = tracker
-        self._score_threshold = score_threshold
+        self._minimum_baseline_strength = minimum_baseline_strength
         self._timezone = ZoneInfo(timezone_name)
 
     def detect(
@@ -54,8 +53,8 @@ class RoutineMissedDetector:
             ):
                 continue
 
-            # 점수 계산 
-            score = min(
+            # 드물게 사용하는 가전은 루틴 누락 판단 대상에서 제외한다.
+            baseline_strength = min(
                 100,
                 round(
                     (baseline.normal_days / baseline.window_days)
@@ -63,7 +62,7 @@ class RoutineMissedDetector:
                     * baseline.reliability_weight
                 ),
             )
-            if score < self._score_threshold:
+            if baseline_strength < self._minimum_baseline_strength:
                 continue
 
             pending.append(
@@ -71,7 +70,7 @@ class RoutineMissedDetector:
                     event=AnalysisEvent(
                         event_id=uuid4(),
                         household_id=household_id,
-                        score=score,
+                        event_type="ROUTINE_MISSED",
                         occurred_at=measured_at.astimezone(timezone.utc),
                         reason={
                             "expected_until": baseline.expected_until.strftime("%H:%M"),

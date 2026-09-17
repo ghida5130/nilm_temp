@@ -26,7 +26,7 @@ def test_detects_routine_missed_after_deadline() -> None:
     anomalies = detector.detect("H001", measured_at, [make_baseline()])
 
     assert len(anomalies) == 1
-    assert anomalies[0].event.score == 86
+    assert anomalies[0].event.event_type == "ROUTINE_MISSED"
     assert anomalies[0].event.reason == {
         "expected_until": "08:10",
         "normal_days": 12,

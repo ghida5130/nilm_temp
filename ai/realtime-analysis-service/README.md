@@ -15,7 +15,7 @@ power.raw.v1
   -> model_manifest.json의 threshold로 ON/OFF 판정
   -> 연속 판정과 히스테리시스로 확정한 상태를 analysis.snapshot.v1로 발행
   -> JSON baseline과 일일 사용 상태 비교
-  -> score가 임계치 이상이면 analysis.event.v1 발행
+  -> 기준선 강도가 설정값 이상이면 analysis.event.v1 발행
 ```
 
 MVP 대상 가전과 Predictor 출력 순서는 AI 실험 결과 및 모델 명세를 기준으로 다음과 같이
@@ -182,7 +182,7 @@ Kafka Key: H001
 {
   "event_id": "f46567d2-2b29-486f-9051-8cae3ff28d6a",
   "household_id": "H001",
-  "score": 86,
+  "event_type": "ROUTINE_MISSED",
   "occurred_at": "2026-09-08T03:41:06.120000Z",
   "reason": {
     "expected_until": "08:10",
@@ -196,7 +196,7 @@ Kafka Key: H001
 | --- | --- | --- |
 | `event_id` | UUID | 발행된 이벤트 한 건의 고유 ID |
 | `household_id` | String | 이상 후보가 감지된 가구 ID |
-| `score` | Integer | 0~100 범위 이상 점수 |
+| `event_type` | String | 감지된 이벤트 유형 |
 | `occurred_at` | ISO 8601 Timestamp | 이상을 판단한 시각, UTC로 발행 |
 | `reason` | JSON Object | 알고리즘이 판단에 사용한 근거 |
 
@@ -207,12 +207,13 @@ Kafka Key: H001
 최근 14일 중 12일 동안 08:10 이전에 확인된 활동이 오늘은 감지되지 않았습니다.
 ```
 
-### 현재 점수 의미
+### 기준선 강도 필터
 
-현재 MVP의 점수 공식은 다음과 같습니다.
+`ROUTINE_MISSED` 대상 기준선을 고르는 내부 계산은 다음과 같습니다. 이 값은
+이벤트 위험 점수가 아니며 Kafka 메시지에는 포함하지 않습니다.
 
 ```text
-score = normal_days / window_days × 100 × reliability_weight
+baseline_strength = normal_days / window_days × 100 × reliability_weight
 ```
 
 예시 기준선에서는 다음과 같이 86점이 됩니다.
@@ -221,8 +222,7 @@ score = normal_days / window_days × 100 × reliability_weight
 12 / 14 × 100 × 1.0 = 85.71 → 86
 ```
 
-분석 서비스의 임계치가 80이면 `86 >= 80`이므로 이벤트를 발행합니다.
-점수 계산식과 임계치는 MVP 검증용이며 추후 변경될 수 있습니다.
+분석 서비스의 최소 기준선 강도가 80이면 `86 >= 80`인 기준선만 감지에 사용합니다.
 
 ### 수신 및 중복 처리 주의사항
 
@@ -230,9 +230,8 @@ score = normal_days / window_days × 100 × reliability_weight
 - 비즈니스 처리가 끝난 뒤에 Offset을 커밋합니다.
 - `event_id`가 같은 이벤트를 다시 받으면 중복 처리하지 않습니다.
 - 분석 서비스 재시작 시 같은 날짜의 논리적으로 동일한 이벤트가 새 `event_id`로 다시 발행될 수 있습니다.
-- 현재 5개 필드 계약에는 `event_type`과 `appliance_type`이 없습니다.
-- 현재 토픽의 이벤트는 가구 단위 `ROUTINE_MISSED` 후보로 해석합니다.
-- 여러 이벤트 유형이나 가전 표시가 필요해지면 기존 필드 의미를 바꾸지 않고 새 계약을 합의합니다.
+- 현재 계약에는 `appliance_type`이 없습니다. 알고리즘별 세부 근거는 `reason`에 둡니다.
+- 위험 점수와 심각도는 분석 서비스가 발행하지 않습니다.
 
 MVP에서 논리적 중복을 줄이려면 `event_id` 외에도 다음 조합을 임시 중복 기준으로 사용할 수
 있습니다.
@@ -246,7 +245,7 @@ household_id + occurred_at의 한국 날짜 + reason.expected_until
 - [ ] `analysis.event.v1`을 전용 Consumer Group으로 구독하는가
 - [ ] Kafka Key를 String으로 읽는가
 - [ ] Value를 UTF-8 JSON으로 역직렬화하는가
-- [ ] `score`를 0~100으로 처리하는가
+- [ ] `event_type`을 지원하는 유형으로 처리하는가
 - [ ] `occurred_at`을 UTC로 파싱하는가
 - [ ] `reason`을 고정 문자열이 아닌 JSON Object로 처리하는가
 - [ ] 이벤트 처리 완료 후 Offset을 커밋하는가
@@ -257,6 +256,68 @@ household_id + occurred_at의 한국 날짜 + reason.expected_until
 분석 서비스의 Producer `flush()`는 이벤트가 Kafka 브로커에 전달됐는지만 확인합니다.
 이벤트 수신 서비스가 메시지를 가져가 비즈니스 처리를 완료했는지는 확인하지 않습니다.
 수신 완료 응답 이벤트는 현재 MVP 범위에 포함하지 않습니다.
+
+## 일일 활동 지수 계약
+
+하루 단위 절대 활동 지수는 `analysis.activity.v1`으로 발행하며 Kafka Key는
+`household_id`입니다. 위험 점수는 이 메시지에 포함하지 않고 모니터링 서비스가 별도로
+계산합니다.
+
+```json
+{
+  "message_id": "8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6",
+  "household_id": "H001",
+  "activity_date": "2026-09-16",
+  "activity_index": 62,
+  "data_status": "VALID",
+  "components": {
+    "usage_count": 5,
+    "appliance_type_count": 3,
+    "usage_duration_seconds": 2400,
+    "usage_count_score": 65,
+    "appliance_diversity_score": 75,
+    "usage_duration_score": 60
+  }
+}
+```
+
+관측 데이터가 부족하면 0점으로 발행하지 않습니다. `activity_index`는 `null`로 보내고
+`components`는 생략합니다.
+
+```json
+{
+  "message_id": "8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6",
+  "household_id": "H001",
+  "activity_date": "2026-09-16",
+  "activity_index": null,
+  "data_status": "INSUFFICIENT_DATA"
+}
+```
+
+현재 변경에는 이 계약과 Publisher가 포함됩니다. 지수 산식과 일일 실행 시각은 확정된
+설정이 없으므로 아직 구현하지 않습니다.
+
+## 데이터 품질 이벤트 계약
+
+데이터 수집 상태 변화는 `analysis.data-quality.v1`으로 발행하며 Kafka Key는
+`household_id`입니다.
+
+```json
+{
+  "event_id": "1bb4edcf-77ae-44d6-ad7c-b87a6e071f5a",
+  "household_id": "H001",
+  "event_type": "DATA_GAP",
+  "occurred_at": "2026-09-16T10:02:00+09:00",
+  "reason": {
+    "last_valid_received_at": "2026-09-16T10:00:00+09:00",
+    "gap_seconds": 120
+  }
+}
+```
+
+복구 시에는 같은 계약에서 `event_type`을 `DATA_RECOVERED`로 발행합니다. 현재 변경에는
+계약과 Publisher만 포함되며, DATA_GAP 판정 시간은 확정된 설정이 없어 아직 구현하지
+않습니다.
 
 ## 로컬 실행
 

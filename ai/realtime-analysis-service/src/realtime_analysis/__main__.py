@@ -60,7 +60,9 @@ def main() -> None:
     # Fake Predictor 생성 
     detector = RoutineMissedDetector(
         tracker=tracker,
-        score_threshold=settings.analysis_score_threshold,
+        minimum_baseline_strength=(
+            settings.routine_missed_minimum_baseline_strength
+        ),
         timezone_name=settings.analysis_timezone,
     )
     handler = MeasurementHandler(

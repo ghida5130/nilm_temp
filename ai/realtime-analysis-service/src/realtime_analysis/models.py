@@ -107,7 +107,6 @@ class AnalysisPolicy(Base):
     __tablename__ = "analysis_policy"
     __table_args__ = (
         UniqueConstraint("policy_code", name="uq_analysis_policy_code"),
-        CheckConstraint("score BETWEEN 0 AND 100", name="score"),
         CheckConstraint("cooldown_hours >= 0", name="cooldown_hours_nonnegative"),
     )
 
@@ -116,8 +115,6 @@ class AnalysisPolicy(Base):
     algorithm_type: Mapped[str] = mapped_column(String(50), nullable=False)
     parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    score: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    severity: Mapped[str] = mapped_column(String(20), nullable=False)
     cooldown_hours: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(
