@@ -1,12 +1,16 @@
 package com.nilm.monitoring.service;
 
+import com.nilm.monitoring.config.enums.StateChangeTrigger;
 import com.nilm.monitoring.domain.Notification;
 import com.nilm.monitoring.dto.NotificationResponseDto;
 import com.nilm.monitoring.dto.NotificationResponseRequest;
 import com.nilm.monitoring.repository.NotificationRepository;
+import com.nilm.monitoring.repository.AnalysisEventRepository;
+import com.nilm.monitoring.repository.SubjectRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,6 +24,9 @@ import java.util.UUID;
 public class NotificationService {
 
     private final NotificationRepository repository;
+    private final AnalysisEventRepository events;
+    private final SubjectRepository subjects;
+    private final ApplicationEventPublisher publisher;
 
     @Value("${app.push.test-auth-sub}")
     private String testAuthSub;
@@ -38,8 +45,9 @@ public class NotificationService {
 
         boolean answer = request.answer().equals("yes");
 
-        if (notification.getResponseStatus()
-                == Notification.ResponseStatus.ANSWERED) {
+        boolean newlyAnswered = notification.getResponseStatus()
+                != Notification.ResponseStatus.ANSWERED;
+        if (!newlyAnswered) {
 
             // 동일 응답 재전송은 성공, 다른 응답으로 변경은 거부
             if (!Boolean.valueOf(answer)
@@ -63,6 +71,11 @@ public class NotificationService {
             }
         }
 
+        if (newlyAnswered && notification.getEventId() != null) {
+            OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+            touchSubject(notification, now, StateChangeTrigger.SUBJECT_RESPONSE);
+        }
+
         return new NotificationResponseDto(
                 notification.getId().toString(),
                 Boolean.TRUE.equals(notification.getUserResponse())
@@ -74,11 +87,15 @@ public class NotificationService {
 
     @Transactional
     public void expireOverdue() {
-        repository.expireOverdue(
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        var overdue = repository.findAllByResponseStatusAndResponseDeadlineLessThanEqual(
                 Notification.ResponseStatus.PENDING,
-                Notification.ResponseStatus.EXPIRED,
-                OffsetDateTime.now(ZoneOffset.UTC)
+                now
         );
+        for (Notification notification : overdue) {
+            notification.expireIfOverdue(now);
+            touchSubject(notification, now, StateChangeTrigger.RESPONSE_EXPIRED);
+        }
     }
 
     // 인증 연결 전, 구독 등록과 동일한 테스트 사용자에게 알림 생성
@@ -124,6 +141,21 @@ public class NotificationService {
                 != Notification.SendStatus.SENT) {
             notification.markFailed();
         }
+    }
+
+    private void touchSubject(
+            Notification notification,
+            OffsetDateTime now,
+            StateChangeTrigger trigger
+    ) {
+        if (notification.getEventId() == null) {
+            return;
+        }
+        events.findById(notification.getEventId()).ifPresent(event -> {
+            subjects.touchState(event.getSubjectId(), now);
+            // 커밋된 뒤에 담당자 대시보드로 흘려보낸다.
+            publisher.publishEvent(new SubjectStateChanged(event.getSubjectId(), trigger));
+        });
     }
 
 }

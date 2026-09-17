@@ -21,6 +21,13 @@ public class Notification {
         FAILED
     }
 
+    /** 담당자가 이 알림을 어디까지 처리했는지. */
+    public enum ManagerResponseStatus {
+        UNCONFIRMED, // 미확인
+        ACKNOWLEDGED, // 확인
+        RESOLVED // 조치 완료
+    }
+
     public enum ResponseStatus {
         NOT_REQUIRED, // 응답 불필요 일일 알림
         PENDING, // 응답 대기
@@ -45,6 +52,9 @@ public class Notification {
     @Column(name = "user_response")
     private Boolean userResponse; // 예: true 아니오: false 미응답: null
 
+    @Column(name = "responded_at")
+    private OffsetDateTime respondedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "send_status", nullable = false)
     private SendStatus sendStatus = SendStatus.PENDING; // 발송 상태
@@ -52,6 +62,14 @@ public class Notification {
     @Enumerated(EnumType.STRING)
     @Column(name = "response_status", nullable = false)
     private ResponseStatus responseStatus = ResponseStatus.NOT_REQUIRED; // 응답 상태
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "manager_response_status", nullable = false)
+    private ManagerResponseStatus managerResponseStatus =
+            ManagerResponseStatus.UNCONFIRMED; // 담당자 처리 상태
+
+    @Column(name = "manager_status_updated_at")
+    private OffsetDateTime managerStatusUpdatedAt;
 
     protected Notification() {
     }
@@ -86,6 +104,7 @@ public class Notification {
         }
 
         this.userResponse = answer;
+        this.respondedAt = now;
         this.responseStatus = ResponseStatus.ANSWERED;
     }
 
@@ -94,6 +113,21 @@ public class Notification {
                 && !now.isBefore(responseDeadline)) {
             this.responseStatus = ResponseStatus.EXPIRED;
         }
+    }
+
+    public void changeManagerStatus(
+            ManagerResponseStatus status,
+            OffsetDateTime now
+    ) {
+        if (status == null) {
+            throw new IllegalArgumentException("담당자 처리 상태가 필요합니다.");
+        }
+        if (this.managerResponseStatus == status) {
+            return;
+        }
+
+        this.managerResponseStatus = status;
+        this.managerStatusUpdatedAt = now;
     }
 
     public void markSent() {

@@ -50,7 +50,8 @@ class AnalysisEventFlowTest {
 
     @Test
     void registersKafkaListenerAndStartsWithoutVapidKeys() {
-        assertThat(listeners.getListenerContainers()).hasSize(1);
+        // analysis.event.v1(이상 징후)과 analysis.snapshot.v1(가전 ON/OFF) 두 개를 구독한다.
+        assertThat(listeners.getListenerContainers()).hasSize(2);
         assertThat(context.getBeansOfType(WebPushSender.class)).isEmpty();
         assertThat(listeners.getListenerContainers()).allMatch(c -> !c.isRunning());
     }
@@ -65,6 +66,9 @@ class AnalysisEventFlowTest {
         assertThat(jdbc.queryForObject("select appliance_type from analysis_events", String.class)).isNull();
         assertThat(jdbc.queryForObject("select count(*) from notifications", Integer.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select auth_sub from notifications", String.class)).isEqualTo("test-subject-3");
+        assertThat(jdbc.queryForObject("select state_version from subjects", Long.class)).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("select current_risk_level from subjects", String.class)).isEqualTo("DANGER");
+        assertThat(jdbc.queryForObject("select current_risk_score from subjects", Integer.class)).isEqualTo(95);
         assertThat(applicationEvents.stream(NotificationReady.class).count()).isEqualTo(1);
     }
 
