@@ -11,7 +11,11 @@ from realtime_analysis.activity_repository import (
 )
 from realtime_analysis.activity_publisher import ActivityIndexPublisher
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
-from realtime_analysis.baseline import BaselineRepository
+from realtime_analysis.baseline import (
+    BaselineRepository,
+    SqlAlchemyBaselineRepository,
+)
+from realtime_analysis.baseline_updater import RoutineBaselineUpdateService
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.config import get_settings
 from realtime_analysis.consumer import AnalysisConsumer
@@ -71,9 +75,21 @@ def main() -> None:
         ),
         timezone_name=settings.analysis_timezone,
     )
-    baseline_repository = BaselineRepository.from_json_file(
+    bootstrap_baselines = BaselineRepository.from_json_file(
         settings.baseline_file
     )
+    baseline_repository = SqlAlchemyBaselineRepository(
+        session_factory=session_factory,
+        timezone_name=settings.analysis_timezone,
+    )
+    seeded_baselines = baseline_repository.seed_missing(
+        bootstrap_baselines.baselines
+    )
+    if seeded_baselines:
+        logger.info(
+            "Bootstrap routine baselines inserted: rows=%s",
+            seeded_baselines,
+        )
     activity_repository = SqlAlchemyApplianceActivityRepository(
         session_factory=session_factory,
         timezone_name=settings.analysis_timezone,
@@ -146,7 +162,22 @@ def main() -> None:
             ),
         ),
         publisher=ActivityIndexPublisher(settings),
-        configured_household_ids=baseline_repository.household_ids,
+        configured_household_ids=bootstrap_baselines.household_ids,
+        baseline_updater=RoutineBaselineUpdateService(
+            session_factory=session_factory,
+            baseline_repository=baseline_repository,
+            timezone_name=settings.analysis_timezone,
+            window_days=settings.routine_baseline_window_days,
+            minimum_sample_days=(
+                settings.routine_baseline_minimum_sample_days
+            ),
+            minimum_weekday_sample_days=(
+                settings.routine_baseline_minimum_weekday_sample_days
+            ),
+            minimum_daily_use_probability=(
+                settings.routine_baseline_minimum_daily_use_probability
+            ),
+        ),
     )
     daily_activity_scheduler = DailyActivityIndexScheduler(
         service=daily_activity_service,

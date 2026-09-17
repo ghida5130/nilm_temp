@@ -14,7 +14,7 @@ power.raw.v1
   -> FakePredictor 가전 6종 ON 확률
   -> model_manifest.json의 threshold로 ON/OFF 판정
   -> 연속 판정과 히스테리시스로 확정한 상태를 analysis.snapshot.v1로 발행
-  -> JSON baseline과 일일 사용 상태 비교
+  -> analysis_db의 활성 routine_baseline과 일일 사용 상태 비교
   -> 기준선 강도가 설정값 이상이면 analysis.event.v1 발행
 ```
 
@@ -364,6 +364,54 @@ ON/OFF 히스테리시스가 샘플 단위 노이즈를 제거한 뒤, 일일 �
   활동을 중복 반영하게 됩니다. 위험 계산에는 최종 지수만 사용하고 components는 설명과
   디버깅에 사용합니다.
 
+## 일일 루틴 기준선 생성과 갱신
+
+일일 활동 지수를 발행한 직후 같은 `activity_date`까지의 데이터를 이용해
+`routine_baseline`을 갱신합니다. 기본 스케줄이 한국 시간 `00:10`이므로 전날 관측을 먼저
+마감하고 활동 지수를 발행한 다음 기준선을 계산합니다. 샘플 단위 갱신은 하지 않습니다.
+
+```text
+전날 관측 마감
+  → activity_index 발행
+  → 최근 28일 조회
+  → VALID 날짜만 선택
+  → 가구·가전별 기준선 계산
+  → routine_baseline UPSERT
+  → 탐지용 메모리 캐시 교체
+```
+
+`INSUFFICIENT_DATA`, `SENSOR_GAP`, 처리 실패일은 표본과 사용일 양쪽에서 모두 제외합니다.
+유효 관측일이 기본 14일 미만이면 기존 기준선을 유지하고 새 기준선을 만들지 않습니다.
+
+```text
+sample_days = 최근 계산 구간의 VALID 날짜 수
+active_days = 해당 가전을 10초 이상 사용한 VALID 날짜 수
+daily_use_probability = active_days / sample_days
+reliability_weight = min(sample_days / 최소 표본일, 1)
+```
+
+사용 루틴의 마감 시각은 가전별 일일 첫 사용 시각의 90백분위수(P90)로 계산합니다. 평균보다
+늦은 정상 사용을 허용하여 `ROUTINE_MISSED` 오탐을 줄이기 위한 선택입니다. 전체 기준과
+함께 요일별 표본도 `baseline_data.weekday_profiles`에 저장하며, 해당 요일의 유효 표본이
+기본 4일 이상일 때만 요일별 마감 시각을 사용합니다. 표본이 부족하면 전체 요일 기준으로
+대체합니다.
+
+일 사용확률이 기본 `0.70` 이상이고 첫 사용 시각이 있는 행만 `enabled=true`가 됩니다.
+탐지 시에는 기존 `ROUTINE_MISSED_MINIMUM_BASELINE_STRENGTH` 검사도 적용되므로 드물게
+사용하는 가전은 이벤트 대상에서 제외됩니다.
+
+같은 `household_id + appliance_type + baseline_type` 행을 갱신하므로 같은 날짜 작업이
+재실행되어도 기준선 행이 중복되지 않습니다. 초기 로컬 시연이 가능하도록
+`config/baselines.json` 값은 DB에 해당 키가 없을 때만 부트스트랩 행으로 등록되고,
+충분한 `VALID` 데이터가 쌓이면 일일 계산 결과로 교체됩니다.
+
+| 환경변수 | 기본값 | 의미 |
+| --- | ---: | --- |
+| `ROUTINE_BASELINE_WINDOW_DAYS` | 28 | 기준선을 계산할 최근 달력 일수 |
+| `ROUTINE_BASELINE_MINIMUM_SAMPLE_DAYS` | 14 | 생성·갱신에 필요한 최소 VALID 일수 |
+| `ROUTINE_BASELINE_MINIMUM_WEEKDAY_SAMPLE_DAYS` | 4 | 요일별 기준을 사용하기 위한 최소 표본 |
+| `ROUTINE_BASELINE_MINIMUM_DAILY_USE_PROBABILITY` | 0.70 | 기준선 활성화 최소 일 사용확률 |
+
 ## 데이터 품질 이벤트 계약
 
 데이터 수집 상태 변화는 `analysis.data-quality.v1`으로 발행하며 Kafka Key는
@@ -557,7 +605,8 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 
 - 실제 AI 모델 대신 결정적인 FakePredictor를 사용합니다.
 - 실제 학습 `mean`, `std`와 가전별 Validation threshold는 AI 모델 전달 후 교체해야 합니다.
-- baseline과 당일 활동 상태는 아직 각각 JSON과 메모리에 저장합니다.
+- 당일 `ROUTINE_MISSED` 중복 상태와 사용 여부는 아직 프로세스 메모리에 저장합니다.
+- `config/baselines.json`은 최초 DB 부트스트랩과 로컬 테스트 가구 목록에만 사용합니다.
 - 재시작하면 299개 버퍼와 당일 활동·발행 상태가 초기화됩니다.
 - 완전히 데이터가 들어오지 않은 가구의 `SENSOR_GAP` 판정에는 별도 가구 목록 기반 마감
   스케줄러가 추가로 필요합니다.

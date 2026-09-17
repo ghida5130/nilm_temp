@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,6 +56,18 @@ class Settings(BaseSettings):
         gt=0,
         le=300,
     )
+    routine_baseline_window_days: int = Field(default=28, ge=1, le=365)
+    routine_baseline_minimum_sample_days: int = Field(default=14, ge=1, le=365)
+    routine_baseline_minimum_weekday_sample_days: int = Field(
+        default=4,
+        ge=1,
+        le=52,
+    )
+    routine_baseline_minimum_daily_use_probability: float = Field(
+        default=0.70,
+        ge=0,
+        le=1,
+    )
     appliance_on_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_threshold_margin: float = Field(default=0.05, ge=0, le=1)
@@ -64,6 +76,18 @@ class Settings(BaseSettings):
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     consumer_lag_refresh_seconds: float = Field(default=5.0, gt=0, le=300)
     log_level: str = "INFO"
+
+    @model_validator(mode="after")
+    def baseline_sample_days_must_fit_window(self) -> "Settings":
+        if (
+            self.routine_baseline_minimum_sample_days
+            > self.routine_baseline_window_days
+        ):
+            raise ValueError(
+                "ROUTINE_BASELINE_MINIMUM_SAMPLE_DAYS must not exceed "
+                "ROUTINE_BASELINE_WINDOW_DAYS"
+            )
+        return self
 
     @property
     def fake_on_appliance_types(self) -> tuple[str, ...]:

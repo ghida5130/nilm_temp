@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from realtime_analysis.activity_repository import ApplianceActivityRepository
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
-from realtime_analysis.baseline import BaselineRepository
+from realtime_analysis.baseline import RoutineBaselineProvider
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.metrics import METRICS
@@ -31,7 +31,7 @@ class MeasurementHandler:
         state_decider: ApplianceStateDecider,
         state_transition_detector: ApplianceStateTransitionDetector,
         activity_repository: ApplianceActivityRepository,
-        baseline_repository: BaselineRepository,
+        baseline_repository: RoutineBaselineProvider,
         tracker: DailyActivityTracker,
         detector: RoutineMissedDetector,
         event_publisher: AnalysisEventPublisher,
@@ -124,7 +124,8 @@ class MeasurementHandler:
         # 가구 ID로 baseline을 찾음 
         with stage("anomaly_detection"):
             baselines = self._baseline_repository.find_by_household(
-                measurement.household_id
+                measurement.household_id,
+                measurement.measured_at,
             )
             anomalies = self._detector.detect(
                 measurement.household_id,

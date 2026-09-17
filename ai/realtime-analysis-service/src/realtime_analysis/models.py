@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     SmallInteger,
     String,
@@ -98,7 +99,10 @@ class RoutineBaselineModel(Base):
     active_days: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     daily_use_probability: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
     reliability_weight: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
-    baseline_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    baseline_data: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

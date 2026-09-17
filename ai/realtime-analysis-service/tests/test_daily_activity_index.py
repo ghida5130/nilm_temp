@@ -235,3 +235,30 @@ def test_scheduler_publishes_each_due_date_once(
     assert scheduler.run_due(now) is False
     assert publisher.publish.call_count == 1
     assert publisher.publish.call_args.args[0].activity_date == date(2026, 9, 16)
+
+
+def test_baseline_is_updated_after_daily_activity_messages(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=4,
+        valid_coverage_ratio=0.75,
+    )
+    calls: list[str] = []
+    publisher = Mock()
+    publisher.publish.side_effect = lambda message: calls.append("publish")
+    updater = Mock()
+    updater.update.side_effect = lambda activity_date: calls.append("baseline")
+    service = DailyActivityIndexService(
+        repository,
+        publisher,
+        ["H001"],
+        baseline_updater=updater,
+    )
+
+    service.publish_date(date(2026, 9, 16))
+
+    assert calls == ["publish", "baseline"]
+    updater.update.assert_called_once_with(date(2026, 9, 16))
