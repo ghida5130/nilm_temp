@@ -294,16 +294,18 @@ class DailyActivityIndexRepository:
             return observation
 
         expected = observation.expected_sample_count or self._expected_samples_per_day
-        ratio = min(
-            Decimal("1.0000"),
-            (Decimal(observation.sample_count) / Decimal(expected)).quantize(
-                Decimal("0.0001")
-            ),
+        raw_ratio = (
+            Decimal(observation.sample_count)
+            / Decimal(expected)
         )
-        observation.coverage_ratio = ratio
+        display_ratio = min(
+            Decimal("1.0000"),
+            raw_ratio.quantize(Decimal("0.0001")),
+        )
+        observation.coverage_ratio = display_ratio
         if observation.sample_count == 0:
             observation.observation_status = "SENSOR_GAP"
-        elif ratio >= self._valid_coverage_ratio:
+        elif raw_ratio >= self._valid_coverage_ratio:
             observation.observation_status = "VALID"
         else:
             observation.observation_status = "INSUFFICIENT_DATA"
