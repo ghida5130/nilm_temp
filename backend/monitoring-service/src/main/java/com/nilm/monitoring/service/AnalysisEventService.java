@@ -69,13 +69,7 @@ public class AnalysisEventService {
          */
 
         RiskLevel level = calculateRiskLevel(message.score(), warningThreshold, dangerThreshold);
-        subject.applyMonitoringEvent(
-                level,
-                message.score(),
-                message.applianceType(),
-                message.occurredAt(),
-                now
-        );
+        subject.applyRiskAssessment(level, message.score(), now);
         String reason;
         try {
             reason = objectMapper.writeValueAsString(message.reason());

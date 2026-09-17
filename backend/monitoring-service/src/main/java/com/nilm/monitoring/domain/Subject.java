@@ -123,21 +123,41 @@ public class Subject {
         this.managerId = managerId;
     }
 
-    public void applyMonitoringEvent(
+    /**
+     * 분석 이벤트의 위험 판정 결과만 반영한다.
+     * 마지막 활동(가전 ON-OFF 전환)은 별도 경로에서 갱신하므로 여기서 건드리지 않는다.
+     */
+    public void applyRiskAssessment(
             RiskLevel riskLevel,
             int riskScore,
-            String applianceType,
-            OffsetDateTime occurredAt,
             OffsetDateTime updatedAt
     ) {
         this.currentRiskLevel = riskLevel;
         this.currentRiskScore = riskScore;
-        if (applianceType != null && !applianceType.isBlank()
-                && (lastActivityAt == null || !occurredAt.isBefore(lastActivityAt))) {
-            this.lastActivityAt = occurredAt;
-            this.lastActivityAppliance = applianceType;
-        }
         touch(updatedAt);
+    }
+
+    /**
+     * 가전이 ON에서 OFF로 넘어간 시각을 마지막 활동으로 남긴다.
+     * 스냅샷이 순서가 뒤바뀌어 도착해도 마지막 활동이 과거로 되돌아가지 않게 막는다.
+     *
+     * @return 값이 실제로 갱신되었으면 true
+     */
+    public boolean recordActivity(
+            String applianceType,
+            OffsetDateTime endedAt,
+            OffsetDateTime updatedAt
+    ) {
+        if (applianceType == null || applianceType.isBlank() || endedAt == null) {
+            return false;
+        }
+        if (lastActivityAt != null && endedAt.isBefore(lastActivityAt)) {
+            return false;
+        }
+        this.lastActivityAt = endedAt;
+        this.lastActivityAppliance = applianceType;
+        touch(updatedAt);
+        return true;
     }
 
     public void touch(OffsetDateTime updatedAt) {

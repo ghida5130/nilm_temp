@@ -52,6 +52,10 @@ class SubjectStatusStreamApiTest {
     void pushesTheChangedSubjectToItsAssignedManager() throws Exception {
         long managerId = insertManager("manager-a");
         long subjectId = insertSubject(managerId, "H001", "subject-H001");
+        // 마지막 활동은 analysis.snapshot.v1의 ON→OFF 전환이 채운다.
+        // 위험 이벤트는 건드리지 않으므로 미리 심어 두고 스트림이 싣고 나가는지만 본다.
+        jdbc.update("update subjects set last_activity_at = ?, last_activity_appliance = ? where id = ?",
+                OffsetDateTime.now(ZoneOffset.UTC), "KETTLE", subjectId);
 
         MvcResult stream = openStream("manager-a");
 

@@ -19,5 +19,8 @@ public enum StateChangeTrigger {
     MANAGER_STATUS,
 
     /** 외출 모드가 시작되거나 끝남 */
-    AWAY_MODE
+    AWAY_MODE,
+
+    /** 가전 ON→OFF 전환으로 마지막 활동이 갱신됨 */
+    ACTIVITY
 }
