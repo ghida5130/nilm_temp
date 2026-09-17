@@ -89,11 +89,15 @@ const preRegisteredIds = [
   'btnPause', 'badgeStatus', 'valPower', 'valApparent', 'valCurrent', 'valVoltage',
   'valPf', 'valReactive', 'valTime', 'valMaxPower', 'cardPower', 'timelineNotice',
   'eventTableBody', 'serverIndicator', 'chartMain', 'chartSecondary',
-  'btnPresetPeak', 'btnPresetMissed', 'btnPresetAllRandom', 'btnPresetManual',
+  'btnPresetPeak', 'btnPresetMissed', 'btnPresetFault', 'btnPresetAllRandom', 'btnPresetManual',
   'btnRunMulti', 'btnResetAll', 'btnManualToggle',
-  'btnDemoNormalRoutine', 'btnDemoRoutineMissed'
+  'btnDemoNormalRoutine', 'btnDemoRoutineMissed', 'btnDemoSensorFault', 'faultDurationInput'
 ];
 preRegisteredIds.forEach(id => getOrCreateElement(id));
+
+// faultDurationInput 기본값 120 설정
+const faultDurInputInit = getOrCreateElement('faultDurationInput', 'input');
+faultDurInputInit.value = '120';
 
 // speedSelect 옵션 사전 채우기
 const speedSelectInit = getOrCreateElement('speedSelect', 'select');
@@ -1165,6 +1169,265 @@ async function runTests() {
     assert.strictEqual(btnPause.disabled, true, "전체 가구 완료 후 Pause 버튼은 비활성화되어야 합니다.");
 
     console.log("✔ Test 28 통과: 부분 완료 상태 재접속 후 복원 및 잔여 가구 완료 시 전체 정상 종료 확인");
+  }
+
+  // -------------------------------------------------------------
+  // Test 29: sensor_fault 프리셋, 원클릭 시연, SSE null 안전 렌더링, 차트 gap 및 CSV 건너뛰기 검증
+  // -------------------------------------------------------------
+  {
+    console.log("\n[Test 29] sensor_fault UI 연동, null-safe 렌더링, 차트 null-gap 및 CSV 제외 검증");
+    const applyPreset = getGlobal('applyPreset');
+    const startSensorFaultDemo = getGlobal('startSensorFaultDemo');
+    const processServerMetrics = getGlobal('processServerMetrics');
+    const getCsvContentForHouse = getGlobal('getCsvContentForHouse');
+    const chartMain = getGlobal('chartMain');
+
+    // 1. applyPreset('fault_single') 검증
+    applyPreset('fault_single');
+    const chkH1 = getOrCreateElement('chk_H001');
+    const selH1 = getOrCreateElement('scenario_H001');
+    const chkH2 = getOrCreateElement('chk_H002');
+    assert.strictEqual(chkH1.checked, true, "H001은 체크되어야 합니다.");
+    assert.strictEqual(selH1.value, 'sensor_fault', "H001 시나리오는 sensor_fault여야 합니다.");
+    assert.strictEqual(chkH2.checked, false, "H002는 체크 해제되어야 합니다.");
+
+    // 2. startSensorFaultDemo() 호출 검증
+    fetchCalls.length = 0;
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "started" })
+    };
+
+    await startSensorFaultDemo();
+    const startCall = fetchCalls.find(c => c.url === '/api/start');
+    assert.ok(startCall, "/api/start가 호출되어야 합니다.");
+    const startReqFault = JSON.parse(startCall.options.body);
+    assert.strictEqual(startReqFault.households[0].scenario, 'sensor_fault', "start payload scenario는 sensor_fault여야 합니다.");
+
+    // 3. cycle 1~10 정상 계측치 SSE 수신 (cycle 10)
+    const normalSse = {
+      house: "H001",
+      scenario: "sensor_fault",
+      status: "running",
+      sec: 10,
+      cycle_count: 10,
+      now_iso: "2026-09-17T00:00:10.000Z",
+      simTimeKst: "09:00:10",
+      measurementAvailable: true,
+      sensorFault: false,
+      gapElapsedSec: 0,
+      gapRemainingSec: 120,
+      totalP: 55.4,
+      apparentS: 60.1,
+      currentA: 0.27,
+      voltage: 220.0,
+      pf: 0.92,
+      totalQ: 23.1,
+      activeNames: [],
+      eventNoticeText: null
+    };
+    processServerMetrics(normalSse);
+
+    const valPower = getOrCreateElement('valPower');
+    assert.strictEqual(valPower.textContent, "55.4", "정상 계측 시 소비전력이 표시되어야 합니다.");
+
+    // 4. cycle 11 센서 고장 시작 SSE 수신 (결측 구간: totalP 등 null)
+    const faultSse = {
+      house: "H001",
+      scenario: "sensor_fault",
+      status: "running",
+      sec: 11,
+      cycle_count: 11,
+      now_iso: "2026-09-17T00:00:11.000Z",
+      simTimeKst: "09:00:11",
+      measurementAvailable: false,
+      sensorFault: true,
+      gapElapsedSec: 1,
+      gapRemainingSec: 119,
+      totalP: null,
+      apparentS: null,
+      currentA: null,
+      voltage: null,
+      pf: null,
+      totalQ: null,
+      activeNames: [],
+      eventNoticeText: "센서 고장 시작 — 전력 계측 MQTT 메시지 발행 중단 (120초간)"
+    };
+
+    // null 값에도 toFixed TypeError 없이 정상 렌더링되는지 확인
+    assert.doesNotThrow(() => {
+      processServerMetrics(faultSse);
+    }, "null 상태의 전력값 처리 시 toFixed 오류가 발생하지 않아야 합니다.");
+
+    // 5. 결측 구간 UI 렌더링 확인 (— 표시, 센서 고장 배지)
+    assert.strictEqual(valPower.textContent, "—", "고장 중 valPower는 '—'로 표시되어야 합니다.");
+    const valCurrent = getOrCreateElement('valCurrent');
+    assert.strictEqual(valCurrent.textContent, "—", "고장 중 전류는 '—'로 표시되어야 합니다.");
+    const powerCellH1 = getOrCreateElement('power_val_H001');
+    assert.strictEqual(powerCellH1.textContent, "—", "가구 테이블의 전력값도 '—'로 표시되어야 합니다.");
+
+    const badgeStatus = getOrCreateElement('badgeStatus');
+    assert.ok(badgeStatus.textContent.includes("센서 고장"), "배지에 '센서 고장'이 표시되어야 합니다.");
+
+    // 6. 차트 및 히스토리 버퍼에 null이 푸시되어 끊긴 선(null gap)을 형성하는지 검증
+    const hist = getGlobal('getOrCreateHistory')('H001');
+    const lastHistP = hist.activeP[hist.activeP.length - 1];
+    assert.strictEqual(lastHistP, null, "고장 구간 히스토리에는 null이 저장되어야 합니다.");
+
+    const lastChartP = chartMain.data.datasets[0].data[chartMain.data.datasets[0].data.length - 1];
+    assert.strictEqual(lastChartP, null, "차트 데이터셋에도 null이 전달되어 시각적으로 끊겨 보여야 합니다.");
+
+    // 7. CSV 내보내기 시 결측(null) 행은 포함되지 않아야 함
+    const csvContent = getCsvContentForHouse('H001');
+    assert.ok(csvContent, "CSV 내용이 생성되어야 합니다.");
+    const csvLines = csvContent.trim().split("\r\n");
+    // 헤더 + cycle 10 (1행) = 총 2행 (cycle 11의 null 행은 건너뜀)
+    assert.strictEqual(csvLines.length, 2, "결측 행(null)은 CSV에서 제외되어 실제 측정 행만 포함되어야 합니다.");
+    assert.ok(csvLines[1].includes("55.4"), "실제 측정치 행은 정상 포함되어야 합니다.");
+    assert.ok(!csvContent.includes(",null,"), "CSV에 null 문자열이 포함되면 안 됩니다.");
+
+    // 8. cycle 140 완료 SSE 수신 시 종료 처리
+    const completedSse = {
+      house: "H001",
+      scenario: "sensor_fault",
+      status: "completed",
+      sec: 140,
+      cycle_count: 140,
+      now_iso: "2026-09-17T00:02:20.000Z",
+      simTimeKst: "09:02:20",
+      measurementAvailable: true,
+      sensorFault: false,
+      gapElapsedSec: 120,
+      gapRemainingSec: 0,
+      totalP: 56.0,
+      apparentS: 61.0,
+      currentA: 0.28,
+      voltage: 220.0,
+      pf: 0.92,
+      totalQ: 24.0,
+      activeNames: [],
+      eventNoticeText: "시나리오 완료 — 센서 고장 및 복구 시연 완료 (총 140초)"
+    };
+    processServerMetrics(completedSse);
+    assert.strictEqual(badgeStatus.textContent, "H001 센서 결측 시연 완료", "완료 시 배지 텍스트 검증");
+
+    // 9. cycle 140 이벤트 유형 검증: "시연 완료"여야 하며 "센서 고장"으로 오분류되지 않아야 함
+    const eventTableBody = getOrCreateElement('eventTableBody');
+    const latestRow = eventTableBody.children[0];
+    assert.ok(latestRow, "이벤트 테이블에 완료 행이 존재해야 합니다.");
+    const badgeMatch = latestRow.innerHTML.match(/<span class="badge-status[^>]*>([^<]+)<\/span>/);
+    assert.ok(badgeMatch, "이벤트 유형 배지가 존재해야 합니다.");
+    const eventTypeText = badgeMatch[1];
+    assert.ok(eventTypeText.includes("시연 완료"), `cycle 140 이벤트 유형은 '시연 완료'여야 합니다. (실제: ${eventTypeText})`);
+    assert.strictEqual(eventTypeText.includes("센서 고장"), false, "cycle 140 이벤트 유형에 '센서 고장'이 포함되면 안 됩니다.");
+
+    console.log("✔ Test 29 통과: sensor_fault UI 연동, null-safe 렌더링, 차트 null-gap, CSV 제외 및 cycle 140 이벤트 유형(시연 완료) 검증 완료");
+  }
+
+  // ----------------------------------------------------
+  // Test 30: faultDurationInput 조건부 검증 및 동적 결측 시간 UI 라이프사이클
+  // ----------------------------------------------------
+  {
+    console.log("\n[Test 30] faultDurationInput 조건부 검증 및 동적 결측 시간 UI 라이프사이클 검증");
+    const startMultiSimulation = getGlobal('startMultiSimulation');
+    const resetSimulation = getGlobal('resetSimulation');
+    const applyPreset = getGlobal('applyPreset');
+    const processServerMetrics = getGlobal('processServerMetrics');
+
+    const faultInput = getOrCreateElement('faultDurationInput');
+    const badgeStatus = getOrCreateElement('badgeStatus');
+
+    // 0. 화면에 가상 시간 기준 안내 문구가 실제 표시되는지 확인
+    assert.ok(htmlContent.includes("(가상 시간 기준, 배속 적용)"), "HTML에 '(가상 시간 기준, 배속 적용)' 문구가 표시되어야 합니다.");
+
+    // 1. 일반 시나리오(peak) 실행 시: faultDurationInput 값이 비어 있거나 잘못되어 있어도 차단되지 않음
+    applyPreset('peak_single');
+    const invalidValues = ["", "-10", "abc", "0", "99999", "12.5"];
+    for (const badVal of invalidValues) {
+      faultInput.value = badVal;
+      fetchCalls.length = 0;
+      mockFetchResponse = {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "started" })
+      };
+      await startMultiSimulation();
+      const startCall = fetchCalls.find(c => c.url === '/api/start');
+      assert.ok(startCall, `peak 실행에서는 faultDurationInput이 '${badVal}'이어도 /api/start가 호출되어야 합니다.`);
+      const reqBody = JSON.parse(startCall.options.body);
+      assert.strictEqual(reqBody.fault_duration_sec, undefined, "peak 실행 시 payload에 fault_duration_sec가 포함되면 안 됩니다.");
+      await resetSimulation();
+    }
+
+    // 2. sensor_fault 시나리오 실행 시: faultDurationInput이 잘못되어 있으면 실행 차단
+    applyPreset('fault_single');
+    for (const badVal of invalidValues) {
+      faultInput.value = badVal;
+      fetchCalls.length = 0;
+      await startMultiSimulation();
+      const startCall = fetchCalls.find(c => c.url === '/api/start');
+      assert.strictEqual(startCall, undefined, `sensor_fault 실행에서는 faultDurationInput이 '${badVal}'일 때 /api/start가 호출되지 않고 차단되어야 합니다.`);
+    }
+
+    // 3. sensor_fault 시나리오 실행 시: 올바른 값(30초)일 때 payload에 fault_duration_sec 포함
+    faultInput.value = "30";
+    fetchCalls.length = 0;
+    mockFetchResponse = {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "started" })
+    };
+    await startMultiSimulation();
+    const sfCall = fetchCalls.find(c => c.url === '/api/start');
+    assert.ok(sfCall, "올바른 30초 설정 시 /api/start가 호출되어야 합니다.");
+    const sfReq = JSON.parse(sfCall.options.body);
+    assert.strictEqual(sfReq.fault_duration_sec, 30, "payload에 fault_duration_sec: 30이 포함되어야 합니다.");
+
+    // 4. 실행 중일 때 faultDurationInput disabled 여부 확인
+    assert.strictEqual(faultInput.disabled, true, "시뮬레이션 실행 중에는 faultDurationInput이 비활성화되어야 합니다.");
+
+    // 5. SSE 수신 시 동적 30초 배지 및 상태 문구 렌더링 확인
+    const sseFault30 = {
+      house: "H001",
+      scenario: "sensor_fault",
+      status: "running",
+      sec: 11,
+      cycle_count: 11,
+      measurementAvailable: false,
+      sensorFault: true,
+      faultDurationSec: 30,
+      gapElapsedSec: 1,
+      gapRemainingSec: 29,
+      totalP: null,
+      eventNoticeText: "센서 고장 시작 — 전력 계측 MQTT 메시지 발행 중단 (30초간 결측)"
+    };
+    processServerMetrics(sseFault30);
+    assert.ok(badgeStatus.textContent.includes("1/30초"), `배지에 1/30초가 렌더링되어야 합니다. (실제: ${badgeStatus.textContent})`);
+    const badgeH1 = getOrCreateElement('status_badge_H001');
+    assert.ok(badgeH1.textContent.includes("1/30초"), `가구 테이블 배지에도 1/30초가 렌더링되어야 합니다. (실제: ${badgeH1.textContent})`);
+
+    // 6. 시연 완료 SSE 수신 시 30초 완료 문구 및 입력창 재활성화 확인
+    const sseDone30 = {
+      house: "H001",
+      scenario: "sensor_fault",
+      status: "completed",
+      sec: 50,
+      cycle_count: 50,
+      measurementAvailable: true,
+      sensorFault: false,
+      faultDurationSec: 30,
+      gapElapsedSec: 30,
+      gapRemainingSec: 0,
+      totalP: 55.0,
+      eventNoticeText: "시나리오 완료 — 센서 고장 및 복구 시연 완료 (총 50초)"
+    };
+    processServerMetrics(sseDone30);
+    const timelineNotice = getOrCreateElement('timelineNotice');
+    assert.ok(timelineNotice.innerHTML.includes("30초 결측 구간 종료"), `완료 안내 문구에 30초 결측이 명시되어야 합니다. (실제: ${timelineNotice.innerHTML})`);
+    assert.strictEqual(faultInput.disabled, false, "시뮬레이션 완료 후 faultDurationInput이 재활성화되어야 합니다.");
+
+    console.log("✔ Test 30 통과: faultDurationInput 조건부 검증, 비-sensor_fault 무시, sensor_fault payload 포함, 컨트롤 활성화 라이프사이클 및 동적 SSE 렌더링 검증 완료");
   }
 
   console.log("\n==========================================");

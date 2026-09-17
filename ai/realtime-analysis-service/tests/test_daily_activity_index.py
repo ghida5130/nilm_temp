@@ -268,3 +268,322 @@ def test_baseline_is_updated_after_daily_activity_messages(
     assert calls == ["publish", "daily-event", "baseline"]
     daily_detector.detect_and_publish.assert_called_once_with(date(2026, 9, 16))
     updater.update.assert_called_once_with(date(2026, 9, 16))
+
+
+def test_observation_boundary_82079_is_insufficient_data(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """
+    82,079 / 86,400 (약 0.949988) 샘플:
+    - raw_ratio < 0.95 이므로 observation_status == "INSUFFICIENT_DATA"
+    - 저장·표시용 coverage_ratio == Decimal("0.9500") (소수점 4자리 반올림)
+    - 외부 발행 메시지 data_status == "INSUFFICIENT_DATA", activity_index is None, components is None
+    """
+    target_date = date(2026, 9, 16)
+    household_id = "H001"
+    with session_factory.begin() as session:
+        session.add(
+            HouseholdObservationDaily(
+                household_id=household_id,
+                observation_date=target_date,
+                sample_count=82_079,
+                expected_sample_count=86_400,
+                coverage_ratio=Decimal("0.9500"),
+                observation_status="COLLECTING",
+                updated_at=datetime(2026, 9, 16, 23, 59, 59, tzinfo=timezone.utc),
+            )
+        )
+
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=86_400,
+        valid_coverage_ratio=0.95,
+    )
+    messages = repository.build_messages(target_date, [household_id])
+    assert len(messages) == 1
+    msg = messages[0]
+    assert msg.data_status == "INSUFFICIENT_DATA"
+    assert msg.activity_index is None
+    assert msg.components is None
+
+    with session_factory() as session:
+        obs = session.scalar(
+            select(HouseholdObservationDaily).where(
+                HouseholdObservationDaily.household_id == household_id,
+                HouseholdObservationDaily.observation_date == target_date,
+            )
+        )
+        assert obs is not None
+        assert obs.observation_status == "INSUFFICIENT_DATA"
+        assert obs.coverage_ratio == Decimal("0.9500")
+        assert obs.sample_count == 82_079
+        assert obs.expected_sample_count == 86_400
+
+
+def test_observation_boundary_82080_is_valid(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """
+    82,080 / 86,400 (정확히 0.95) 샘플:
+    - raw_ratio == 0.95 이므로 observation_status == "VALID"
+    - 저장·표시용 coverage_ratio == Decimal("0.9500")
+    - 외부 발행 메시지 data_status == "VALID"
+    - 활동 세션이 없으므로 activity_index == 0, components 점수 및 사용량 모두 0
+    """
+    target_date = date(2026, 9, 16)
+    household_id = "H002"
+    with session_factory.begin() as session:
+        session.add(
+            HouseholdObservationDaily(
+                household_id=household_id,
+                observation_date=target_date,
+                sample_count=82_080,
+                expected_sample_count=86_400,
+                coverage_ratio=Decimal("0.9500"),
+                observation_status="COLLECTING",
+                updated_at=datetime(2026, 9, 16, 23, 59, 59, tzinfo=timezone.utc),
+            )
+        )
+
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=86_400,
+        valid_coverage_ratio=0.95,
+    )
+    messages = repository.build_messages(target_date, [household_id])
+    assert len(messages) == 1
+    msg = messages[0]
+    assert msg.data_status == "VALID"
+    assert msg.activity_index == 0
+    assert msg.components is not None
+    assert msg.components.usage_count == 0
+    assert msg.components.appliance_type_count == 0
+    assert msg.components.usage_duration_seconds == 0
+    assert msg.components.usage_count_score == 0
+    assert msg.components.appliance_diversity_score == 0
+    assert msg.components.usage_duration_score == 0
+
+    with session_factory() as session:
+        obs = session.scalar(
+            select(HouseholdObservationDaily).where(
+                HouseholdObservationDaily.household_id == household_id,
+                HouseholdObservationDaily.observation_date == target_date,
+            )
+        )
+        assert obs is not None
+        assert obs.observation_status == "VALID"
+        assert obs.coverage_ratio == Decimal("0.9500")
+        assert obs.sample_count == 82_080
+
+
+def test_observation_boundary_zero_samples_is_sensor_gap(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """
+    0 / 86,400 샘플:
+    - 내부 observation_status == "SENSOR_GAP", coverage_ratio == Decimal("0.0000")
+    - 외부 발행 메시지 data_status == "INSUFFICIENT_DATA", activity_index is None, components is None
+    """
+    target_date = date(2026, 9, 16)
+    household_id = "H003"
+    with session_factory.begin() as session:
+        session.add(
+            HouseholdObservationDaily(
+                household_id=household_id,
+                observation_date=target_date,
+                sample_count=0,
+                expected_sample_count=86_400,
+                coverage_ratio=Decimal("0.0000"),
+                observation_status="COLLECTING",
+                updated_at=datetime(2026, 9, 16, 23, 59, 59, tzinfo=timezone.utc),
+            )
+        )
+
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=86_400,
+        valid_coverage_ratio=0.95,
+    )
+    messages = repository.build_messages(target_date, [household_id])
+    assert len(messages) == 1
+    msg = messages[0]
+    assert msg.data_status == "INSUFFICIENT_DATA"
+    assert msg.activity_index is None
+    assert msg.components is None
+
+    with session_factory() as session:
+        obs = session.scalar(
+            select(HouseholdObservationDaily).where(
+                HouseholdObservationDaily.household_id == household_id,
+                HouseholdObservationDaily.observation_date == target_date,
+            )
+        )
+        assert obs is not None
+        assert obs.observation_status == "SENSOR_GAP"
+        assert obs.coverage_ratio == Decimal("0.0000")
+
+
+def test_observation_boundary_exact_full_day_is_valid(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """
+    86,400 / 86,400 샘플 (100%):
+    - raw_ratio == 1.0 >= 0.95 이므로 observation_status == "VALID"
+    - coverage_ratio == Decimal("1.0000")
+    - 외부 발행 메시지 data_status == "VALID"
+    """
+    target_date = date(2026, 9, 16)
+    household_id = "H004"
+    with session_factory.begin() as session:
+        session.add(
+            HouseholdObservationDaily(
+                household_id=household_id,
+                observation_date=target_date,
+                sample_count=86_400,
+                expected_sample_count=86_400,
+                coverage_ratio=Decimal("1.0000"),
+                observation_status="COLLECTING",
+                updated_at=datetime(2026, 9, 16, 23, 59, 59, tzinfo=timezone.utc),
+            )
+        )
+
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=86_400,
+        valid_coverage_ratio=0.95,
+    )
+    messages = repository.build_messages(target_date, [household_id])
+    assert len(messages) == 1
+    assert messages[0].data_status == "VALID"
+
+    with session_factory() as session:
+        obs = session.scalar(
+            select(HouseholdObservationDaily).where(
+                HouseholdObservationDaily.household_id == household_id,
+                HouseholdObservationDaily.observation_date == target_date,
+            )
+        )
+        assert obs is not None
+        assert obs.observation_status == "VALID"
+        assert obs.coverage_ratio == Decimal("1.0000")
+
+
+def test_observation_boundary_exceeding_samples_is_valid_and_capped_at_one(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """
+    90,000 / 86,400 샘플 (예상치 초과 유입):
+    - raw_ratio > 1.0 >= 0.95 이므로 observation_status == "VALID"
+    - coverage_ratio는 Decimal("1.0000")으로 상한 처리되어 DB 체크 제약 만족
+    - 외부 발행 메시지 data_status == "VALID"
+    """
+    target_date = date(2026, 9, 16)
+    household_id = "H005"
+    with session_factory.begin() as session:
+        session.add(
+            HouseholdObservationDaily(
+                household_id=household_id,
+                observation_date=target_date,
+                sample_count=90_000,
+                expected_sample_count=86_400,
+                coverage_ratio=Decimal("1.0000"),
+                observation_status="COLLECTING",
+                updated_at=datetime(2026, 9, 16, 23, 59, 59, tzinfo=timezone.utc),
+            )
+        )
+
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=86_400,
+        valid_coverage_ratio=0.95,
+    )
+    messages = repository.build_messages(target_date, [household_id])
+    assert len(messages) == 1
+    assert messages[0].data_status == "VALID"
+
+    with session_factory() as session:
+        obs = session.scalar(
+            select(HouseholdObservationDaily).where(
+                HouseholdObservationDaily.household_id == household_id,
+                HouseholdObservationDaily.observation_date == target_date,
+            )
+        )
+        assert obs is not None
+        assert obs.observation_status == "VALID"
+        assert obs.coverage_ratio == Decimal("1.0000")
+
+
+def test_observation_boundary_custom_threshold_and_expected_generalized(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """
+    사용자 정의 설정(expected=10,000, valid_coverage_ratio=0.80)에서
+    7,999건은 INSUFFICIENT_DATA, 8,000건은 VALID로 정확히 양분되는 일반화 검증.
+    (H006, H007 독립 가구 사용하여 상호 영향 배제)
+    """
+    target_date = date(2026, 9, 16)
+    with session_factory.begin() as session:
+        # H006: 7,999 / 10,000 = 0.7999 < 0.80
+        session.add(
+            HouseholdObservationDaily(
+                household_id="H006",
+                observation_date=target_date,
+                sample_count=7_999,
+                expected_sample_count=10_000,
+                coverage_ratio=Decimal("0.7999"),
+                observation_status="COLLECTING",
+                updated_at=datetime(2026, 9, 16, 23, 59, 59, tzinfo=timezone.utc),
+            )
+        )
+        # H007: 8,000 / 10,000 = 0.8000 >= 0.80
+        session.add(
+            HouseholdObservationDaily(
+                household_id="H007",
+                observation_date=target_date,
+                sample_count=8_000,
+                expected_sample_count=10_000,
+                coverage_ratio=Decimal("0.8000"),
+                observation_status="COLLECTING",
+                updated_at=datetime(2026, 9, 16, 23, 59, 59, tzinfo=timezone.utc),
+            )
+        )
+
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=10_000,
+        valid_coverage_ratio=0.80,
+    )
+    messages = repository.build_messages(target_date, ["H006", "H007"])
+    msg_by_house = {m.household_id: m for m in messages}
+
+    assert msg_by_house["H006"].data_status == "INSUFFICIENT_DATA"
+    assert msg_by_house["H006"].activity_index is None
+    assert msg_by_house["H007"].data_status == "VALID"
+    assert msg_by_house["H007"].activity_index == 0
+
+    with session_factory() as session:
+        obs_6 = session.scalar(
+            select(HouseholdObservationDaily).where(
+                HouseholdObservationDaily.household_id == "H006",
+                HouseholdObservationDaily.observation_date == target_date,
+            )
+        )
+        assert obs_6 is not None
+        assert obs_6.observation_status == "INSUFFICIENT_DATA"
+        assert obs_6.coverage_ratio == Decimal("0.7999")
+
+        obs_7 = session.scalar(
+            select(HouseholdObservationDaily).where(
+                HouseholdObservationDaily.household_id == "H007",
+                HouseholdObservationDaily.observation_date == target_date,
+            )
+        )
+        assert obs_7 is not None
+        assert obs_7.observation_status == "VALID"
+        assert obs_7.coverage_ratio == Decimal("0.8000")
