@@ -51,7 +51,8 @@ public class AuthService {
                     request.phone(), request.organization()));
             return AuthDtos.ProfileResponse.from(profile);
         } catch (RuntimeException e) {
-            log.error("프로필 저장 실패 — Keycloak 계정 보상 삭제: {}", userId, e);
+            // 예외 자체는 상위 핸들러가 기록한다. 여기서는 보상 조치만 남긴다.
+            log.warn("프로필 저장 실패로 Keycloak 계정을 보상 삭제합니다: {}", userId);
             keycloak.deleteUser(userId);
             throw e;
         }

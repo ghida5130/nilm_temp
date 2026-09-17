@@ -30,6 +30,9 @@ public class KeycloakAdminClient {
 
     private static final Logger log = LoggerFactory.getLogger(KeycloakAdminClient.class);
 
+    private static final String GRANT_PASSWORD = "password";
+    private static final String GRANT_REFRESH_TOKEN = "refresh_token";
+
     public record TokenResponse(String accessToken, String refreshToken, Integer expiresIn) {
     }
 
@@ -67,7 +70,7 @@ public class KeycloakAdminClient {
                         "enabled", true,
                         "emailVerified", false,
                         "credentials", List.of(Map.of(
-                                "type", "password",
+                                "type", GRANT_PASSWORD,
                                 "value", password,
                                 "temporary", false))))
                 .exchange((request, response) -> {
@@ -105,15 +108,15 @@ public class KeycloakAdminClient {
 
     /** 로그인 — 사용자 자격증명을 Keycloak에 위임하고 토큰만 받아온다. */
     public TokenResponse login(String email, String password) {
-        MultiValueMap<String, String> form = form("password");
+        MultiValueMap<String, String> form = form(GRANT_PASSWORD);
         form.add("username", email);
-        form.add("password", password);
+        form.add(GRANT_PASSWORD, password);
         return token(form, "이메일 또는 비밀번호가 올바르지 않습니다");
     }
 
     public TokenResponse refresh(String refreshToken) {
-        MultiValueMap<String, String> form = form("refresh_token");
-        form.add("refresh_token", refreshToken);
+        MultiValueMap<String, String> form = form(GRANT_REFRESH_TOKEN);
+        form.add(GRANT_REFRESH_TOKEN, refreshToken);
         return token(form, "다시 로그인해 주세요");
     }
 
@@ -147,7 +150,7 @@ public class KeycloakAdminClient {
         }
         return new TokenResponse(
                 (String) body.get("access_token"),
-                (String) body.get("refresh_token"),
+                (String) body.get(GRANT_REFRESH_TOKEN),
                 (Integer) body.get("expires_in"));
     }
 }
