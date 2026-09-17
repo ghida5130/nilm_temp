@@ -31,7 +31,7 @@ public class SubjectController {
     ) {
         String authSub = jwt == null ? null : jwt.getSubject();
         return ResponseEntity
-                .status(HttpStatus.CREATED)
+                .status(HttpStatus.OK)
                 .body(monitoringService.getSubjects(authSub));
     }
 
