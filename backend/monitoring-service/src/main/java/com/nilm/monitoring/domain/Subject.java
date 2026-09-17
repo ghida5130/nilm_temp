@@ -4,6 +4,7 @@ import com.nilm.monitoring.config.enums.RiskLevel;
 import jakarta.persistence.*;
 import lombok.Getter;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -12,6 +13,9 @@ import java.time.ZoneOffset;
 @Getter
 @Table(name = "subjects")
 public class Subject {
+
+    /** 요청이 서버에 닿기까지의 시계 차이를 허용하는 폭. */
+    private static final Duration START_TOLERANCE = Duration.ofMinutes(1);
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -141,42 +145,88 @@ public class Subject {
         this.updatedAt = updatedAt;
     }
 
-    public void startAway(
+    /**
+     * 주어진 시각이 외출 구간 안인지 판정한다.
+     *
+     * <p>{@code awayUntil}이 없으면 해제할 때까지 이어지는 무기한 외출이다.
+     * 시각으로 판정하므로 이벤트가 늦게 도착해도 같은 답이 나온다.
+     */
+    public boolean isAwayAt(OffsetDateTime at) {
+        if (awayStartedAt == null || at.isBefore(awayStartedAt)) {
+            return false;
+        }
+        return awayUntil == null || at.isBefore(awayUntil);
+    }
+
+    /** 아직 시작하지 않은 외출 예약이 걸려 있는지. */
+    public boolean hasScheduledAway(OffsetDateTime at) {
+        return awayStartedAt != null && at.isBefore(awayStartedAt);
+    }
+
+    /**
+     * 외출을 설정한다. {@code startsAt}이 없으면 즉시 시작하고,
+     * {@code endsAt}이 없으면 해제할 때까지 이어진다.
+     *
+     * <p>구간은 한 벌만 보관하므로 새로 설정하면 이전 외출 기록을 덮어쓴다.
+     */
+    public void scheduleAway(
             OffsetDateTime now,
-            OffsetDateTime until
+            OffsetDateTime startsAt,
+            OffsetDateTime endsAt
     ) {
-        if (until == null || !until.isAfter(now)) {
+        if (startsAt != null && startsAt.isBefore(now.minus(START_TOLERANCE))) {
+            throw new IllegalArgumentException(
+                    "외출 시작 시간은 현재 시각 이후여야 합니다."
+            );
+        }
+
+        OffsetDateTime start = startsAt == null ? now : startsAt;
+        if (endsAt != null && !endsAt.isAfter(start)) {
             throw new IllegalArgumentException(
                     "외출 종료 시간은 시작 시간 이후여야 합니다."
             );
         }
-        if (!monitoringEnabled) {
-            throw new IllegalStateException(
-                    "이미 모니터링이 중지되어 있습니다."
-            );
-        }
 
-        this.awayStartedAt = now;
-        this.awayUntil = until;
-        this.monitoringEnabled = false;
+        this.awayStartedAt = start;
+        this.awayUntil = endsAt;
+        syncMonitoring(now);
     }
 
-    public void endAway(OffsetDateTime now) {
-        if (monitoringEnabled || awayStartedAt == null
-                || awayUntil == null) {
+    /**
+     * 외출을 해제한다. 진행 중이면 지금 끊되 구간은 남겨 둔다.
+     * 늦게 도착한 이벤트가 외출 중 발생이었는지 판정할 수 있어야 하기 때문이다.
+     */
+    public void cancelAway(OffsetDateTime now) {
+        if (awayStartedAt == null) {
             return;
         }
 
-        if (now.isBefore(awayStartedAt)) {
-            throw new IllegalArgumentException(
-                    "외출 종료 시간은 시작 시간보다 빠를 수 없습니다."
-            );
+        if (isAwayAt(now)) {
+            this.awayUntil = now;
+        } else if (now.isBefore(awayStartedAt)) {
+            // 아직 시작하지 않은 예약은 흔적 없이 취소한다.
+            this.awayStartedAt = null;
+            this.awayUntil = null;
+        }
+        syncMonitoring(now);
+    }
+
+    /**
+     * 외출 구간에서 계산한 값으로 모니터링 플래그를 맞춘다.
+     *
+     * <p>이 플래그는 목록 조회와 실시간 전송을 위한 캐시일 뿐이고,
+     * 판단의 근거는 언제나 {@link #isAwayAt(OffsetDateTime)}이다.
+     *
+     * @return 값이 실제로 바뀌었으면 true
+     */
+    public boolean syncMonitoring(OffsetDateTime now) {
+        boolean next = !isAwayAt(now);
+        if (next == monitoringEnabled) {
+            return false;
         }
 
-        // 예정 시간 이후에 처리되더라도 원래 종료 시간을 유지
-        if (now.isBefore(awayUntil)) {
-            this.awayUntil = now;
-        }
-        this.monitoringEnabled = true;
+        this.monitoringEnabled = next;
+        touch(now);
+        return true;
     }
 }

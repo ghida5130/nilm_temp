@@ -56,20 +56,13 @@ public class AnalysisEventService {
         var subject = matches.get(0);
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
 
-        // 모니터링이 꺼져 있음 + 외출 시작 기록이 있음 + 외출 종료 시각이 있음 + 시간이 지남
-        // 외출 종료 시각이 지났으면 endAway를 통해 모니터링을 살림
-        if (!subject.isMonitoringEnabled() && subject.getAwayStartedAt() != null
-                && subject.getAwayUntil() != null && !now.isBefore(subject.getAwayUntil())) {
-            subject.endAway(now);
-        }
-
+        // 예약된 외출의 시작/종료를 이 자리에서 반영한다.
+        // 스케줄러가 늦게 돌아도 아래 알림 판정이 어긋나지 않게 한다.
+        subject.syncMonitoring(now);
 
         // 사건이 일어난 시간에 외출 중이였는지 검사
         // 위험 발생 시각이랑 이벤트 메시지가 도착하는 시간이 다른 경우
-        boolean occurredWhileAway = subject.getAwayStartedAt() != null
-                && subject.getAwayUntil() != null
-                && !message.occurredAt().isBefore(subject.getAwayStartedAt())
-                && message.occurredAt().isBefore(subject.getAwayUntil());
+        boolean occurredWhileAway = subject.isAwayAt(message.occurredAt());
 
         /**
          *  위험 스코어 계산 & 집계로 알림 조건 트리거 -> 추후 조건 확정 후 구현

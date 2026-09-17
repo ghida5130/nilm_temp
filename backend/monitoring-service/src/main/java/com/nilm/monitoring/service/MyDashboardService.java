@@ -4,6 +4,8 @@ import com.nilm.monitoring.domain.Subject;
 import com.nilm.monitoring.dto.MyDashboardResponse;
 import com.nilm.monitoring.repository.ManagerRepository;
 import com.nilm.monitoring.repository.SubjectRepository;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -38,11 +40,11 @@ public class MyDashboardService {
                         ))
                         .orElse(null);
 
-        boolean awayEnabled = !subject.isMonitoringEnabled();
-        MyDashboardResponse.AwayMode awayMode = new MyDashboardResponse.AwayMode(
-                awayEnabled,
-                awayEnabled ? subject.getAwayStartedAt() : null,
-                awayEnabled ? subject.getAwayUntil() : null
+        // 캐시 플래그가 아니라 외출 구간에서 현재 시각으로 계산한다.
+        // 예약만 걸려 있고 아직 시작하지 않은 상태를 구분해야 하기 때문이다.
+        MyDashboardResponse.AwayMode awayMode = MyDashboardResponse.AwayMode.from(
+                subject,
+                OffsetDateTime.now(ZoneOffset.UTC)
         );
 
         return new MyDashboardResponse(

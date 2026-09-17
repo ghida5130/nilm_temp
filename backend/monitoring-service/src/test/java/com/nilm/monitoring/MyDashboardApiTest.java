@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,8 +41,10 @@ class MyDashboardApiTest {
                 """);
         long managerId = jdbc.queryForObject(
                 "select id from managers where auth_sub = 'manager-a'", Long.class);
-        OffsetDateTime startedAt = OffsetDateTime.parse("2026-09-17T00:00:00Z");
-        OffsetDateTime until = OffsetDateTime.parse("2026-09-17T09:00:00Z");
+        // 고정 시각을 쓰면 실행 시점에 따라 외출이 이미 끝난 것으로 판정된다.
+        OffsetDateTime startedAt = OffsetDateTime.now(ZoneOffset.UTC)
+                .minusHours(1).truncatedTo(ChronoUnit.SECONDS);
+        OffsetDateTime until = startedAt.plusHours(2);
         jdbc.update("""
                 insert into subjects(
                     household_id, auth_sub, birth_date, name, phone, address,
@@ -57,10 +61,9 @@ class MyDashboardApiTest {
                 .andExpect(jsonPath("$.subjectId").value(Long.toString(subjectId)))
                 .andExpect(jsonPath("$.name").value("김철수"))
                 .andExpect(jsonPath("$.awayMode.enabled").value(true))
-                .andExpect(jsonPath("$.awayMode.startedAt")
-                        .value("2026-09-17T00:00:00Z"))
-                .andExpect(jsonPath("$.awayMode.until")
-                        .value("2026-09-17T09:00:00Z"))
+                .andExpect(jsonPath("$.awayMode.scheduled").value(false))
+                .andExpect(jsonPath("$.awayMode.startedAt").value(startedAt.toString()))
+                .andExpect(jsonPath("$.awayMode.until").value(until.toString()))
                 .andExpect(jsonPath("$.manager.name").value("이담당"))
                 .andExpect(jsonPath("$.manager.phone").value("010-1234-5678"));
     }
@@ -79,6 +82,7 @@ class MyDashboardApiTest {
                         .with(jwt().jwt(token -> token.subject("subject-a"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.awayMode.enabled").value(false))
+                .andExpect(jsonPath("$.awayMode.scheduled").value(false))
                 .andExpect(jsonPath("$.awayMode.startedAt").doesNotExist())
                 .andExpect(jsonPath("$.awayMode.until").doesNotExist())
                 .andExpect(jsonPath("$.manager").doesNotExist());

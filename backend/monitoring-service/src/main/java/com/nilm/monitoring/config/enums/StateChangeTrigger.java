@@ -16,5 +16,8 @@ public enum StateChangeTrigger {
     RESPONSE_EXPIRED,
 
     /** 담당자가 알림 처리 상태를 변경 */
-    MANAGER_STATUS
+    MANAGER_STATUS,
+
+    /** 외출 모드가 시작되거나 끝남 */
+    AWAY_MODE
 }
