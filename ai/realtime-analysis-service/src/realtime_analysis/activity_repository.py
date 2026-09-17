@@ -45,6 +45,12 @@ class ApplianceActivityRepository(Protocol):
         active_appliance_types: AbstractSet[str],
     ) -> None: ...
 
+    def close_open_sessions(
+        self,
+        household_id: str,
+        ended_at: datetime,
+    ) -> None: ...
+
 
 class SqlAlchemyApplianceActivityRepository:
     """상태 변화와 세션 확률을 SQLAlchemy로 원자적으로 저장한다."""
@@ -149,6 +155,45 @@ class SqlAlchemyApplianceActivityRepository:
             for transition in transitions:
                 if transition.transition_type == ApplianceTransitionType.TURNED_OFF:
                     self._finish_session(session, transition)
+
+    def close_open_sessions(
+        self,
+        household_id: str,
+        ended_at: datetime,
+    ) -> None:
+        """Close sessions whose continuity can no longer be proven after a gap."""
+
+        with self._session_factory.begin() as session:
+            open_sessions = session.scalars(
+                select(ApplianceUsageSession)
+                .join(
+                    HouseholdActivityDaily,
+                    HouseholdActivityDaily.id
+                    == ApplianceUsageSession.activity_daily_id,
+                )
+                .join(
+                    HouseholdObservationDaily,
+                    HouseholdObservationDaily.id
+                    == HouseholdActivityDaily.observation_daily_id,
+                )
+                .where(
+                    HouseholdObservationDaily.household_id == household_id,
+                    ApplianceUsageSession.ended_at.is_(None),
+                )
+                .with_for_update()
+            ).all()
+            for usage_session in open_sessions:
+                session_start = usage_session.started_at
+                if session_start.tzinfo is None:
+                    session_start = session_start.replace(tzinfo=self._timezone)
+                safe_end = ended_at
+                if (
+                    session_start.astimezone(timezone.utc)
+                    > ended_at.astimezone(timezone.utc)
+                ):
+                    safe_end = usage_session.started_at
+                usage_session.ended_at = safe_end
+                usage_session.updated_at = safe_end
 
     # OFF -> ON
     def _start_session(

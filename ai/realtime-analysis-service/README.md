@@ -438,9 +438,34 @@ reliability_weight = min(sample_days / 최소 표본일, 1)
 }
 ```
 
-복구 시에는 같은 계약에서 `event_type`을 `DATA_RECOVERED`로 발행합니다. 현재 변경에는
-계약과 Publisher만 포함되며, DATA_GAP 판정 시간은 확정된 설정이 없어 아직 구현하지
-않습니다.
+복구 시에는 같은 계약에서 `event_type`을 `DATA_RECOVERED`로 발행합니다. 가구별로
+마지막 정상 입력 수신 시각을 추적하며 기본 120초 동안 새 입력이 없으면 `DATA_GAP`을
+한 번 발행합니다. 이후 기본 3개의 최신 측정값이 연속으로 확인되면
+`DATA_RECOVERED`를 한 번 발행합니다.
+
+공백 상태와 복구 확인 중에는 위험 이벤트 판단을 보류합니다. 공백 전에 열려 있던 가전
+세션은 마지막 유효 측정 시각에서 종료하고, 복구 첫 입력에서 모델 버퍼와 히스테리시스
+상태를 초기화하여 공백 전후 데이터를 하나의 연속 사용으로 해석하지 않습니다.
+
+```json
+{
+  "event_id": "b5e4ce49-b101-5a3a-b476-0f93512dd427",
+  "household_id": "H001",
+  "event_type": "DATA_RECOVERED",
+  "occurred_at": "2026-09-16T10:05:05+09:00",
+  "reason": {
+    "last_valid_received_at": "2026-09-16T10:00:00+09:00",
+    "gap_detected_at": "2026-09-16T10:02:00+09:00",
+    "gap_seconds": 305
+  }
+}
+```
+
+| 환경변수 | 기본값 | 의미 |
+| --- | ---: | --- |
+| `ANALYSIS_DATA_GAP_THRESHOLD_SECONDS` | 120 | 입력 공백 판정 시간 |
+| `ANALYSIS_DATA_QUALITY_POLL_SECONDS` | 5 | watchdog 검사 주기 |
+| `ANALYSIS_DATA_RECOVERY_CONFIRMATION_SAMPLES` | 3 | 복구 확정에 필요한 최신 입력 수 |
 
 ## 로컬 실행
 

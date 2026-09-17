@@ -8,6 +8,7 @@ from realtime_analysis.activity_repository import ApplianceActivityRepository
 from realtime_analysis.anomaly_detector import AnomalyDetector
 from realtime_analysis.baseline import RoutineBaselineProvider
 from realtime_analysis.buffer import HouseholdBuffer
+from realtime_analysis.data_quality_monitor import DataQualityMonitor
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.metrics import METRICS
 from realtime_analysis.pipeline_timing import stage
@@ -37,6 +38,7 @@ class MeasurementHandler:
         event_publisher: AnalysisEventPublisher,
         snapshot_publisher: AnalysisSnapshotPublisher,
         timezone_name: str,
+        data_quality_monitor: DataQualityMonitor | None = None,
     ) -> None:
         self._buffer = buffer
         self._predictor = predictor
@@ -49,8 +51,22 @@ class MeasurementHandler:
         self._event_publisher = event_publisher
         self._snapshot_publisher = snapshot_publisher
         self._timezone = ZoneInfo(timezone_name)
+        self._data_quality_monitor = data_quality_monitor
 
     def __call__(self, measurement: PowerMeasurement) -> None:
+        quality_is_healthy = True
+        if self._data_quality_monitor is not None:
+            quality = self._data_quality_monitor.observe(
+                measurement.household_id,
+                measurement.measured_at,
+            )
+            quality_is_healthy = quality.is_healthy
+            if quality.reset_required:
+                self._buffer.reset(measurement.household_id)
+                self._state_transition_detector.reset(
+                    measurement.household_id
+                )
+
         # 모델 버퍼가 아직 차지 않았더라도 검증을 통과한 원본 샘플은 일일 관측에 집계한다.
         with stage("observation_db"):
             self._activity_repository.record_observation(
@@ -59,6 +75,9 @@ class MeasurementHandler:
             )
         with stage("buffer_append"):
             self._buffer.append(measurement)  # 입력값을 가구별 버퍼에 넣음
+        # 복구 확인 중에는 원본 관측만 누적하고 추론과 위험 이벤트 판단을 보류한다.
+        if not quality_is_healthy:
+            return
         if not self._buffer.is_ready(measurement.household_id): # 버퍼가 준비됐는지 확인
             return
 

@@ -1,15 +1,17 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import Mock
 from uuid import UUID
 
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
+from realtime_analysis.data_quality_monitor import DataQualityMonitor
 from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.predictor import APPLIANCE_ORDER, FakePredictor
 from realtime_analysis.schemas import (
     AnalysisEvent,
     AnalysisSnapshot,
+    DataQualityEvent,
     PowerMeasurement,
     RoutineBaseline,
 )
@@ -32,6 +34,14 @@ class RecordingSnapshotPublisher:
 
     def publish(self, snapshot: AnalysisSnapshot) -> None:
         self.snapshots.append(snapshot)
+
+
+class RecordingDataQualityPublisher:
+    def __init__(self) -> None:
+        self.events: list[DataQualityEvent] = []
+
+    def publish(self, event: DataQualityEvent) -> None:
+        self.events.append(event)
 
 
 def test_fake_predictor_uses_ai_experiment_appliance_order() -> None:
@@ -155,3 +165,62 @@ def test_pipeline_records_usage_only_after_confirmed_on_transition() -> None:
         for snapshot in snapshot_publisher.snapshots
     ]
     assert microwave_states == [False, False, True]
+
+
+def test_pipeline_refills_model_buffer_before_processing_recovered_data() -> None:
+    clock_value = datetime.fromisoformat("2026-09-08T09:00:00+09:00")
+
+    def clock() -> datetime:
+        return clock_value
+
+    quality_publisher = RecordingDataQualityPublisher()
+    quality_monitor = DataQualityMonitor(
+        quality_publisher,
+        gap_threshold_seconds=120,
+        recovery_confirmation_samples=2,
+        clock=clock,
+    )
+    snapshots = RecordingSnapshotPublisher()
+    handler = MeasurementHandler(
+        buffer=HouseholdBuffer(window_size=2),
+        predictor=FakePredictor(),
+        state_decider=ApplianceStateDecider(
+            {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
+        ),
+        state_transition_detector=ApplianceStateTransitionDetector(3, 3, 0.05),
+        activity_repository=Mock(),
+        baseline_repository=BaselineRepository([]),
+        tracker=DailyActivityTracker(),
+        detector=RoutineMissedDetector(DailyActivityTracker(), 80, "Asia/Seoul"),
+        event_publisher=RecordingPublisher(),  # type: ignore[arg-type]
+        snapshot_publisher=snapshots,  # type: ignore[arg-type]
+        timezone_name="Asia/Seoul",
+        data_quality_monitor=quality_monitor,
+    )
+
+    handler(measurement(0))
+    clock_value += timedelta(seconds=1)
+    handler(measurement(1))
+    assert len(snapshots.snapshots) == 1
+
+    clock_value += timedelta(seconds=120)
+    assert quality_monitor.detect_gaps(checked_at=clock_value) == 1
+
+    clock_value += timedelta(seconds=1)
+    first_recovery = measurement(2).model_copy(
+        update={"measured_at": measurement(2).measured_at + timedelta(minutes=3)}
+    )
+    handler(first_recovery)
+    assert len(snapshots.snapshots) == 1
+
+    clock_value += timedelta(seconds=1)
+    second_recovery = measurement(3).model_copy(
+        update={"measured_at": measurement(3).measured_at + timedelta(minutes=3)}
+    )
+    handler(second_recovery)
+
+    assert len(snapshots.snapshots) == 2
+    assert [event.event_type for event in quality_publisher.events] == [
+        "DATA_GAP",
+        "DATA_RECOVERED",
+    ]

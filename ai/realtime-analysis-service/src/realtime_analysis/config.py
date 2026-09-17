@@ -64,6 +64,16 @@ class Settings(BaseSettings):
         ge=0,
         le=1,
     )
+    analysis_data_gap_threshold_seconds: float = Field(default=120, gt=0)
+    analysis_data_quality_poll_seconds: float = Field(
+        default=5,
+        gt=0,
+        le=300,
+    )
+    analysis_data_recovery_confirmation_samples: int = Field(
+        default=3,
+        ge=1,
+    )
     appliance_on_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_threshold_margin: float = Field(default=0.05, ge=0, le=1)

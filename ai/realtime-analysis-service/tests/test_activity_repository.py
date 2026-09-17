@@ -144,6 +144,39 @@ def test_session_lifecycle_and_daily_count_are_persisted(
         )
 
 
+def test_data_gap_closes_open_sessions_at_last_valid_measurement(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = SqlAlchemyApplianceActivityRepository(
+        session_factory,
+        "Asia/Seoul",
+    )
+    repository.record(
+        "H001",
+        START + timedelta(seconds=2),
+        [state(0.8, True)],
+        [
+            transition(
+                ApplianceTransitionType.TURNED_ON,
+                0.8,
+                START,
+                START + timedelta(seconds=2),
+            )
+        ],
+        {"MICROWAVE"},
+    )
+
+    repository.close_open_sessions("H001", START + timedelta(seconds=30))
+
+    with session_factory() as session:
+        usage_session = session.scalar(select(ApplianceUsageSession))
+        assert usage_session is not None
+        assert usage_session.ended_at is not None
+        assert usage_session.ended_at.replace(tzinfo=START.tzinfo) == (
+            START + timedelta(seconds=30)
+        )
+
+
 def test_replayed_turn_on_does_not_duplicate_session_or_event_count(
     session_factory: sessionmaker[Session],
 ) -> None:

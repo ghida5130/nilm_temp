@@ -28,6 +28,11 @@ from realtime_analysis.daily_activity_index import (
     DailyActivityIndexScheduler,
     DailyActivityIndexService,
 )
+from realtime_analysis.data_quality_monitor import (
+    DataQualityMonitor,
+    DataQualityWatchdog,
+)
+from realtime_analysis.data_quality_publisher import DataQualityEventPublisher
 from realtime_analysis.dlq import DlqPublisher
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
@@ -121,6 +126,16 @@ def main() -> None:
         ),
     )
     event_publisher = AnalysisEventPublisher(settings)
+    data_quality_monitor = DataQualityMonitor(
+        publisher=DataQualityEventPublisher(settings),
+        gap_threshold_seconds=(
+            settings.analysis_data_gap_threshold_seconds
+        ),
+        recovery_confirmation_samples=(
+            settings.analysis_data_recovery_confirmation_samples
+        ),
+        on_gap=activity_repository.close_open_sessions,
+    )
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(settings.model_window_size),
         # 실제 모델 Predictor로 교체해도 동일하게 Manifest의 mean/std를 적용한다.
@@ -143,6 +158,7 @@ def main() -> None:
         event_publisher=event_publisher,
         snapshot_publisher=AnalysisSnapshotPublisher(settings),
         timezone_name=settings.analysis_timezone,
+        data_quality_monitor=data_quality_monitor,
     )
     consumer = AnalysisConsumer(
         settings=settings,
@@ -162,6 +178,11 @@ def main() -> None:
             "kafka_activity": kafka_readiness_check(
                 kafka_admin,
                 settings.kafka_analysis_activity_topic,
+                settings.readiness_timeout_seconds,
+            ),
+            "kafka_data_quality": kafka_readiness_check(
+                kafka_admin,
+                settings.kafka_analysis_data_quality_topic,
                 settings.readiness_timeout_seconds,
             ),
             "database": database_readiness_check(session_factory),
@@ -215,12 +236,18 @@ def main() -> None:
         publish_minute=settings.activity_index_publish_minute,
         poll_seconds=settings.activity_index_scheduler_poll_seconds,
     )
+    data_quality_watchdog = DataQualityWatchdog(
+        monitor=data_quality_monitor,
+        poll_seconds=settings.analysis_data_quality_poll_seconds,
+    )
     observability_server.start()
     daily_activity_scheduler.start(stop_event)
+    data_quality_watchdog.start(stop_event)
     try:
         consumer.run(stop_event)
     finally:
         stop_event.set()
+        data_quality_watchdog.stop()
         daily_activity_scheduler.stop()
         observability_server.stop()
 
