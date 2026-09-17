@@ -8,8 +8,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 // 동시 응답 -> 비관적락
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
@@ -23,6 +25,9 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             limit 1
             """, nativeQuery = true)
     Optional<Notification> findLatestAlertBySubjectId(@Param("subjectId") Long subjectId);
+
+    // 이상 징후 목록에서 이벤트마다 연결된 알림을 한 번에 채운다.
+    List<Notification> findAllByEventIdIn(Collection<UUID> eventIds);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select n from Notification n where n.id = :id")

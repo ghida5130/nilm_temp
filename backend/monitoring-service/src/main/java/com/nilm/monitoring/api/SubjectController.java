@@ -1,8 +1,10 @@
 package com.nilm.monitoring.api;
 
 import com.nilm.monitoring.dto.SubjectCreateRequest;
+import com.nilm.monitoring.dto.SubjectEventsResponse;
 import com.nilm.monitoring.dto.SubjectMonitoringResponse;
 import com.nilm.monitoring.dto.SubjectPowerUsageResponse;
+import com.nilm.monitoring.service.SubjectEventService;
 import com.nilm.monitoring.service.SubjectPowerUsageService;
 import com.nilm.monitoring.service.SubjectRegistrationService;
 import com.nilm.monitoring.service.SubjectMonitoringService;
@@ -31,6 +33,7 @@ public class SubjectController {
     private final SubjectRegistrationService registrationService;
     private final SubjectMonitoringService monitoringService;
     private final SubjectPowerUsageService powerUsageService;
+    private final SubjectEventService eventService;
 
     @GetMapping("/search")
     public ResponseEntity<SubjectMonitoringResponse> getSubjects(
@@ -57,6 +60,28 @@ public class SubjectController {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(powerUsageService.getPowerUsage(authSub, subjectId, date));
+    }
+
+    /**
+     * 대상자 상세 화면의 이상 징후(위험 이벤트) 기록.
+     * from/to를 생략하면 Asia/Seoul 기준 최근 7일을 조회한다.
+     */
+    @GetMapping("/{subjectId}/events")
+    public ResponseEntity<SubjectEventsResponse> getEvents(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable Long subjectId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor
+    ) {
+        String authSub = jwt == null ? null : jwt.getSubject();
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(eventService.getEvents(
+                        authSub, subjectId, from, to, size, cursor));
     }
 
     @PostMapping
