@@ -10,13 +10,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.web.method.annotation.HandlerMethodValidationException;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -45,30 +40,6 @@ public class GlobalExceptionHandler {
                 "입력값 검증에 실패했습니다.", request.getRequestURI(), errors));
     }
 
-    @ExceptionHandler(HandlerMethodValidationException.class)
-    public ResponseEntity<ErrorResponse> handleHandlerMethodValidation(
-            HandlerMethodValidationException e, HttpServletRequest request) {
-        List<ErrorResponse.FieldErrorDetail> errors = e.getParameterValidationResults().stream()
-                .flatMap(result -> result.getResolvableErrors().stream()
-                        .map(error -> new ErrorResponse.FieldErrorDetail(
-                                result.getMethodParameter().getParameterName(), error.getDefaultMessage())))
-                .toList();
-        return ResponseEntity.badRequest().body(ErrorResponse.of(
-                HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
-                "입력값 검증에 실패했습니다.", request.getRequestURI(), errors));
-    }
-
-    @ExceptionHandler({HttpMessageNotReadableException.class,
-            MethodArgumentTypeMismatchException.class,
-            MissingServletRequestParameterException.class,
-            BadRequestException.class,
-            IllegalArgumentException.class})
-    public ResponseEntity<ErrorResponse> handleBadRequest(Exception e, HttpServletRequest request) {
-        return ResponseEntity.badRequest().body(ErrorResponse.of(
-                HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
-                "입력값 검증에 실패했습니다.", request.getRequestURI(), List.of()));
-    }
-
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResourceFound(
             NoResourceFoundException e, HttpServletRequest request) {
@@ -77,52 +48,21 @@ public class GlobalExceptionHandler {
                 "요청한 리소스를 찾을 수 없습니다.", request.getRequestURI(), List.of()));
     }
 
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleResourceNotFound(
-            ResourceNotFoundException e, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.of(
-                HttpStatus.NOT_FOUND.value(), "NOT_FOUND", e.getMessage(),
-                request.getRequestURI(), List.of()));
-    }
-
-    @ExceptionHandler(ForbiddenException.class)
-    public ResponseEntity<ErrorResponse> handleForbidden(
-            ForbiddenException e, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ErrorResponse.of(
-                HttpStatus.FORBIDDEN.value(), "FORBIDDEN", e.getMessage(),
-                request.getRequestURI(), List.of()));
-    }
-
-    @ExceptionHandler(ConflictException.class)
-    public ResponseEntity<ErrorResponse> handleConflict(
-            ConflictException e, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
-                HttpStatus.CONFLICT.value(), "CONFLICT", e.getMessage(),
-                request.getRequestURI(), List.of()));
-    }
-
-    @ExceptionHandler({ObjectOptimisticLockingFailureException.class, DataIntegrityViolationException.class})
-    public ResponseEntity<ErrorResponse> handlePersistenceConflict(
-            RuntimeException e, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(
-                HttpStatus.CONFLICT.value(), "CONFLICT", "다른 요청과 충돌했습니다.",
-                request.getRequestURI(), List.of()));
-    }
-
-    @ExceptionHandler(ServiceUnavailableException.class)
-    public ResponseEntity<ErrorResponse> handleServiceUnavailable(
-            ServiceUnavailableException e, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(ErrorResponse.of(
-                HttpStatus.SERVICE_UNAVAILABLE.value(), "SERVICE_UNAVAILABLE", e.getMessage(),
-                request.getRequestURI(), List.of()));
-    }
-
-    @ExceptionHandler(TooManyRequestsException.class)
-    public ResponseEntity<ErrorResponse> handleTooManyRequests(
-            TooManyRequestsException e, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(ErrorResponse.of(
-                HttpStatus.TOO_MANY_REQUESTS.value(), "TOO_MANY_REQUESTS", e.getMessage(),
-                request.getRequestURI(), List.of()));
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(
+            ResponseStatusException e,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.status(e.getStatusCode())
+                .body(ErrorResponse.of(
+                        e.getStatusCode().value(),
+                        "REQUEST_REJECTED",
+                        e.getReason() == null
+                                ? "요청을 처리할 수 없습니다."
+                                : e.getReason(),
+                        request.getRequestURI(),
+                        List.of()
+                ));
     }
 
     @ExceptionHandler(Exception.class)
