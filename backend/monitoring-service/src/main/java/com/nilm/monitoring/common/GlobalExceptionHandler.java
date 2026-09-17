@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -38,6 +39,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(ErrorResponse.of(
                 HttpStatus.BAD_REQUEST.value(), "VALIDATION_ERROR",
                 "입력값 검증에 실패했습니다.", request.getRequestURI(), errors));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(
+            HttpMessageNotReadableException e,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                "MALFORMED_REQUEST",
+                "요청 본문을 읽을 수 없습니다.",
+                request.getRequestURI(),
+                List.of()
+        ));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
