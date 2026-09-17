@@ -22,13 +22,21 @@ public class Manager {
     @Column(nullable = false)
     private String organization;
 
+    @Column(length = 20)
+    private String phone;
+
     @Column(name = "sound_enabled", nullable = false)
     private boolean soundEnabled = true;
 
     public Manager(String authSub, String name, String organization) {
+        this(authSub, name, organization, null);
+    }
+
+    public Manager(String authSub, String name, String organization, String phone) {
         this.authSub = authSub;
         this.name = name;
         this.organization = organization;
+        this.phone = phone;
     }
 
     public void changeSoundSetting(boolean enabled) {

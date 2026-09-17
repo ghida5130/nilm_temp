@@ -25,7 +25,7 @@ public class SubjectController {
     private final SubjectRegistrationService registrationService;
     private final SubjectMonitoringService monitoringService;
 
-    @GetMapping
+    @GetMapping("/search")
     public ResponseEntity<SubjectMonitoringResponse> getSubjects(
             @AuthenticationPrincipal Jwt jwt
     ) {

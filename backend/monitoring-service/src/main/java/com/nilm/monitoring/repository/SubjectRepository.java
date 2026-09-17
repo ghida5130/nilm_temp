@@ -3,6 +3,7 @@ import com.nilm.monitoring.domain.Subject;
 import jakarta.persistence.LockModeType;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 public interface SubjectRepository extends JpaRepository<Subject, Long> {
@@ -10,6 +11,8 @@ public interface SubjectRepository extends JpaRepository<Subject, Long> {
     boolean existsByHouseholdId(String householdId);
 
     List<Subject> findAllByManagerIdOrderByIdAsc(Long managerId);
+
+    Optional<Subject> findByAuthSub(String authSub);
 
     @Modifying
     @Query("""

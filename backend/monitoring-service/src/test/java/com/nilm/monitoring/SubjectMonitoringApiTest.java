@@ -25,7 +25,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 class SubjectMonitoringApiTest {
 
-    private static final String ENDPOINT = "/api/monitoring/subjects";
+    private static final String ENDPOINT = "/api/monitoring/subjects/search";
+    private static final String DASHBOARD_ENDPOINT = "/api/monitoring/dashboard";
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     @Autowired MockMvc mockMvc;
@@ -80,7 +81,7 @@ class SubjectMonitoringApiTest {
 
         mockMvc.perform(get(ENDPOINT)
                         .with(jwt().jwt(token -> token.subject("manager-a"))))
-                .andExpect(status().isCreated())
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.subjects.length()").value(1))
                 .andExpect(jsonPath("$.subjects[0].subjectId")
                         .value(Long.toString(subjectId)))
@@ -127,7 +128,7 @@ class SubjectMonitoringApiTest {
 
         mockMvc.perform(get(ENDPOINT)
                         .with(jwt().jwt(token -> token.subject("manager-a"))))
-                .andExpect(status().isCreated())
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.subjects[0].lastActivity").doesNotExist())
                 .andExpect(jsonPath("$.subjects[0].latestAlert").doesNotExist())
                 .andExpect(jsonPath("$.subjects[0].riskTrend.dailyScores.length()")
@@ -153,6 +154,16 @@ class SubjectMonitoringApiTest {
         insertManager("manager-a");
 
         mockMvc.perform(get(ENDPOINT)
+                        .with(jwt().jwt(token -> token.subject("manager-a"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subjects.length()").value(0));
+    }
+
+    @Test
+    void dashboardEndpointReusesTheManagerSummaryAndReturnsCreated() throws Exception {
+        insertManager("manager-a");
+
+        mockMvc.perform(get(DASHBOARD_ENDPOINT)
                         .with(jwt().jwt(token -> token.subject("manager-a"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.subjects.length()").value(0));
