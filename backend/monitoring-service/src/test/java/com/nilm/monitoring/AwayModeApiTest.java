@@ -3,6 +3,7 @@ package com.nilm.monitoring;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,6 +60,12 @@ class AwayModeApiTest {
                 OffsetDateTime.class);
     }
 
+    private OffsetDateTime awayUntil() {
+        return jdbc.queryForObject(
+                "select away_until from subjects where auth_sub = 'subject-a'",
+                OffsetDateTime.class);
+    }
+
     private ResultActions call(String body) throws Exception {
         return mockMvc.perform(put(ENDPOINT)
                 .with(jwt().jwt(token -> token.subject("subject-a")))
@@ -73,12 +80,12 @@ class AwayModeApiTest {
         call("""
                 {"enabled": true, "endsAt": "%s"}
                 """.formatted(endsAt))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.enabled").value(true))
-                .andExpect(jsonPath("$.scheduled").value(false))
-                .andExpect(jsonPath("$.until").value(endsAt.toString()));
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
 
         assertThat(monitoringEnabled()).isFalse();
+        assertThat(awayStartedAt()).isNotNull();
+        assertThat(awayUntil()).isEqualTo(endsAt);
     }
 
     @Test
@@ -86,12 +93,12 @@ class AwayModeApiTest {
         call("""
                 {"enabled": true}
                 """)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.enabled").value(true))
-                .andExpect(jsonPath("$.scheduled").value(false))
-                .andExpect(jsonPath("$.until").doesNotExist());
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
 
         assertThat(monitoringEnabled()).isFalse();
+        assertThat(awayStartedAt()).isNotNull();
+        assertThat(awayUntil()).isNull();
     }
 
     @Test
@@ -102,28 +109,26 @@ class AwayModeApiTest {
         call("""
                 {"enabled": true, "startsAt": "%s", "endsAt": "%s"}
                 """.formatted(startsAt, endsAt))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.enabled").value(false))
-                .andExpect(jsonPath("$.scheduled").value(true))
-                .andExpect(jsonPath("$.startedAt").value(startsAt.toString()))
-                .andExpect(jsonPath("$.until").value(endsAt.toString()));
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
 
         // 예약을 걸었을 뿐이므로 지금은 계속 감시해야 한다.
         assertThat(monitoringEnabled()).isTrue();
+        assertThat(awayStartedAt()).isEqualTo(startsAt);
+        assertThat(awayUntil()).isEqualTo(endsAt);
     }
 
     @Test
     void cancellingWhileAwayResumesMonitoringAndKeepsTheWindow() throws Exception {
         call("""
                 {"enabled": true}
-                """).andExpect(status().isOk());
+                """).andExpect(status().isNoContent());
 
         call("""
                 {"enabled": false}
                 """)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.enabled").value(false))
-                .andExpect(jsonPath("$.scheduled").value(false));
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
 
         assertThat(monitoringEnabled()).isTrue();
         // 늦게 도착한 이벤트를 판정할 수 있도록 지나간 구간은 남긴다.
@@ -134,14 +139,13 @@ class AwayModeApiTest {
     void cancellingAPendingReservationRemovesIt() throws Exception {
         call("""
                 {"enabled": true, "startsAt": "%s"}
-                """.formatted(now().plusHours(3))).andExpect(status().isOk());
+                """.formatted(now().plusHours(3))).andExpect(status().isNoContent());
 
         call("""
                 {"enabled": false}
                 """)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.scheduled").value(false))
-                .andExpect(jsonPath("$.startedAt").doesNotExist());
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
 
         assertThat(awayStartedAt()).isNull();
     }

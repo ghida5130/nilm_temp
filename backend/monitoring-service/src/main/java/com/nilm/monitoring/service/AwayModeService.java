@@ -3,7 +3,6 @@ package com.nilm.monitoring.service;
 import com.nilm.monitoring.config.enums.StateChangeTrigger;
 import com.nilm.monitoring.domain.Subject;
 import com.nilm.monitoring.dto.AwayModeRequest;
-import com.nilm.monitoring.dto.MyDashboardResponse;
 import com.nilm.monitoring.repository.SubjectRepository;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -29,7 +28,7 @@ public class AwayModeService {
     private final ApplicationEventPublisher publisher;
 
     @Transactional
-    public MyDashboardResponse.AwayMode updateAwayMode(
+    public void updateAwayMode(
             String subjectAuthSub,
             AwayModeRequest request
     ) {
@@ -66,8 +65,6 @@ public class AwayModeService {
             publisher.publishEvent(
                     new SubjectStateChanged(subject.getId(), StateChangeTrigger.AWAY_MODE));
         }
-
-        return MyDashboardResponse.AwayMode.from(subject, now);
     }
 
     /**

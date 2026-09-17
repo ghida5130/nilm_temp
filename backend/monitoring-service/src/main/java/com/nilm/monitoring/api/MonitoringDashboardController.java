@@ -50,11 +50,12 @@ public class MonitoringDashboardController {
      * enabled=false는 해제이며 시간을 함께 보낼 수 없다.
      */
     @PutMapping("/my-dashboard/away-mode")
-    public ResponseEntity<MyDashboardResponse.AwayMode> updateAwayMode(
+    public ResponseEntity<Void> updateAwayMode(
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody AwayModeRequest request
     ) {
         String authSub = jwt == null ? null : jwt.getSubject();
-        return ResponseEntity.ok(awayModeService.updateAwayMode(authSub, request));
+        awayModeService.updateAwayMode(authSub, request);
+        return ResponseEntity.noContent().build();
     }
 }
