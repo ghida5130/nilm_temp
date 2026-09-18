@@ -15,6 +15,7 @@ services:
       - ${OBSERVABILITY_ROOT:-.}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ${OBSERVABILITY_ROOT:-.}/prometheus/targets/${TARGET_ENV:-ec2-a}:/etc/prometheus/targets:ro
       - ${OBSERVABILITY_ROOT:-.}/prometheus/resources-disabled:/etc/prometheus/resources:ro
+      - ${OBSERVABILITY_ROOT:-.}/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     extra_hosts:
       - "ec2-b.internal:${EC2_B_PRIVATE_IP:?Set EC2_B_PRIVATE_IP}"
