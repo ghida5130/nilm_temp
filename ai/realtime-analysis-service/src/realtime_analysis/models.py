@@ -129,6 +129,27 @@ class AnalysisPolicy(Base):
     )
 
 
+class AnalysisEventEmission(Base):
+    """Successfully published analysis events used for cooldown checks."""
+
+    __tablename__ = "analysis_event_emission"
+    __table_args__ = (
+        Index(
+            "ix_analysis_event_emission_cooldown",
+            "household_id",
+            "event_type",
+            "appliance_type",
+            "emitted_at",
+        ),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(primary_key=True)
+    household_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    appliance_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    emitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class HouseholdObservationDaily(Base):
     __tablename__ = "household_observation_daily"
     __table_args__ = (

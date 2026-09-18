@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 from prometheus_client import CollectorRegistry
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.anomaly_detector import (
@@ -12,8 +12,12 @@ from realtime_analysis.anomaly_detector import (
     SqlAlchemyEventDetectionRepository,
 )
 from realtime_analysis.database import Base
+from realtime_analysis.event_emission_repository import (
+    SqlAlchemyEventEmissionRepository,
+)
 from realtime_analysis.metrics import AnalysisMetrics
 from realtime_analysis.models import (
+    AnalysisEventEmission,
     ApplianceUsageSession,
     HouseholdActivityDaily,
     HouseholdObservationDaily,
@@ -27,6 +31,7 @@ def session_factory() -> sessionmaker[Session]:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     for table_name in (
         "analysis_policy",
+        "analysis_event_emission",
         "household_observation_daily",
         "household_activity_daily",
         "appliance_usage_session",
@@ -79,10 +84,14 @@ def detector(
     metrics: AnalysisMetrics | None = None,
 ) -> RealtimeAnomalyDetector:
     return RealtimeAnomalyDetector(
-        SqlAlchemyEventDetectionRepository(session_factory, "Asia/Seoul"),
-        policies(session_factory),
-        "Asia/Seoul",
-        metrics or AnalysisMetrics(CollectorRegistry()),
+        repository=SqlAlchemyEventDetectionRepository(
+            session_factory,
+            "Asia/Seoul",
+        ),
+        policy_repository=policies(session_factory),
+        timezone_name="Asia/Seoul",
+        emission_repository=SqlAlchemyEventEmissionRepository(session_factory),
+        metrics=metrics or AnalysisMetrics(CollectorRegistry()),
     )
 
 
@@ -167,7 +176,7 @@ def test_routine_missed_is_restart_stable_and_emitted_once(
 
     restarted = detector(session_factory)
     after_restart = restarted.detect("H001", observed_at, [baseline()])
-    assert after_restart[0].event.event_id == first[0].event.event_id
+    assert after_restart == []
 
 
 def test_routine_missed_skips_already_emitted_daily_candidate_early(
@@ -280,7 +289,53 @@ def test_prolonged_appliance_use_is_emitted_once_per_open_session(
         [],
     ) == []
     restarted = detector(session_factory).detect("H001", observed_at, [])
-    assert restarted[0].event.event_id == events[0].event.event_id
+    assert restarted == []
+
+
+def test_persisted_cooldown_survives_detector_restart(
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_at = datetime.fromisoformat("2026-09-17T09:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+
+    emissions = SqlAlchemyEventEmissionRepository(session_factory)
+    emissions.record_emission(
+        event_id=UUID("dd070da7-0eb8-5915-91aa-a7956fca5eb5"),
+        household_id="H001",
+        event_type="ROUTINE_MISSED",
+        appliance_type="MICROWAVE",
+        emitted_at=observed_at.astimezone(timezone.utc) - timedelta(hours=1),
+    )
+
+    restarted = detector(session_factory)
+
+    assert restarted.detect("H001", observed_at, [baseline()]) == []
+
+
+def test_same_event_id_reprocessing_does_not_duplicate_emission(
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_at = datetime.fromisoformat("2026-09-17T09:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+
+    active_detector = detector(session_factory)
+    events = active_detector.detect("H001", observed_at, [baseline()])
+    assert len(events) == 1
+
+    active_detector.mark_emitted(events[0])
+    active_detector.mark_emitted(events[0])
+
+    with session_factory() as session:
+        emissions = session.scalars(select(AnalysisEventEmission)).all()
+        assert len(emissions) == 1
+        assert emissions[0].event_id == events[0].event.event_id
+    assert detector(session_factory).detect(
+        "H001",
+        observed_at,
+        [baseline()],
+    ) == []
 
 
 def test_realtime_detector_records_each_pattern_evaluation(
