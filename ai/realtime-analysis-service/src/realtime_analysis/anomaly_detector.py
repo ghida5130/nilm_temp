@@ -296,15 +296,27 @@ class RealtimeAnomalyDetector:
         ):
             return []
 
-        pending = [
-            *self._evaluate_pattern(
+        routine_missed_baselines = self._unemitted_routine_missed_baselines(
+            household_id,
+            measured_at,
+            baselines,
+        )
+        routine_missed = []
+        # An empty configured baseline list is still a real evaluation. When
+        # every configured candidate was already emitted for this local date,
+        # skip the repeated algorithm and its database lookups entirely.
+        if not baselines or routine_missed_baselines:
+            routine_missed = self._evaluate_pattern(
                 "ROUTINE_MISSED",
                 lambda: self._routine_missed(
                     household_id,
                     measured_at,
-                    baselines,
+                    routine_missed_baselines,
                 ),
-            ),
+            )
+
+        pending = [
+            *routine_missed,
             *self._evaluate_pattern(
                 "PROLONGED_INACTIVITY",
                 lambda: self._prolonged_inactivity(household_id, observed_at),
@@ -341,6 +353,25 @@ class RealtimeAnomalyDetector:
                 pattern,
                 perf_counter() - started_at,
             )
+
+    def _unemitted_routine_missed_baselines(
+        self,
+        household_id: str,
+        measured_at: datetime,
+        baselines: list[RoutineBaseline],
+    ) -> list[RoutineBaseline]:
+        activity_date = measured_at.astimezone(self._timezone).date()
+        return [
+            baseline
+            for baseline in baselines
+            if event_id_for(
+                household_id,
+                "ROUTINE_MISSED",
+                baseline.appliance_type,
+                activity_date.isoformat(),
+            )
+            not in self._emitted_event_ids
+        ]
 
     def mark_emitted(self, anomaly: PendingAnomaly) -> None:
         self._emitted_event_ids.add(anomaly.event.event_id)

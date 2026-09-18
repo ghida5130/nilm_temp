@@ -145,7 +145,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(pattern,result) (nilm_pattern_detection_total{job=\"ai-analysis\",instance=~\"$instance\"})",
+          "expr": "sum by(pattern,result) (nilm_pattern_detection_total{job=\"ai-analysis\",instance=~\"$instance\"}) > 0",
           "legendFormat": "{{pattern}} / {{result}}",
           "datasource": {
             "type": "prometheus",
@@ -197,7 +197,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(pattern,result) (rate(nilm_pattern_detection_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
+          "expr": "sum by(pattern,result) (rate(nilm_pattern_detection_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval])) > 0",
           "legendFormat": "{{pattern}} / {{result}}",
           "datasource": {
             "type": "prometheus",
@@ -248,7 +248,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(pattern,result) (increase(nilm_pattern_detection_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by(pattern,result) (increase(nilm_pattern_detection_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range])) > 0",
           "legendFormat": "{{pattern}} / {{result}}",
           "datasource": {
             "type": "prometheus",
@@ -404,7 +404,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(event_type) (rate(nilm_pattern_events_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
+          "expr": "sum by(event_type) (rate(nilm_pattern_events_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval])) > 0",
           "legendFormat": "{{event_type}}",
           "datasource": {
             "type": "prometheus",
@@ -455,7 +455,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(event_type) (nilm_pattern_events_total{job=\"ai-analysis\",instance=~\"$instance\"})",
+          "expr": "sum by(event_type) (nilm_pattern_events_total{job=\"ai-analysis\",instance=~\"$instance\"}) > 0",
           "legendFormat": "{{event_type}}",
           "datasource": {
             "type": "prometheus",
@@ -506,7 +506,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(exported_job,status) (increase(nilm_daily_job_runs_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by(exported_job,status) (increase(nilm_daily_job_runs_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range])) > 0",
           "legendFormat": "{{exported_job}} / {{status}}",
           "datasource": {
             "type": "prometheus",
@@ -557,7 +557,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(exported_job,status) (nilm_daily_job_runs_total{job=\"ai-analysis\",instance=~\"$instance\"})",
+          "expr": "sum by(exported_job,status) (nilm_daily_job_runs_total{job=\"ai-analysis\",instance=~\"$instance\"}) > 0",
           "legendFormat": "{{exported_job}} / {{status}}",
           "datasource": {
             "type": "prometheus",
@@ -761,7 +761,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(event_type) (increase(nilm_pattern_events_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range]))",
+          "expr": "sum by(event_type) (increase(nilm_pattern_events_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range])) > 0",
           "legendFormat": "{{event_type}}",
           "datasource": {
             "type": "prometheus",

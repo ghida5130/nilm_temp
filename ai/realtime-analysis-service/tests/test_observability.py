@@ -127,6 +127,36 @@ def test_metrics_endpoint_exposes_dashboard_metrics() -> None:
     )
 
 
+def test_fixed_counter_labels_are_exposed_at_zero_before_first_increment() -> None:
+    registry = CollectorRegistry()
+    AnalysisMetrics(registry)
+
+    assert registry.get_sample_value(
+        "nilm_analysis_messages_total",
+        {"status": "processed"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_analysis_dlq_messages_total",
+        {"reason": "INVALID_JSON"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_MISSED", "result": "detected"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_CHANGED", "result": "skipped"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_pattern_events_total",
+        {"event_type": "ROUTINE_MISSED"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_daily_job_runs_total",
+        {"job": "activity_index", "status": "success"},
+    ) == 0
+
+
 def test_pipeline_timing_updates_histogram_and_throughput(monkeypatch) -> None:
     registry = CollectorRegistry()
     metrics = AnalysisMetrics(registry)

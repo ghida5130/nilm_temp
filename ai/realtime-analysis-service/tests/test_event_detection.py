@@ -170,6 +170,40 @@ def test_routine_missed_is_restart_stable_and_emitted_once(
     assert after_restart[0].event.event_id == first[0].event.event_id
 
 
+def test_routine_missed_skips_already_emitted_daily_candidate_early(
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_at = datetime.fromisoformat("2026-09-17T09:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+
+    registry = CollectorRegistry()
+    metrics = AnalysisMetrics(registry)
+    active_detector = detector(session_factory, metrics)
+
+    first = active_detector.detect("H001", observed_at, [baseline()])
+    assert len(first) == 1
+    active_detector.mark_emitted(first[0])
+
+    assert active_detector.detect(
+        "H001",
+        observed_at + timedelta(minutes=1),
+        [baseline()],
+    ) == []
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_MISSED", "result": "detected"},
+    ) == 1
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_MISSED", "result": "not_detected"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_duration_seconds_count",
+        {"pattern": "ROUTINE_MISSED"},
+    ) == 1
+
+
 def test_routine_missed_uses_persisted_session_before_deadline(
     session_factory: sessionmaker[Session],
 ) -> None:
