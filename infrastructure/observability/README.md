@@ -18,9 +18,10 @@ docker compose --env-file .env up -d prometheus blackbox-exporter grafana
 
 # Observability
 
-EC2-A에서 Prometheus·Grafana·Blackbox Exporter를 실행하는 관측 스택.
+EC2-A에서 Prometheus·Grafana·Blackbox Exporter를 실행하는 관측 설정 모음.
 EC2-A 서비스는 Docker 네트워크, EC2-B의 AI/Kafka/PostgreSQL은 사설 IP를 통해 수집.
-기존 Compose 파일 수정 없이 독립 실행하거나 추후 기존 Compose에 병합 가능.
+운영에서는 `infrastructure/ec2-a/compose.yaml`에 통합되어 Jenkins가 기본 서비스와
+함께 배포한다. 이 디렉터리의 Compose는 로컬 개발과 기존 독립 실행 호환용이다.
 
 ## 수집 범위
 
@@ -39,21 +40,17 @@ DB 쿼리 성능, Kafka 전체 Consumer Group의 committed lag, JVM 업무 지�
 
 ## EC2-A에서 실행
 
-기존 `infrastructure/ec2-a` 스택이 실행되어 `nilm-a_default` 네트워크가 있어야 함.
-기존 Compose와 합치지 않고 이 폴더에서 별도 프로젝트로 실행.
+운영에서는 EC2-A 런타임 환경 파일에 `GRAFANA_ADMIN_PASSWORD`,
+`EC2_B_PRIVATE_IP`, `PROMETHEUS_PORT`, `GRAFANA_PORT`를 설정한다. Jenkins의
+`Prepare A`가 이 디렉터리를 `/opt/nilm/observability`로 복사하고 `Deploy A`가
+EC2-A 기본 Compose의 세 관측 서비스를 함께 기동한다.
+
+수동 확인 시 EC2-A에서 다음을 사용한다.
 
 ```sh
-cd infrastructure/observability
-cp .env.ec2-a.example .env
-```
-
-`.env`의 `GRAFANA_ADMIN_PASSWORD`와 `EC2_B_PRIVATE_IP` 입력. 비어 있으면 Compose 실행 거부.
-`EC2_B_PRIVATE_IP`는 실제 EC2-B 사설 IPv4 주소. Prometheus와 Blackbox 컨테이너에 `ec2-b.internal` 호스트명으로 매핑.
-Prometheus 대상 JSON 자체는 환경변수를 치환하지 않으므로 고정 호스트 별칭 사용.
-
-```sh
-docker compose up -d
-docker compose ps
+cd /opt/nilm
+docker compose ps prometheus grafana blackbox-exporter
+docker compose logs --tail=100 prometheus
 ```
 
 - Grafana: http://localhost:13001 (`admin` / 지정 비밀번호)
@@ -89,40 +86,15 @@ rootless Docker나 다른 data-root에서는 이 폴더의 `compose.resources.ya
 docker compose -f compose.yaml -f compose.resources.yaml down
 ```
 
-## EC2-B AI 수집 포트 연결
+## EC2-B 수집 포트 연결
 
-현재 EC2-B의 AI 서비스는 컨테이너 내부 8000만 사용하므로 EC2-A에서 직접 접근할 수 없음.
-`compose.ec2-b.override.yaml`은 기존 AI 서비스의 8000을 EC2-B 사설 IP에 바인딩하는 추가 파일.
-이 파일만 단독 실행하지 말고 기존 EC2-B Compose와 병합. 기존 파일 자체는 변경하지 않음.
-EC2-B에서 기존 배포용 환경변수와 CONFIG_ROOT를 사용하여 실행. 아래 명령의 작업 디렉터리는 기존 `infrastructure/ec2-b`.
-
-```sh
-docker compose -p nilm-b --env-file .env -f compose.yaml -f ../observability/compose.ec2-b.override.yaml up -d --no-deps realtime-analysis-service
-```
-
-적용 시 AI 컨테이너가 재생성될 수 있음. 이후 배포에도 override를 포함해야 포트 설정 유지.
+EC2-B 기본 Compose가 AI 8000과 node-exporter 9100을 EC2-B 사설 IP에 바인딩한다.
+별도 `compose.ec2-b.override.yaml`은 더 이상 운영 배포에 필요하지 않으며 기존 수동
+실행과의 호환을 위해서만 남긴다.
 EC2-B 보안 그룹에서 EC2-A 보안 그룹 또는 사설 IP에 대해서만 TCP 8000 허용 필요.
-TCP probe를 위해 5432/9092도 EC2-A에서 접근 가능해야 함. 이 두 포트는 기존 EC2-B Compose에 사설 IP 바인딩이 있음.
+node-exporter 수집을 위해 9100도 같은 범위로 허용한다. TCP probe를 위해
+5432/9092도 EC2-A에서 접근 가능해야 한다.
 8000에서는 metrics뿐 아니라 health/ready도 제공하므로 인터넷에 공개하지 않음.
-이번 변경은 파일 구성만 제공하며 서버 배포와 보안 그룹 변경은 수행하지 않음.
-
-## 추후 EC2-A Compose에 병합
-
-상대 경로 기준이 첫 Compose 파일로 바뀌므로 `OBSERVABILITY_ROOT`를 EC2-A 서버의 이 폴더 절대 경로로 설정.
-기존 프로젝트 이름 `nilm-a`를 유지하고 기존 배포 환경변수에 관측용 환경변수를 함께 제공.
-다음은 기존 `infrastructure/ec2-a`에서 실행하는 예시. 실제 배포의 환경 파일 경로와 CONFIG_ROOT 유지.
-
-```sh
-export OBSERVABILITY_ROOT=/absolute/path/to/infrastructure/observability
-docker compose -p nilm-a --env-file .env --env-file ../observability/.env -f compose.yaml -f ../observability/compose.yaml config --quiet
-docker compose -p nilm-a --env-file .env --env-file ../observability/.env -f compose.yaml -f ../observability/compose.yaml up -d prometheus grafana blackbox-exporter
-```
-
-셸의 OBSERVABILITY_ROOT가 환경 파일의 `.`보다 우선. 관측용 네트워크는 `observability`라는 별도 키를 사용하여 기존 default 네트워크와 충돌 방지.
-`application`은 이미 존재하는 `nilm-a_default`에 연결하므로 기존 EC2-A 스택을 먼저 실행.
-독립 실행 중인 관측 스택이 있다면 먼저 그 프로젝트를 중지해 19090/13001 포트 충돌 방지.
-프로젝트가 `nilm-observability`에서 `nilm-a`로 바뀌면 named volume 이름도 변경됨. 기존 이력을 유지하려면 볼륨 이전 또는 기존 볼륨 명시가 필요하며 자동 이전하지 않음.
-자원 수집 포함 시 `-f ../observability/compose.resources.yaml`도 추가하고 cadvisor 서비스를 함께 실행.
 
 ## 로컬 개발용 대상
 
@@ -168,7 +140,7 @@ Grafana dashboard JSON은 약 30초 후 자동 반영, provisioning 설정 변�
 
 현재 구현에는 외부 폴더 수정이 필요하지 않음. 후속 JVM/업무 지표 수집에는 서비스 의존성·endpoint 노출 변경이 필요할 수 있으며 이번 작업에서는 적용하지 않음.
 AI E2E를 Kafka ACK 완료까지로 변경하거나 Consumer Lag을 committed 기준으로 바꾸려면 AI 코드 변경이 필요하며 현재 의미 그대로 표시.
-알림 규칙과 외부 알림 전송은 미구성.
+EC2-B 디스크·inode 알림 규칙은 구성되어 있다. Alertmanager 등 외부 알림 전송은 미구성이다.
 빌드 테스트는 수행하지 않음. 설정 검증은 다음 명령으로 실행 가능. `--promtool`은 공식 Prometheus v3.5.0 이미지로 설정, 44개 대시보드 쿼리 문법, 후보/발행 건수 구분, exported_job 집계, 첫 관측과 미실행 작업 처리를 검증하며 실행 중 서비스나 DB를 변경하지 않음.
 
 ```powershell
