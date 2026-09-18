@@ -37,9 +37,9 @@ services:
     depends_on:
       - namenode
 
-  loader:
-    build: ./loader
-    container_name: nilm-hdfs-loader
+  bronze-loader:
+    build: ../../collection/bronze-loader   # 원본 적재기 코드는 저장소 collection/에 둔다
+    container_name: nilm-bronze-loader
     restart: unless-stopped
     environment:
       KAFKA_BOOTSTRAP: kafka:19092

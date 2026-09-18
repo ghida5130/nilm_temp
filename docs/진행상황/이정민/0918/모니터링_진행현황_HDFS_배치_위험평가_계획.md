@@ -228,5 +228,5 @@ Kafka 원본 전력 ──→ 실시간 분석 N개 ──→ 패턴 이벤트 �
 - `ai/realtime-analysis-service/src/realtime_analysis/daily_activity_index.py`: 일일 마감·활동지수·작업 순서
 - `ai/realtime-analysis-service/src/realtime_analysis/baseline_updater.py`: 기준선 갱신
 - `ai/realtime-analysis-service/src/realtime_analysis/routine_change_detector.py`: 일일 루틴 변화 평가
-- `infrastructure/hdfs/loader/loader.py`: Kafka 원천 Parquet·quarantine·manifest 적재
+- `collection/bronze-loader/loader.py`: Kafka 원천 Parquet·quarantine·manifest 적재
 - `infrastructure/hdfs/docker-compose.yml`: HDFS 실행 구성
