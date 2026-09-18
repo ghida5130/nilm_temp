@@ -2,13 +2,15 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Protocol
+from time import perf_counter
+from typing import Callable, Protocol
 from uuid import UUID, uuid5
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from realtime_analysis.metrics import AnalysisMetrics, METRICS
 from realtime_analysis.models import (
     ApplianceUsageSession,
     HouseholdActivityDaily,
@@ -268,10 +270,12 @@ class RealtimeAnomalyDetector:
         repository: SqlAlchemyEventDetectionRepository,
         policy_repository: SqlAlchemyPolicyRepository,
         timezone_name: str,
+        metrics: AnalysisMetrics = METRICS,
     ) -> None:
         self._repository = repository
         self._policies = policy_repository
         self._timezone = ZoneInfo(timezone_name)
+        self._metrics = metrics
         self._last_evaluated_at: dict[str, datetime] = {}
         self._emitted_event_ids: set[UUID] = set()
         self._last_emitted_at: dict[tuple[str, str, str], datetime] = {}
@@ -293,9 +297,22 @@ class RealtimeAnomalyDetector:
             return []
 
         pending = [
-            *self._routine_missed(household_id, measured_at, baselines),
-            *self._prolonged_inactivity(household_id, observed_at),
-            *self._prolonged_appliance_use(household_id, observed_at),
+            *self._evaluate_pattern(
+                "ROUTINE_MISSED",
+                lambda: self._routine_missed(
+                    household_id,
+                    measured_at,
+                    baselines,
+                ),
+            ),
+            *self._evaluate_pattern(
+                "PROLONGED_INACTIVITY",
+                lambda: self._prolonged_inactivity(household_id, observed_at),
+            ),
+            *self._evaluate_pattern(
+                "PROLONGED_APPLIANCE_USE",
+                lambda: self._prolonged_appliance_use(household_id, observed_at),
+            ),
         ]
         return [
             anomaly
@@ -303,6 +320,27 @@ class RealtimeAnomalyDetector:
             if anomaly.event.event_id not in self._emitted_event_ids
             and not self._is_in_cooldown(anomaly)
         ]
+
+    def _evaluate_pattern(
+        self,
+        pattern: str,
+        operation: Callable[[], list[PendingAnomaly]],
+    ) -> list[PendingAnomaly]:
+        started_at = perf_counter()
+        try:
+            anomalies = operation()
+        except Exception:
+            self._metrics.record_pattern_detection(pattern, "error")
+            raise
+        else:
+            result = "detected" if anomalies else "not_detected"
+            self._metrics.record_pattern_detection(pattern, result)
+            return anomalies
+        finally:
+            self._metrics.observe_pattern_detection(
+                pattern,
+                perf_counter() - started_at,
+            )
 
     def mark_emitted(self, anomaly: PendingAnomaly) -> None:
         self._emitted_event_ids.add(anomaly.event.event_id)

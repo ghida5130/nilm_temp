@@ -2,11 +2,14 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock
 from uuid import UUID
 
+from prometheus_client import CollectorRegistry
+
 from realtime_analysis.anomaly_detector import RoutineMissedDetector
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.data_quality_monitor import DataQualityMonitor
 from realtime_analysis.handler import MeasurementHandler
+from realtime_analysis.metrics import AnalysisMetrics
 from realtime_analysis.predictor import APPLIANCE_ORDER, FakePredictor
 from realtime_analysis.schemas import (
     AnalysisEvent,
@@ -87,6 +90,8 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     publisher = RecordingPublisher()
     snapshot_publisher = RecordingSnapshotPublisher()
     activity_repository = Mock()
+    registry = CollectorRegistry()
+    metrics = AnalysisMetrics(registry)
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(window_size=3),
         predictor=FakePredictor(),   # 지금은 FakePredictor 사용
@@ -112,6 +117,7 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
         event_publisher=publisher,  # type: ignore[arg-type]
         snapshot_publisher=snapshot_publisher,  # type: ignore[arg-type]
         timezone_name="Asia/Seoul",
+        metrics=metrics,
     )
 
     handler(measurement(0))
@@ -128,6 +134,10 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
     assert activity_repository.record_observation.call_count == 4
     assert len(snapshot_publisher.snapshots) == 2
     assert snapshot_publisher.snapshots[0].snapshot_id == measurement(2).message_id
+    assert registry.get_sample_value(
+        "nilm_pattern_events_total",
+        {"event_type": "ROUTINE_MISSED"},
+    ) == 1
 
 
 def test_pipeline_records_usage_only_after_confirmed_on_transition() -> None:

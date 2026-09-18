@@ -498,6 +498,26 @@ Grafana의 단계별 레이턴시, E2E 지연, Consumer Lag, 처리량 패널에
 `nilm_analysis_stage_duration_seconds`, `nilm_analysis_e2e_duration_seconds`,
 `nilm_analysis_consumer_lag_messages`, `nilm_analysis_messages_total`을 사용합니다.
 
+패턴 감지와 일일 작업은 다음 메트릭으로 별도 계측합니다.
+
+| 메트릭 | 라벨 | 의미 |
+| --- | --- | --- |
+| `nilm_pattern_detection_duration_seconds` | `pattern` | 실제 패턴 알고리즘 호출 시간 Histogram |
+| `nilm_pattern_detection_total` | `pattern`, `result` | 패턴 판정 결과 누적 건수 |
+| `nilm_pattern_events_total` | `event_type` | Kafka 발행에 성공한 패턴 이벤트 누적 건수 |
+| `nilm_daily_job_duration_seconds` | `job` | 일일 작업 전체 실행시간 Histogram |
+| `nilm_daily_job_runs_total` | `job`, `status` | 일일 작업 성공·오류 누적 건수 |
+
+실시간 `pattern`은 `ROUTINE_MISSED`, `PROLONGED_INACTIVITY`,
+`PROLONGED_APPLIANCE_USE`, 일일 패턴은 `ROUTINE_CHANGED`를 사용합니다. 실시간 판정
+Counter와 Histogram은 공통 평가 주기 및 데이터 유효성 검사를 통과하여 실제 알고리즘을
+호출한 경우에만 증가합니다. `result=detected`는 cooldown·중복 제거 전 후보가 나온 경우이며,
+최종 발행 성공 건수는 `nilm_pattern_events_total`로 확인합니다.
+
+일일 `job`은 `activity_index`, `routine_changed`, `baseline_update`, `status`는
+`success`, `error`를 사용합니다. `ROUTINE_CHANGED` 정책이 없으면 패턴 판정 결과에는
+`result=skipped`가 기록되지만 일일 작업 자체는 성공으로 종료됩니다.
+
 ## analysis_db 스키마
 
 `analysis_db` 접근에는 SQLAlchemy를 사용하고, 테이블 변경 이력은 Alembic으로 관리합니다.

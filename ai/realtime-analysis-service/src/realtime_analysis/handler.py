@@ -10,7 +10,7 @@ from realtime_analysis.baseline import RoutineBaselineProvider
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.data_quality_monitor import DataQualityMonitor
 from realtime_analysis.event_producer import AnalysisEventPublisher
-from realtime_analysis.metrics import METRICS
+from realtime_analysis.metrics import AnalysisMetrics, METRICS
 from realtime_analysis.pipeline_timing import stage
 from realtime_analysis.predictor import Predictor
 from realtime_analysis.schemas import PowerMeasurement
@@ -39,6 +39,7 @@ class MeasurementHandler:
         snapshot_publisher: AnalysisSnapshotPublisher,
         timezone_name: str,
         data_quality_monitor: DataQualityMonitor | None = None,
+        metrics: AnalysisMetrics = METRICS,
     ) -> None:
         self._buffer = buffer
         self._predictor = predictor
@@ -52,6 +53,7 @@ class MeasurementHandler:
         self._snapshot_publisher = snapshot_publisher
         self._timezone = ZoneInfo(timezone_name)
         self._data_quality_monitor = data_quality_monitor
+        self._metrics = metrics
 
     def __call__(self, measurement: PowerMeasurement) -> None:
         quality_is_healthy = True
@@ -119,7 +121,7 @@ class MeasurementHandler:
         )
         with stage("snapshot_publish_ack"):
             self._snapshot_publisher.publish(snapshot)
-        METRICS.observe_e2e(
+        self._metrics.observe_e2e(
             (snapshot.published_at - snapshot.observed_at).total_seconds()
         )
         with stage("state_tracking"):
@@ -154,4 +156,5 @@ class MeasurementHandler:
         for anomaly in anomalies:
             with stage("event_publish_ack"):
                 self._event_publisher.publish(anomaly.event)
+            self._metrics.record_pattern_event(anomaly.event.event_type)
             self._detector.mark_emitted(anomaly)
