@@ -40,6 +40,26 @@ E2E_DURATION_BUCKETS = (
     300.0,
 )
 
+DAILY_JOB_DURATION_BUCKETS = (
+    0.001,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+    120.0,
+    300.0,
+    600.0,
+)
+
 
 class AnalysisMetrics:
     """Owns the bounded-cardinality metrics exposed by ``/metrics``."""
@@ -87,6 +107,38 @@ class AnalysisMetrics:
             "Currently loaded analysis model.",
             registry=registry,
         )
+        self.pattern_detection_duration = Histogram(
+            "nilm_pattern_detection_duration_seconds",
+            "Pattern detection algorithm duration in seconds.",
+            ("pattern",),
+            buckets=STAGE_DURATION_BUCKETS,
+            registry=registry,
+        )
+        self.pattern_detections = Counter(
+            "nilm_pattern_detection_total",
+            "Pattern detection evaluations by pattern and result.",
+            ("pattern", "result"),
+            registry=registry,
+        )
+        self.pattern_events = Counter(
+            "nilm_pattern_events_total",
+            "Pattern events successfully published to Kafka by event type.",
+            ("event_type",),
+            registry=registry,
+        )
+        self.daily_job_duration = Histogram(
+            "nilm_daily_job_duration_seconds",
+            "Daily analysis job duration in seconds.",
+            ("job",),
+            buckets=DAILY_JOB_DURATION_BUCKETS,
+            registry=registry,
+        )
+        self.daily_job_runs = Counter(
+            "nilm_daily_job_runs_total",
+            "Daily analysis job runs by job and terminal status.",
+            ("job", "status"),
+            registry=registry,
+        )
         self._lag_labels: set[tuple[str, str]] = set()
         self._lag_lock = Lock()
 
@@ -125,6 +177,23 @@ class AnalysisMetrics:
 
     def set_model_info(self, name: str, version: str) -> None:
         self.model.info({"name": name, "version": version})
+
+    def observe_pattern_detection(self, pattern: str, duration_seconds: float) -> None:
+        self.pattern_detection_duration.labels(pattern=pattern).observe(
+            duration_seconds
+        )
+
+    def record_pattern_detection(self, pattern: str, result: str) -> None:
+        self.pattern_detections.labels(pattern=pattern, result=result).inc()
+
+    def record_pattern_event(self, event_type: str) -> None:
+        self.pattern_events.labels(event_type=event_type).inc()
+
+    def observe_daily_job(self, job: str, duration_seconds: float) -> None:
+        self.daily_job_duration.labels(job=job).observe(duration_seconds)
+
+    def record_daily_job(self, job: str, status: str) -> None:
+        self.daily_job_runs.labels(job=job, status=status).inc()
 
 
 METRICS = AnalysisMetrics()

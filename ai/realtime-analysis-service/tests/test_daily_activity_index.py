@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import Mock
 
 import pytest
+from prometheus_client import CollectorRegistry
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,6 +15,7 @@ from realtime_analysis.daily_activity_index import (
     SessionSlice,
 )
 from realtime_analysis.database import Base
+from realtime_analysis.metrics import AnalysisMetrics
 from realtime_analysis.models import (
     ApplianceUsageSession,
     HouseholdActivityDaily,
@@ -255,12 +257,15 @@ def test_baseline_is_updated_after_daily_activity_messages(
     daily_detector.detect_and_publish.side_effect = (
         lambda activity_date: calls.append("daily-event")
     )
+    registry = CollectorRegistry()
+    metrics = AnalysisMetrics(registry)
     service = DailyActivityIndexService(
         repository,
         publisher,
         ["H001"],
         baseline_updater=updater,
         daily_event_detector=daily_detector,
+        metrics=metrics,
     )
 
     service.publish_date(date(2026, 9, 16))
@@ -268,6 +273,45 @@ def test_baseline_is_updated_after_daily_activity_messages(
     assert calls == ["publish", "daily-event", "baseline"]
     daily_detector.detect_and_publish.assert_called_once_with(date(2026, 9, 16))
     updater.update.assert_called_once_with(date(2026, 9, 16))
+    for job in ("activity_index", "routine_changed", "baseline_update"):
+        assert registry.get_sample_value(
+            "nilm_daily_job_duration_seconds_count",
+            {"job": job},
+        ) == 1
+        assert registry.get_sample_value(
+            "nilm_daily_job_runs_total",
+            {"job": job, "status": "success"},
+        ) == 1
+
+
+def test_daily_job_failure_is_counted(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=4,
+        valid_coverage_ratio=0.75,
+    )
+    registry = CollectorRegistry()
+    metrics = AnalysisMetrics(registry)
+    updater = Mock()
+    updater.update.side_effect = RuntimeError("baseline update failed")
+    service = DailyActivityIndexService(
+        repository,
+        Mock(),
+        ["H001"],
+        baseline_updater=updater,
+        metrics=metrics,
+    )
+
+    with pytest.raises(RuntimeError, match="baseline update failed"):
+        service.publish_date(date(2026, 9, 16))
+
+    assert registry.get_sample_value(
+        "nilm_daily_job_runs_total",
+        {"job": "baseline_update", "status": "error"},
+    ) == 1
 
 
 def test_observation_boundary_82079_is_insufficient_data(

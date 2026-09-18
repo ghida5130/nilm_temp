@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from prometheus_client import CollectorRegistry
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -11,6 +12,7 @@ from realtime_analysis.anomaly_detector import (
     SqlAlchemyEventDetectionRepository,
 )
 from realtime_analysis.database import Base
+from realtime_analysis.metrics import AnalysisMetrics
 from realtime_analysis.models import (
     ApplianceUsageSession,
     HouseholdActivityDaily,
@@ -74,11 +76,13 @@ def policies(session_factory: sessionmaker[Session]) -> SqlAlchemyPolicyReposito
 
 def detector(
     session_factory: sessionmaker[Session],
+    metrics: AnalysisMetrics | None = None,
 ) -> RealtimeAnomalyDetector:
     return RealtimeAnomalyDetector(
         SqlAlchemyEventDetectionRepository(session_factory, "Asia/Seoul"),
         policies(session_factory),
         "Asia/Seoul",
+        metrics or AnalysisMetrics(CollectorRegistry()),
     )
 
 
@@ -243,3 +247,31 @@ def test_prolonged_appliance_use_is_emitted_once_per_open_session(
     ) == []
     restarted = detector(session_factory).detect("H001", observed_at, [])
     assert restarted[0].event.event_id == events[0].event.event_id
+
+
+def test_realtime_detector_records_each_pattern_evaluation(
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_at = datetime.fromisoformat("2026-09-17T09:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+
+    registry = CollectorRegistry()
+    metrics = AnalysisMetrics(registry)
+
+    events = detector(session_factory, metrics).detect(
+        "H001",
+        observed_at,
+        [baseline()],
+    )
+
+    assert [item.event.event_type for item in events] == ["ROUTINE_MISSED"]
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_MISSED", "result": "detected"},
+    ) == 1
+    for pattern in ("ROUTINE_MISSED", "PROLONGED_INACTIVITY", "PROLONGED_APPLIANCE_USE"):
+        assert registry.get_sample_value(
+            "nilm_pattern_detection_duration_seconds_count",
+            {"pattern": pattern},
+        ) == 1
