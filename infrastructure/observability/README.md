@@ -1,7 +1,7 @@
 ### 간편 실행 (local)
 
 1. 기존 서비스 실행하여 nilm-net 네트워크 활성화
-2. observability 폴더 내의 .env.example 파일을 복사하여 .env로 생성
+2. observability 폴더 내의 .env.local.example 파일을 복사하여 .env로 생성 (기존 .env는 유지)
 3. 아래 명령어를 observability 폴더에서 실행
 
 ```
@@ -26,10 +26,10 @@ EC2-A 서비스는 Docker 네트워크, EC2-B의 AI/Kafka/PostgreSQL은 사설 I
 
 | 구성               | 수집 내용                                                                         |
 | ------------------ | --------------------------------------------------------------------------------- |
-| Prometheus         | 15초 주기 수집, 15일 또는 5GB 중 먼저 도달하는 보존 한도                          |
+| Prometheus         | AI는 1초, 나머지는 15초 주기 수집. 15일 또는 5GB 중 먼저 도달하는 보존 한도        |
 | AI `/metrics`      | 단계별 지연, E2E, 처리 상태, DLQ, 오류, Consumer Lag, 모델 정보, 런타임 기본 지표 |
 | Blackbox Exporter  | 기존 HTTP health/readiness의 성공 여부·시간·상태 코드, TCP 연결 여부·시간         |
-| Grafana            | 데이터소스와 대시보드 3개 자동 등록                                               |
+| Grafana            | 데이터소스와 대시보드 4개 자동 등록, 화면은 1초마다 갱신                           |
 | cAdvisor 선택 구성 | 같은 Linux Docker 호스트의 컨테이너 CPU·메모리·네트워크                           |
 
 기본 ec2-a 대상: EC2-B의 AI health/ready 및 metrics, Kafka 9092/PostgreSQL 5432 TCP. EC2-A의 Spring 3개 서비스 readiness, Keycloak readiness, frontend healthz, Redis 6379/Mosquitto 8883 TCP.
@@ -126,7 +126,7 @@ docker compose -p nilm-a --env-file .env --env-file ../observability/.env -f com
 
 ## 로컬 개발용 대상
 
-로컬에서는 `.env.example`, EC2-A에서는 `.env.ec2-a.example`을 `.env`로 복사.
+로컬에서는 `.env.local.example`, EC2-A에서는 `.env.ec2-a.example`을 `.env`로 복사.
 로컬 예시는 `APPLICATION_NETWORK=nilm-net`, `TARGET_ENV=local`, `EC2_B_PRIVATE_IP=127.0.0.1` 사용.
 로컬 대상 JSON은 EC2-B 별칭을 사용하지 않으며 `TARGET_ENV`로 대상 묶음 선택.
 
@@ -139,8 +139,16 @@ docker compose -p nilm-a --env-file .env --env-file ../observability/.env -f com
 - Consumer Lag은 캐시 high watermark와 현재 position의 차이. committed offset 기준 Lag과 다름. 서로 다른 consumer group을 추가할 경우 그룹별 대상을 분리해야 합계가 혼합되지 않음.
 - 모델 정보는 Manifest 이름과 버전이며 현재 FakePredictor를 실제 모델로 바꾸거나 모델 준비 상태를 검증하지 않음.
 - 최초 DLQ/오류 발생 전, 버퍼 준비 전, 관측 없는 단계는 `No data`가 정상일 수 있음. 0으로 강제 보정해 수집 장애를 숨기지 않음.
-- rate는 최소 두 수집 샘플 필요. 시작 직후 약 30~60초 후 확인. Histogram 관측이 없으면 분위수는 비어 있을 수 있음.
+- rate는 최소 두 수집 샘플 필요. AI는 1초 수집 및 쿼리 Min step 1초 사용. 시작 직후 여러 샘플이 쌓인 뒤 확인. Histogram 관측이 없으면 분위수는 비어 있을 수 있음.
 - AI instance 선택기로 여러 인스턴스 중 조회 대상 선택.
+
+## 패턴 감지·일일 작업 및 1초 갱신
+
+`NILM · AI 패턴 감지 및 일일 작업` 대시보드에서 패턴별 결과/지연, Kafka 최종 발행, 일일 작업 실행 결과/지연을 확인합니다. 일일 작업은 Prometheus `job`과 충돌한 애플리케이션 라벨 `exported_job`으로 묶습니다. 기본 조회 기간은 48시간이며 최초 실행을 놓치지 않도록 프로세스 누적값도 함께 제공합니다.
+
+Grafana 최소 갱신 제한과 모든 대시보드 기본 갱신을 1초로 변경했습니다. AI scrape도 1초이며 쿼리별 Min step 1초를 적용했습니다. HTTP/TCP 점검과 cAdvisor는 기존 15초 수집을 유지하므로 화면 갱신과 원본 데이터 갱신 간격이 다릅니다. AI Consumer Lag의 내부 계산 주기(기본 5초)는 AI 코드·설정 변경이 필요하여 변경하지 않았습니다.
+
+상세 라벨 정의, PromQL, 첫 관측/재시작 해석 및 설정 적용 명령은 [PATTERN_METRICS_HANDOFF.md](PATTERN_METRICS_HANDOFF.md)에 정리했습니다. 기존 AI 이미지에 새 메트릭이 없으면 최신 이미지 배포가 별도로 필요합니다.
 
 ## 대상 추가 및 설정 반영
 
@@ -161,7 +169,14 @@ Grafana dashboard JSON은 약 30초 후 자동 반영, provisioning 설정 변�
 현재 구현에는 외부 폴더 수정이 필요하지 않음. 후속 JVM/업무 지표 수집에는 서비스 의존성·endpoint 노출 변경이 필요할 수 있으며 이번 작업에서는 적용하지 않음.
 AI E2E를 Kafka ACK 완료까지로 변경하거나 Consumer Lag을 committed 기준으로 바꾸려면 AI 코드 변경이 필요하며 현재 의미 그대로 표시.
 알림 규칙과 외부 알림 전송은 미구성.
-빌드 및 실행 테스트는 수행하지 않음. 환경별 실제 수집 성공은 실행 후 위 절차로 확인 필요.
+빌드 테스트는 수행하지 않음. 설정 검증은 다음 명령으로 실행 가능. `--promtool`은 공식 Prometheus v3.5.0 이미지로 설정, 44개 대시보드 쿼리 문법, 후보/발행 건수 구분, exported_job 집계, 첫 관측과 미실행 작업 처리를 검증하며 실행 중 서비스나 DB를 변경하지 않음.
+
+```powershell
+node verify-metrics.mjs
+node verify-metrics.mjs --promtool
+```
+
+Docker 이미지가 없으면 다운로드가 필요함. 검증용 임시 파일은 이 폴더 안에 만들고 종료 시 정리함. 환경별 실제 수집 성공과 Grafana 표시 결과는 스택에 설정 반영 후 위 절차로 확인 필요.
 
 ## 참고
 

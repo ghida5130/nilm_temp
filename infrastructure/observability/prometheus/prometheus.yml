@@ -14,6 +14,9 @@ scrape_configs:
     static_configs:
       - targets: ["blackbox-exporter:9115"]
   - job_name: ai-analysis
+    scrape_interval: 1s
+    scrape_timeout: 1s
+    honor_labels: false
     file_sd_configs:
       - files: ["/etc/prometheus/targets/ai.json"]
         refresh_interval: 30s

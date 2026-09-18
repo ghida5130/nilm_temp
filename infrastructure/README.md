@@ -1,5 +1,13 @@
 # 실행 및 배포
 
+간편 실행
+
+```
+docker compose --env-file .env --profile frontend --profile tools up -d --build --force-recreate
+```
+
+---
+
 ## 폴더별 역할
 
 - `local/compose.yaml`: 로컬 전체 서비스. PostgreSQL·Kafka의 기존 프로젝트/볼륨 이름을 보존하고 실시간 분석 서비스를 함께 실행한다.
