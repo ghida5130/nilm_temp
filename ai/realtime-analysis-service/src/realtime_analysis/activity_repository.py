@@ -60,16 +60,12 @@ class SqlAlchemyApplianceActivityRepository:
         session_factory: sessionmaker[Session],
         timezone_name: str,
         expected_samples_per_day: int = EXPECTED_SAMPLES_PER_DAY,
-        valid_coverage_ratio: float = 0.95,
     ) -> None:
         if expected_samples_per_day < 1:
             raise ValueError("expected_samples_per_day must be greater than zero")
-        if not 0 <= valid_coverage_ratio <= 1:
-            raise ValueError("valid_coverage_ratio must be between zero and one")
         self._session_factory = session_factory
         self._timezone = ZoneInfo(timezone_name)
         self._expected_samples_per_day = expected_samples_per_day
-        self._valid_coverage_ratio = Decimal(str(valid_coverage_ratio))
 
     def record_observation(
         self,

@@ -246,7 +246,6 @@ def test_observation_sample_count_and_coverage_are_accumulated(
         session_factory,
         "Asia/Seoul",
         expected_samples_per_day=4,
-        valid_coverage_ratio=0.75,
     )
 
     repository.record_observation("H001", START)
@@ -317,7 +316,6 @@ def test_next_day_input_keeps_previous_day_collecting_until_daily_job(
         session_factory,
         "Asia/Seoul",
         expected_samples_per_day=4,
-        valid_coverage_ratio=0.75,
     )
 
     for second in range(3):

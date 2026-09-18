@@ -1,7 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import App from './App'
+import QueryProvider from './providers/QueryProvider'
+import './styles/global.css'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -13,6 +14,6 @@ if ('serviceWorker' in navigator) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <QueryProvider><App /></QueryProvider>
   </StrictMode>,
 )

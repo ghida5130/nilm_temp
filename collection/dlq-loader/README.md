@@ -33,13 +33,8 @@ Bronze와 analysis는 같은 원천을 각각 소비하는 병렬 경로다. 예
 
 ### 선행 수정: Bronze의 계측 계약 갱신
 
-현재 Bronze는 `house/device/ts/power_w`를 읽지만 analysis의 현행 계약은
-`message_id/household_id/device_id/measured_at/active_power/reactive_power/power_factor/current`다.
-시뮬레이터는 현재 구 필드도 호환용으로 함께 보내므로 적재에 성공할 수 있으나,
-신규 필드만 담긴 정상 메시지는 Bronze에서 `KeyError`로 잘못 격리될 수 있다.
-이것은 원천 데이터 불량이 아니라 적재기 계약 불일치이므로 정상적인 격리 사유로 정당화하지 않는다.
-
-DLQ Loader 구현에 앞서 Bronze의 추출 필드와 Parquet 스키마를 신규 계약으로 갱신한다.
+Bronze의 추출 필드와 Parquet 스키마는 analysis의 현행 계약인
+`message_id/household_id/device_id/measured_at/active_power/reactive_power/power_factor/current`로 갱신했다.
 원본 바이트와 Kafka 메타데이터는 계속 보존하고, 추가 계측값은 실제 producer 계약에 맞춰
 컬럼화한다. 기존 Parquet과 신규 스키마의 읽기 호환성·버전 분리도 함께 결정한다.
 구 필드 유무로 유효성을 판단하지 않으며 신규 필드만 있는 정상 입력이 Bronze로 저장되는지

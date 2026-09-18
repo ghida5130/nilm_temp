@@ -5,7 +5,7 @@ Kafka에 들어온 원본 메시지를 가공 없이 데이터 레이크에 적�
 
 ## 폴더별 역할
 
-- `bronze-loader/`: `power.raw.v1`을 구독해 HDFS Bronze에 Parquet으로 적재하는 원본 적재기.
+- `bronze-loader/`: `power.raw.v1`의 신규 8개 계측 필드를 구독해 HDFS Bronze에 Parquet으로 적재하는 원본 적재기.
   안전 커밋(임시 경로 -> 크기 검증 -> rename -> manifest -> offset commit), 오류 격리(quarantine),
   파티션 단위 배치 플러시를 담당한다. 원본 payload 바이트를 함께 보존해 재처리·재해석이 가능하다.
 - `dlq-loader/`: `dlq.analysis`, `dlq.monitoring` HDFS 보관을 위한 [설계](dlq-loader/README.md).

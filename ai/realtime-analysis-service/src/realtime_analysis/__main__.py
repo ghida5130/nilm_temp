@@ -112,9 +112,6 @@ def main() -> None:
         session_factory=session_factory,
         timezone_name=settings.analysis_timezone,
         expected_samples_per_day=settings.analysis_expected_samples_per_day,
-        valid_coverage_ratio=(
-            settings.analysis_observation_valid_coverage_ratio
-        ),
     )
     event_publisher = AnalysisEventPublisher(settings)
     data_quality_monitor = DataQualityMonitor(
