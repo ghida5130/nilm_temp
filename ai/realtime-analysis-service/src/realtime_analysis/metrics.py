@@ -60,6 +60,18 @@ DAILY_JOB_DURATION_BUCKETS = (
     600.0,
 )
 
+MESSAGE_STATUSES = ("processed", "dlq", "failed")
+DLQ_REASONS = ("INVALID_JSON", "VALIDATION_ERROR")
+REALTIME_PATTERNS = (
+    "ROUTINE_MISSED",
+    "PROLONGED_INACTIVITY",
+    "PROLONGED_APPLIANCE_USE",
+)
+PATTERNS = (*REALTIME_PATTERNS, "ROUTINE_CHANGED")
+PATTERN_RESULTS = ("detected", "not_detected", "error")
+DAILY_JOBS = ("activity_index", "routine_changed", "baseline_update")
+DAILY_JOB_STATUSES = ("success", "error")
+
 
 class AnalysisMetrics:
     """Owns the bounded-cardinality metrics exposed by ``/metrics``."""
@@ -139,8 +151,34 @@ class AnalysisMetrics:
             ("job", "status"),
             registry=registry,
         )
+        self._initialize_fixed_counter_labels()
         self._lag_labels: set[tuple[str, str]] = set()
         self._lag_lock = Lock()
+
+    def _initialize_fixed_counter_labels(self) -> None:
+        """Expose zero-valued series before their first increment.
+
+        Prometheus cannot infer a counter increase when the first scraped sample
+        already has value 1. Initializing every bounded label combination makes
+        the first real increment visible to ``rate`` and ``increase`` queries.
+        """
+
+        for status in MESSAGE_STATUSES:
+            self.messages.labels(status=status)
+        for reason in DLQ_REASONS:
+            self.dlq_messages.labels(reason=reason)
+        for pattern in PATTERNS:
+            for result in PATTERN_RESULTS:
+                self.pattern_detections.labels(pattern=pattern, result=result)
+        self.pattern_detections.labels(
+            pattern="ROUTINE_CHANGED",
+            result="skipped",
+        )
+        for event_type in PATTERNS:
+            self.pattern_events.labels(event_type=event_type)
+        for job in DAILY_JOBS:
+            for status in DAILY_JOB_STATUSES:
+                self.daily_job_runs.labels(job=job, status=status)
 
     def observe_stage(self, stage: str, duration_ns: int) -> None:
         self.stage_duration.labels(stage=stage).observe(duration_ns / 1_000_000_000)

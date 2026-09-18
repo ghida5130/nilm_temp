@@ -1,29 +1,64 @@
-# On:마음 PWA 알림
+# On:마음 프론트엔드
 
-스마트폰에 설치하고 Web Push 알림을 받을 수 있는 React PWA입니다. 백엔드의 기존 구독·응답 API 계약에 맞춰 동작합니다.
+`tempfrontend`의 담당자 대시보드·대상자 모바일 화면 디자인을 참고하고, 현재 Java 백엔드의 API에 연결한 React 화면입니다. 시연용 `/api/mvp` 및 가상 데이터는 사용하지 않습니다.
 
-## 공개키 설정
-
-백엔드 `WEB_PUSH_VAPID_PUBLIC_KEY`와 같은 공개키를 `frontend/.env.local`에 설정합니다.
-
-```env
-VITE_WEB_PUSH_PUBLIC_KEY=...
-```
-
-환경변수가 없으면 화면의 공개키 입력란을 이용할 수 있습니다. VAPID 비밀키는 `WEB_PUSH_VAPID_PRIVATE_KEY`로 백엔드에만 보관해야 합니다.
-
-## 연결 API
-
-- 구독 등록: `POST /api/monitoring/push-subscriptions`
-- 알림 응답: `PUT /api/monitoring/notifications/{notificationId}/responses`
-
-서비스 워커는 백엔드 push payload의 `notificationId`, `incidentId`, `householdId`, `title`, `expiresAt`을 사용합니다. 알림의 `예` 또는 `아니오` 버튼을 누르면 `{ answer, source: "user", respondedAt }` 형식으로 응답 API를 호출합니다.
-
-## 로컬 실행
+## 실행
 
 ```powershell
+cd frontend
 npm ci
 npm run dev
 ```
 
-웹 푸시는 보안 컨텍스트에서만 동작합니다. 로컬에서는 `http://localhost:5173`, 스마트폰에서는 유효한 HTTPS 주소를 사용해야 합니다. iPhone/iPad는 Safari에서 홈 화면에 추가한 뒤 해당 앱에서 알림을 등록해야 합니다.
+개발 서버는 `/api` 요청을 `http://localhost:8080`으로 전달합니다. 배포 nginx는 기존 `api-gateway:8080` 프록시와 SSE 버퍼링 해제 설정을 사용합니다.
+
+- `/`: 서비스 선택
+- `/staff`: 담당자 로그인 및 대시보드
+- `/staff?view=subjects`: 대상자 검색·필터·등록
+- `/staff?view=alerts`: 대상자별 최근 알림
+- `/staff/subjects/{subjectId}`: 연락처, 위험 점수 추이, 날짜별 전력 사용량, 최근 7일 이상 징후 및 응답 기록
+- `/user`: 대상자 로그인, 담당자 연락처, 외출 즉시 시작·예약·해제
+- `/user?notificationId={id}`: 수신한 알림에 대한 예·아니오 응답
+
+## 인증 및 실행 전제
+
+실제 등록된 계정으로 `POST /api/auth/login`을 호출합니다. 토큰은 탭의 sessionStorage에 보관하며 만료 응답 시 `POST /api/auth/refresh`로 갱신합니다. 로그아웃은 해당 탭의 토큰을 제거합니다.
+
+담당자와 대상자 조회는 JWT의 subject로 계정을 식별하므로, 게이트웨이와 각 서비스의 인증 구성이 활성화되어 있고 Keycloak 및 해당 monitoring DB 프로필이 준비되어 있어야 합니다. 보안 비활성 설정에서는 백엔드가 JWT principal을 만들지 않으므로 토큰을 전달해도 해당 조회가 401로 거절될 수 있습니다. 프론트엔드는 이 오류를 표시하며 테스트 계정으로 우회하지 않습니다. 회원가입만으로 monitoring DB의 담당자·대상자 프로필이 자동 생성된다고 가정하지 않습니다.
+
+## 연결한 API
+
+| 용도 | API |
+| --- | --- |
+| 로그인 / 갱신 | `POST /api/auth/login`, `POST /api/auth/refresh` |
+| 담당 대상자 | `GET /api/monitoring/dashboard` |
+| 담당자 실시간 상태 | `GET /api/monitoring/stream`, `subject-status` 이벤트 |
+| 대상자 등록 | `POST /api/monitoring/subjects` |
+| 전력 사용량 | `GET /api/monitoring/subjects/{id}/power-usage?date=YYYY-MM-DD` |
+| 이상 징후 기록 | `GET /api/monitoring/subjects/{id}/events?size=20&cursor=...` |
+| 대상자 홈 | `GET /api/monitoring/my-dashboard` |
+| 외출 설정 | `PUT /api/monitoring/my-dashboard/away-mode` |
+| 알림 응답 | `PUT /api/monitoring/notifications/{id}/responses` |
+
+담당자 SSE는 Bearer 인증을 위해 fetch 스트림을 사용합니다. 대상자별 version으로 오래된 이벤트를 무시하고, 재연결 때 전체 목록을 다시 조회합니다. 화면이 보이는 동안 60초 간격의 목록 보정 조회와 탭 복귀 시 조회도 수행합니다. 상세 전력·이벤트 영역은 대상자 version 변경 시 갱신됩니다.
+
+## 현재 백엔드 제약에 따른 제외 기능
+
+- 대상자용 SSE 경로는 현재 소스에 없습니다. 대상자 홈은 30초 간격 및 탭 복귀 시 조회합니다.
+- 푸시 구독 등록은 로그인한 사용자 대신 `app.push.test-auth-sub`에 고정됩니다. 사용자별 정상 등록을 보장할 수 없어 등록 버튼과 공개키 입력 화면을 제공하지 않습니다. 기존 구독의 수신은 서비스 워커에서 유지하며 알림을 누르면 앱에서 로그인 후 응답합니다.
+- 알림 응답 API는 현재 사용자 소유권을 검증하지 않습니다. 배포 전 백엔드 보완이 필요한 부분이며 프론트엔드는 수신한 notificationId에 대한 응답 UI만 제공합니다.
+- 담당자 상황 종료, GPS 자동 외출, 임의 위험 점수, 기기 연결 상태, 일일 보고서, 조회할 수 없는 담당자 설정은 표시하지 않습니다.
+- 서버 오류를 빈 데이터나 안전 상태로 바꾸지 않으며, 이전 조회 정보가 있으면 오류와 함께 표시합니다.
+
+서비스 워커는 API 또는 개인정보 응답을 캐시하지 않습니다. 기존 셸 캐시를 정리해 이전 시연 화면이 남지 않게 합니다. 변경 검증 시 빌드 명령은 실행하지 않습니다.
+
+## 빌드 없이 확인
+
+```powershell
+npm run lint
+npx tsc --noEmit -p tsconfig.app.json
+node --check public/sw.js
+node --test tests/api-stream.test.mjs
+```
+
+SSE 및 인증 검증은 Node 22.18 이상에서 실행합니다. 테스트는 가짜 fetch 응답을 사용하며 실제 계정이나 서버 데이터를 변경하지 않습니다.

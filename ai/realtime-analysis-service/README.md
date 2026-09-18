@@ -514,6 +514,11 @@ Counter와 Histogram은 공통 평가 주기 및 데이터 유효성 검사를 �
 호출한 경우에만 증가합니다. `result=detected`는 cooldown·중복 제거 전 후보가 나온 경우이며,
 최종 발행 성공 건수는 `nilm_pattern_events_total`로 확인합니다.
 
+고정 라벨을 사용하는 Counter는 프로세스 시작 시 가능한 라벨 조합을 `0`으로 노출하여,
+Prometheus가 첫 증가 전에 한 번 이상 수집했다면 첫 이벤트도 `rate()`와 `increase()`에
+포함됩니다. 동일 가구·가전·날짜의 `ROUTINE_MISSED`가 이미 발행된 경우에는 이후 평가에서
+해당 기준선을 조기에 제외합니다. 다른 가전과 다음 날짜의 후보는 계속 평가합니다.
+
 일일 `job`은 `activity_index`, `routine_changed`, `baseline_update`, `status`는
 `success`, `error`를 사용합니다. `ROUTINE_CHANGED` 정책이 없으면 패턴 판정 결과에는
 `result=skipped`가 기록되지만 일일 작업 자체는 성공으로 종료됩니다.
