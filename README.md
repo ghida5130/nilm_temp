@@ -29,6 +29,11 @@ docker compose up -d --build
 docker compose ps
 ```
 
+## HDFS, 원본 적재기 실행
+```powershell
+docker compose -f infrastructure/hdfs/docker-compose.yml up -d --build
+```
+
 ## 프론트엔드 실행 
 
 빌드 결과물을 nginx 이미지에 넣어 배포와 같은 형태로 확인할 때 사용한다. `frontend` 서비스는 프로필로 분리되어 있어 `--profile`을 붙여야 뜬다. `--profile`은 `up` 뒤가 아니라 `docker compose` 바로 뒤에 온다.

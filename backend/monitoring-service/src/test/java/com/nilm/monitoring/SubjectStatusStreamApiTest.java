@@ -125,6 +125,7 @@ class SubjectStatusStreamApiTest {
         long alertId = jdbc.queryForObject("select id from notifications", Long.class);
 
         mockMvc.perform(put("/api/monitoring/notifications/{id}/responses", alertId)
+                        .with(jwt().jwt(token -> token.subject("subject-H001")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"answer\":\"yes\",\"source\":\"user\","
                                 + "\"respondedAt\":\"2026-09-16T09:00:25Z\"}"))

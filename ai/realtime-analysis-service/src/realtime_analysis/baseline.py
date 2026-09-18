@@ -53,6 +53,9 @@ class BaselineRepository:
         household_id: str,
         observed_at: datetime | None = None,
     ) -> list[RoutineBaseline]:
+        # Kept for compatibility with RoutineBaselineProvider. Bootstrap
+        # baselines are static, so their lookup does not depend on time.
+        _ = observed_at
         return [
             baseline
             for baseline in self._by_household.get(household_id, [])

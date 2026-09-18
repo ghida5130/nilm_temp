@@ -6,12 +6,17 @@ ThreadedHTTPServer 및 BaseHTTPRequestHandler 기반의 RequestHandler 클래스
 /api/start, /api/stop, /api/device), Server-Sent Events(SSE) 실시간 스트리밍(/api/stream)을 처리합니다.
 """
 
+from datetime import date, datetime
 import json
+import math
 import os
 import queue
+import re
 import sys
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
+from typing import Any
 
 # 상위 디렉터리(infrastructure/mqtt/simulator) import 경로 등록
 PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +27,18 @@ import simulator
 import scenarios
 from .config import ALLOWED_SCENARIOS, validate_interval
 from .manager import SimulatorManager, ModeConflictError
+from server.e2e_manager import (
+    E2EError,
+    E2EConflictError,
+    E2ERunNotFoundError,
+    E2EHouseholdNotFoundError,
+    E2EStartTimeoutError,
+    E2EStartError,
+    E2EOperationTimeoutError,
+    E2ESnapshotTimeoutError,
+)
+from engine.unified_catalog import list_scenario_api_summaries, list_unified_scenario_ids
+from engine.schedule_executor import ExecutionMode
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -31,6 +48,8 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 class RequestHandler(BaseHTTPRequestHandler):
     manager: SimulatorManager = None
     html_path: str = None
+    e2e_manager: Any = None
+    shared_start_lock: threading.Lock = threading.Lock()
 
     def log_message(self, format, *args):
         # 불필요한 표준 콘솔 로그 억제
@@ -107,6 +126,58 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 self.manager.remove_subscriber(q)
 
+        elif url_path == "/api/e2e/scenarios":
+            if self.e2e_manager is None:
+                self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", "E2E 세션 관리자가 주입되지 않았습니다.")
+                return
+            summaries = list_scenario_api_summaries()
+            self.send_json(200, {
+                "status": "success",
+                "count": len(summaries),
+                "scenarios": summaries
+            })
+
+        elif url_path.startswith("/api/e2e/"):
+            if self.e2e_manager is None:
+                self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", "E2E 세션 관리자가 주입되지 않았습니다.")
+                return
+
+            parts = url_path.strip("/").split("/")
+            if len(parts) == 4 and parts[2] == "runs":
+                run_id = parts[3]
+                try:
+                    snap = self.e2e_manager.get_session_snapshot(run_id, timeout_sec=1.0)
+                    self.send_json(200, snap)
+                except E2ERunNotFoundError as err:
+                    self.send_error_json(404, "RUN_NOT_FOUND", str(err))
+                except E2ESnapshotTimeoutError as err:
+                    self.send_error_json(503, "E2E_SNAPSHOT_TIMEOUT", str(err))
+                except RuntimeError as err:
+                    self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", str(err))
+                except Exception as err:
+                    self.send_error_json(500, "INTERNAL_ERROR", str(err))
+            elif len(parts) == 6 and parts[2] == "runs" and parts[4] == "households":
+                run_id = parts[3]
+                h_id = parts[5]
+                try:
+                    h_snap = self.e2e_manager.get_household_snapshot(run_id, h_id, timeout_sec=1.0)
+                    self.send_json(200, {
+                        "status": "success",
+                        "household": h_snap
+                    })
+                except E2ERunNotFoundError as err:
+                    self.send_error_json(404, "RUN_NOT_FOUND", str(err))
+                except E2EHouseholdNotFoundError as err:
+                    self.send_error_json(404, "HOUSEHOLD_NOT_FOUND", str(err))
+                except E2ESnapshotTimeoutError as err:
+                    self.send_error_json(503, "E2E_SNAPSHOT_TIMEOUT", str(err))
+                except RuntimeError as err:
+                    self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", str(err))
+                except Exception as err:
+                    self.send_error_json(500, "INTERNAL_ERROR", str(err))
+            else:
+                self.send_error(404, "Not Found")
+
         else:
             self.send_error(404, "Not Found")
 
@@ -178,8 +249,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_error_json(400, "BAD_REQUEST", "요청 본문이 비어있습니다.")
             return None, False
 
+        def reject_constant(value):
+            raise ValueError(f"비표준 JSON 숫자: {value}")
+
         try:
-            params = json.loads(body_str)
+            params = json.loads(body_str, parse_constant=reject_constant)
         except Exception:
             self.send_error_json(400, "BAD_REQUEST", "유효하지 않은 JSON 형식입니다.")
             return None, False
@@ -314,44 +388,86 @@ class RequestHandler(BaseHTTPRequestHandler):
                     )
                     return
 
+            # fault_duration_sec 선택 필드 엄격 검증
+            fault_duration_sec = None
+            if "fault_duration_sec" in params:
+                has_sf = any(h["scenario"] == "sensor_fault" for h in normalized_households)
+                if not has_sf:
+                    self.send_error_json(
+                        400,
+                        "BAD_REQUEST",
+                        "sensor_fault 시나리오가 포함되지 않은 요청에는 fault_duration_sec를 지정할 수 없습니다."
+                    )
+                    return
+                raw_fds = params["fault_duration_sec"]
+                if type(raw_fds) is not int or isinstance(raw_fds, bool):
+                    self.send_error_json(
+                        400,
+                        "BAD_REQUEST",
+                        "fault_duration_sec는 1~3600 사이의 정수여야 합니다."
+                    )
+                    return
+                if not (1 <= raw_fds <= 3600):
+                    self.send_error_json(
+                        400,
+                        "BAD_REQUEST",
+                        "fault_duration_sec는 1~3600 범위의 정수여야 합니다."
+                    )
+                    return
+                fault_duration_sec = raw_fds
+
             kwargs = {}
             if interval is not None:
                 kwargs["interval"] = interval
+            if fault_duration_sec is not None:
+                kwargs["fault_duration_sec"] = fault_duration_sec
 
-            try:
-                if has_households:
-                    started_info = self.manager.start(
-                        simulation_date=simulation_date,
-                        households=normalized_households,
-                        **kwargs
+            with self.shared_start_lock:
+                if self.e2e_manager is not None and self.e2e_manager.is_active():
+                    self.send_error_json(
+                        409,
+                        "E2E_SIMULATOR_RUNNING",
+                        "E2E 시뮬레이터 세션이 실행 중이므로 레거시 시뮬레이터를 시작할 수 없습니다."
                     )
-                else:
-                    started_info = self.manager.start(
-                        scenario=scenario,
-                        house=house,
-                        simulation_date=simulation_date,
-                        **kwargs
-                    )
-                self.send_json(200, {
-                    "status": "started",
-                    "scenario": started_info.get("scenario"),
-                    "house": started_info.get("house"),
-                    "households": started_info.get("households"),
-                    "simulation_date": started_info.get("simulation_date"),
-                    "resolved_start_time": started_info.get("resolved_start_time"),
-                    "interval": started_info.get("interval"),
-                    "speed": started_info.get("speed")
-                })
-            except ValueError as err:
-                err_msg = str(err)
-                code = "CONFIG_ERROR" if ("TLS" in err_msg or "CA" in err_msg) else "BAD_REQUEST"
-                self.send_error_json(400, code, err_msg)
-            except (FileNotFoundError, PermissionError) as err:
-                self.send_error_json(400, "CONFIG_ERROR", str(err))
-            except RuntimeError as err:
-                self.send_error_json(409, "START_FAILED", str(err))
-            except Exception as err:
-                self.send_error_json(500, "START_FAILED", str(err))
+                    return
+
+                try:
+                    if has_households:
+                        started_info = self.manager.start(
+                            simulation_date=simulation_date,
+                            households=normalized_households,
+                            **kwargs
+                        )
+                    else:
+                        started_info = self.manager.start(
+                            scenario=scenario,
+                            house=house,
+                            simulation_date=simulation_date,
+                            **kwargs
+                        )
+                    resp_payload = {
+                        "status": "started",
+                        "scenario": started_info.get("scenario"),
+                        "house": started_info.get("house"),
+                        "households": started_info.get("households"),
+                        "simulation_date": started_info.get("simulation_date"),
+                        "resolved_start_time": started_info.get("resolved_start_time"),
+                        "interval": started_info.get("interval"),
+                        "speed": started_info.get("speed")
+                    }
+                    if "fault_duration_sec" in started_info:
+                        resp_payload["fault_duration_sec"] = started_info["fault_duration_sec"]
+                    self.send_json(200, resp_payload)
+                except ValueError as err:
+                    err_msg = str(err)
+                    code = "CONFIG_ERROR" if ("TLS" in err_msg or "CA" in err_msg) else "BAD_REQUEST"
+                    self.send_error_json(400, code, err_msg)
+                except (FileNotFoundError, PermissionError) as err:
+                    self.send_error_json(400, "CONFIG_ERROR", str(err))
+                except RuntimeError as err:
+                    self.send_error_json(409, "START_FAILED", str(err))
+                except Exception as err:
+                    self.send_error_json(500, "START_FAILED", str(err))
 
         elif url_path == "/api/speed":
             # 2. 배속(발행 주기) 동적 변경
@@ -394,7 +510,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if not isinstance(raw_speed, (int, float)):
                     self.send_error_json(400, "BAD_REQUEST", f"speed는 숫자여야 합니다. (전달된 타입: {type(raw_speed).__name__})")
                     return
-                import math
                 val_float = float(raw_speed)
                 if not math.isfinite(val_float) or val_float <= 0:
                     self.send_error_json(400, "BAD_REQUEST", "speed는 0보다 큰 유한한 숫자여야 합니다.")
@@ -452,6 +567,204 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_error_json(503, "RESET_FAILED", str(err))
             except Exception as err:
                 self.send_error_json(500, "RESET_FAILED", str(err))
+
+        elif url_path == "/api/e2e/runs":
+            if self.e2e_manager is None:
+                self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", "E2E 세션 관리자가 주입되지 않았습니다.")
+                return
+
+            params, ok = self.read_json_body(allow_empty=False)
+            if not ok:
+                return
+
+            if not isinstance(params, dict):
+                self.send_error_json(400, "BAD_REQUEST", "요청 본문은 JSON 객체여야 합니다.")
+                return
+
+            allowed_top_keys = {"reference_date", "execution", "households", "timezone"}
+            extra_keys = set(params.keys()) - allowed_top_keys
+            if extra_keys:
+                self.send_error_json(400, "BAD_REQUEST", f"허용되지 않은 필드가 포함되어 있습니다: {sorted(extra_keys)}")
+                return
+
+            for req_key in ("reference_date", "execution", "households"):
+                if req_key not in params:
+                    self.send_error_json(400, "BAD_REQUEST", f"필수 필드가 누락되었습니다: '{req_key}'")
+                    return
+
+            ref_date_raw = params["reference_date"]
+            if not isinstance(ref_date_raw, str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", ref_date_raw):
+                self.send_error_json(400, "BAD_REQUEST", f"잘못된 reference_date 형식입니다: '{ref_date_raw}'. YYYY-MM-DD여야 합니다.")
+                return
+            try:
+                parsed_date = datetime.strptime(ref_date_raw, "%Y-%m-%d").date()
+                if parsed_date.strftime("%Y-%m-%d") != ref_date_raw:
+                    self.send_error_json(400, "BAD_REQUEST", f"존재하지 않는 날짜입니다: '{ref_date_raw}'")
+                    return
+            except ValueError:
+                self.send_error_json(400, "BAD_REQUEST", f"존재하지 않는 날짜입니다: '{ref_date_raw}'")
+                return
+
+            if "timezone" in params:
+                tz_raw = params["timezone"]
+                if not isinstance(tz_raw, str) or tz_raw != "Asia/Seoul":
+                    self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 timezone입니다: '{tz_raw}'. 'Asia/Seoul'만 지원합니다.")
+                    return
+
+            exec_raw = params["execution"]
+            if not isinstance(exec_raw, dict):
+                self.send_error_json(400, "BAD_REQUEST", "execution 필드는 객체여야 합니다.")
+                return
+            allowed_exec_keys = {"mode", "speed"}
+            extra_exec_keys = set(exec_raw.keys()) - allowed_exec_keys
+            if extra_exec_keys:
+                self.send_error_json(400, "BAD_REQUEST", f"execution에 허용되지 않은 필드가 있습니다: {sorted(extra_exec_keys)}")
+                return
+            if "mode" not in exec_raw:
+                self.send_error_json(400, "BAD_REQUEST", "execution.mode 필드는 필수입니다.")
+                return
+            mode_str = exec_raw["mode"]
+            if mode_str not in ("BURST", "REALTIME", "ACCELERATED"):
+                self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 execution.mode입니다: '{mode_str}'. 허용값: BURST, REALTIME, ACCELERATED")
+                return
+
+            if mode_str == "ACCELERATED":
+                if "speed" not in exec_raw or exec_raw["speed"] is None:
+                    self.send_error_json(400, "BAD_REQUEST", "ACCELERATED 모드에서는 speed 필드가 필수입니다.")
+                    return
+                speed = exec_raw["speed"]
+                if (
+                    type(speed) not in (int, float)
+                    or isinstance(speed, bool)
+                    or not math.isfinite(speed)
+                    or speed <= 0
+                ):
+                    self.send_error_json(400, "BAD_REQUEST", f"speed는 0보다 큰 유한한 숫자여야 합니다: {speed}")
+                    return
+            else:
+                if "speed" in exec_raw and exec_raw["speed"] is not None:
+                    self.send_error_json(400, "BAD_REQUEST", f"{mode_str} 모드에서는 speed 필드를 지정할 수 없습니다.")
+                    return
+
+            households_raw = params["households"]
+            if not isinstance(households_raw, list) or len(households_raw) < 1 or len(households_raw) > 10:
+                self.send_error_json(400, "BAD_REQUEST", "households는 1개 이상 10개 이하의 가구를 포함해야 합니다.")
+                return
+
+            valid_scenario_ids = set(list_unified_scenario_ids())
+            allowed_house_ids = {f"H{i:03d}" for i in range(1, 11)}
+            seen_h_ids = set()
+
+            for idx, h_item in enumerate(households_raw):
+                if not isinstance(h_item, dict):
+                    self.send_error_json(400, "BAD_REQUEST", f"households[{idx}] 항목은 객체여야 합니다.")
+                    return
+                extra_h_keys = set(h_item.keys()) - {"household_id", "scenario"}
+                if extra_h_keys:
+                    self.send_error_json(400, "BAD_REQUEST", f"households[{idx}]에 허용되지 않은 필드가 있습니다: {sorted(extra_h_keys)}")
+                    return
+                if "household_id" not in h_item or "scenario" not in h_item:
+                    self.send_error_json(400, "BAD_REQUEST", f"households[{idx}]에 household_id와 scenario는 필수입니다.")
+                    return
+                h_id = h_item["household_id"]
+                sc_id = h_item["scenario"]
+                if not isinstance(h_id, str) or h_id not in allowed_house_ids:
+                    self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 household_id입니다: '{h_id}'. 허용 범위: H001~H010")
+                    return
+                if h_id in seen_h_ids:
+                    self.send_error_json(400, "BAD_REQUEST", f"중복된 household_id가 존재합니다: '{h_id}'")
+                    return
+                seen_h_ids.add(h_id)
+                if not isinstance(sc_id, str) or sc_id not in valid_scenario_ids:
+                    self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 시나리오입니다: '{sc_id}'. 허용 목록: {sorted(valid_scenario_ids)}")
+                    return
+
+            with self.shared_start_lock:
+                if self.manager is not None:
+                    legacy_status = self.manager.get_status()
+                    if bool(legacy_status.get("is_running", False)):
+                        self.send_error_json(
+                            409,
+                            "LEGACY_SIMULATOR_RUNNING",
+                            "레거시 시뮬레이터가 실행 중이므로 E2E 시뮬레이터를 시작할 수 없습니다."
+                        )
+                        return
+
+                if self.e2e_manager.is_active():
+                    self.send_error_json(
+                        409,
+                        "E2E_SIMULATOR_RUNNING",
+                        "이미 실행 중인 활성 E2E 세션이 존재합니다."
+                    )
+                    return
+
+                try:
+                    resp = self.e2e_manager.create_and_start_session(params)
+                    self.send_json(202, resp)
+                except E2EConflictError as err:
+                    self.send_error_json(409, "E2E_SIMULATOR_RUNNING", str(err))
+                except E2EStartTimeoutError as err:
+                    self.send_error_json(503, "E2E_START_TIMEOUT", str(err))
+                except E2EStartError as err:
+                    self.send_error_json(500, "START_FAILED", str(err))
+                except RuntimeError as err:
+                    self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", str(err))
+                except Exception as err:
+                    self.send_error_json(500, "START_FAILED", f"E2E 세션 시작 실패: {err}")
+
+        elif url_path.startswith("/api/e2e/"):
+            if self.e2e_manager is None:
+                self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", "E2E 세션 관리자가 주입되지 않았습니다.")
+                return
+
+            parts = url_path.strip("/").split("/")
+            if len(parts) == 5 and parts[2] == "runs" and parts[4] == "stop":
+                run_id = parts[3]
+                try:
+                    res = self.e2e_manager.stop_session(run_id)
+                    self.send_json(202, res)
+                except E2ERunNotFoundError as err:
+                    self.send_error_json(404, "RUN_NOT_FOUND", str(err))
+                except E2EOperationTimeoutError as err:
+                    self.send_error_json(503, "E2E_OPERATION_TIMEOUT", str(err))
+                except RuntimeError as err:
+                    self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", str(err))
+                except Exception as err:
+                    self.send_error_json(500, "STOP_FAILED", str(err))
+
+            elif len(parts) == 7 and parts[2] == "runs" and parts[4] == "households":
+                run_id = parts[3]
+                h_id = parts[5]
+                action = parts[6]
+
+                try:
+                    if action == "pause":
+                        res = self.e2e_manager.pause_household(run_id, h_id)
+                    elif action == "resume":
+                        res = self.e2e_manager.resume_household(run_id, h_id)
+                    elif action == "stop":
+                        res = self.e2e_manager.stop_household(run_id, h_id)
+                    else:
+                        self.send_error(404, "Not Found")
+                        return
+                    status_code = 200 if res.get("status") == "success" else 202
+                    self.send_json(status_code, res)
+                except E2ERunNotFoundError as err:
+                    self.send_error_json(404, "RUN_NOT_FOUND", str(err))
+                except E2EHouseholdNotFoundError as err:
+                    self.send_error_json(404, "HOUSEHOLD_NOT_FOUND", str(err))
+                except E2EOperationTimeoutError as err:
+                    self.send_error_json(503, "E2E_OPERATION_TIMEOUT", str(err))
+                except ValueError as err:
+                    val_err = str(err).strip("'")
+                    code = val_err if val_err == "TASK_ALREADY_TERMINAL" else "INVALID_STATE"
+                    self.send_error_json(409, code, f"태스크 상태 오류: {err}")
+                except RuntimeError as err:
+                    self.send_error_json(503, "E2E_MANAGER_UNAVAILABLE", str(err))
+                except Exception as err:
+                    self.send_error_json(500, "ACTION_FAILED", str(err))
+            else:
+                self.send_error(404, "Not Found")
 
         else:
             self.send_error(404, "Not Found")
@@ -512,11 +825,18 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def create_request_handler(manager: SimulatorManager, html_path: str = None) -> type:
-    """SimulatorManager 인스턴스와 HTML 경로가 주입된 RequestHandler 클래스를 생성합니다."""
+def create_request_handler(
+    manager: SimulatorManager,
+    html_path: str = None,
+    e2e_manager: Any = None,
+    shared_start_lock: threading.Lock = None,
+) -> type:
+    """SimulatorManager 인스턴스와 HTML 경로, E2E 관리자가 주입된 RequestHandler 클래스를 생성합니다."""
     class InjectedRequestHandler(RequestHandler):
         pass
 
     InjectedRequestHandler.manager = manager
     InjectedRequestHandler.html_path = html_path
+    InjectedRequestHandler.e2e_manager = e2e_manager
+    InjectedRequestHandler.shared_start_lock = shared_start_lock if shared_start_lock is not None else threading.Lock()
     return InjectedRequestHandler

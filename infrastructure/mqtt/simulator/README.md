@@ -8,9 +8,10 @@
 
 * **실시간 AI 추론 데이터 공급**: 비침습 가전 분리(NILM) 딥러닝 모델(TCN / Seq2Point)의 299초 슬라이딩 윈도우 추론에 필요한 다변량 교류 전력 데이터(유효전력, 무효전력, 역률, 전류, 전압)를 매초 실시간으로 생성하여 공급합니다.
 * **대규모 인프라 스트레스 테스트**: 최대 1,000가구 동시 발행(1,000 msg/s)을 지원하여 MQTT 브로커, 카프카 브릿지, Flink 스트림 파이프라인의 처리 한계를 검증합니다.
-* **발표용 원클릭 정상/이상 시연(Demo) 지원**: 대시보드 발표를 위해 H001 가구를 대상으로 단 한 번의 클릭으로 초기화부터 MQTT 데이터 발행까지 자동 수행하는 2대 원클릭 시연 모드를 지원합니다:
+* **발표용 원클릭 정상/이상/고장 시연(Demo) 지원**: 대시보드 발표를 위해 H001 가구를 대상으로 단 한 번의 클릭으로 초기화부터 MQTT 데이터 발행까지 자동 수행하는 3대 원클릭 시연 모드를 지원합니다:
   * **`[▶ H001 정상 일상]` (`normal_routine`)**: 08:04:58 KST 시작, 08:09:00 정각에 전자레인지가 가동되어 정확히 60초간(60개 활성 샘플) 동작 후 08:10:00에 복귀하는 정상 일상 전력 패턴을 308사이클 동안 결정론적으로 발행.
   * **`[▶ H001 이상 감지]` (`routine_missed`)**: 08:10:01 KST(CLI: 08:15:00 KST) 시작, 08:10 이후 전자레인지 미사용 대기전력 상태를 유지하며 299초 분석 윈도우 충족 후 300사이클 완주하는 루틴 누락 패턴 발행.
+  * **`[▶ H001 센서 고장]` (`sensor_fault`)**: 140초 시나리오. cycle 1~10 정상 대기전력 발행 ➡️ cycle 11~130(정확히 120초간) 계측 MQTT 메시지 0건 발행(완전 결측, 0W 허위 데이터 배제) ➡️ cycle 131~140 정상 복구 후 10회 발행(121초 시간 간격 복구) ➡️ 140초 완료.
 * **시뮬레이터 초기화 범위 및 AI 서비스 경계**:
   * 시뮬레이터의 초기화(Reset)는 **시뮬레이터 내부 상태**(가전 FSM, 가상 타이머, 가구별 상태, 화면 버퍼, 발행 워커)만을 초기화합니다.
   * AI 서비스의 299개 슬라이딩 버퍼, 당일 활동 기록, analysis DB, Monitoring Incident 알림 및 Kafka/HDFS 데이터는 초기화 대상이 아닙니다.
@@ -68,6 +69,25 @@
   * `cycle 303` (08:10:00 KST): **전자레인지 명시적 OFF** (`state: OFF`, `session_remaining: 0`) ➡️ 평상시 대기전력 복귀
   * `cycle 308` (08:10:05 KST): 전자레인지 종료 후 5초간 대기전력 발행 후 **시나리오 자동 완료**
 
+### (5) 센서 고장 (`sensor_fault`) 가변 결측 블랙아웃 타임라인
+센서 고장 재현을 위해 선택된 가구(H001~H010)의 전력 계측 MQTT 메시지가 **정확히 $D$초(기본 120초, 1~3600초 가변) 동안 완전히 중단**되는 상황을 모사합니다:
+* **대상 가구**: `H001`~`H010` 모든 가구 지원 (단일 실행 및 다중 가구 동시 실행 지원)
+* **결측 시간 ($D = \text{fault\_duration\_sec}$)**: 기본 120초이며, 1~3600초 사이의 정수로 사용자 지정 가능합니다. 이 값은 실제 대기 시간이 아니라 시뮬레이터의 가상 시각(Virtual Time) 기준입니다.
+* **0W 발행 금지 원칙**: 0W는 기기가 연결된 상태의 정상 계측값이므로 센서 고장을 나타낼 수 없습니다. 따라서 고장 구간에는 0W를 포함하여 어떠한 MQTT 메시지도 발행하지 않습니다 (0건 발행).
+* **물리 계산값 은닉**: 내부 물리 시뮬레이션 상태 머신은 매초 틱을 진행하되, 계산된 전력값을 실제 측정값처럼 MQTT, UI 수치 카드, CSV에 노출하지 않습니다 (`[센서 고장 / 측정 없음]` 표기).
+* **총 사이클**: $D + 20$초 (고장 전 정상 10초 + 고장 $D$초 + 복구 후 정상 10초)
+* **총 MQTT 발행 건수**: 결측 시간 $D$와 무관하게 **항상 정확히 20건** (고장 전 10건 + 복구 후 10건)
+* **정확한 타임라인**:
+  * `cycle 1~10`: 평상시 정상 대기전력 계측 및 MQTT 발행 (10회 발행)
+  * `cycle 11`: **센서 고장 시작** 이벤트 발생 ➡️ MQTT 발행 즉시 중단
+  * `cycle 11 ~ (10+D)`: **센서 고장 블랙아웃** (정확히 $D$초간 MQTT 메시지 0건 발행). 내부 시뮬레이션 가상 시각은 1초씩 계속 전진.
+  * `cycle (11+D)`: **센서 복구** 이벤트 발생 ➡️ 정상 계측 및 MQTT 발행 재개 (`cycle 10`과 `cycle (11+D)`의 `measured_at` 시각 차이는 정확히 $D + 1$초).
+  * `cycle (11+D) ~ (20+D)`: 복구 후 정상 대기전력 계측 및 MQTT 발행 (10회 발행)
+  * `cycle (20+D)`: **시나리오 완료** 이벤트 발생 ➡️ 총 20건 발행 후 자동 완료 (`status: "completed"`)
+* **차트 및 CSV 표현**:
+  * **차트**: Chart.js `spanGaps: false` 및 고장 구간 `null` 데이터 버퍼링을 통해 cycle 10과 복구 시점 사이가 이어지지 않고 시각적으로 완전히 끊겨 보입니다.
+  * **CSV**: 결측 구간의 빈 행이나 허위 0W를 기록하지 않고, 실제 유효 계측치 20개 행만 추출되어 데이터 무결성을 보장합니다.
+
 ---
 
 ## 4. 발행 토픽 및 전송 페이로드 규격
@@ -119,12 +139,13 @@ python simulator.py --help
 
 | 옵션 | 단축키 | 기본값 | 설명 |
 | :--- | :--- | :--- | :--- |
-| `--scenario` | `-s` | `random` | 실행 시나리오 모드 (`random`: 연속 확률, `peak`: 10초 피크, `routine_missed`: 08:10 루틴 누락 이상치, `normal_routine`: H001 정상 일상 루틴) |
+| `--scenario` | `-s` | `random` | 실행 시나리오 모드 (`random`: 연속 확률, `peak`: 10초 피크, `routine_missed`: 08:10 루틴 누락 이상치, `normal_routine`: H001 정상 일상 루틴, `sensor_fault`: 가변 센서 고장 결측) |
 | `--date` | `-d` | `None` | 가상 기준 날짜 (`YYYY-MM-DD`). 미지정 시 오늘 날짜 사용 |
 | `--houses` | `-n` | `10` | 대상 가구 수 (`H001` ~ `H{n:03d}`) |
+| `--fault-duration-sec` | | `120` | `sensor_fault` 결측 지속 시간 (초 단위, 1~3600 범위 정수, 기본값: 120) |
 | `--interval` | `-i` | `1.0` | 데이터 발행 주기 (초 단위) |
 | `--hz` | | `None` | 가구당 초당 측정 횟수 (지정 시 `interval = 1/hz` 자동 환산) |
-| `--count` | `-c` | `0` | 전송 사이클 수 (`0`: 무한, `N > 0`: N회 전송 종료, peak: 60, routine_missed: 300, normal_routine: 308) |
+| `--count` | `-c` | `0` | 전송 사이클 수 (`0`: 무한/시나리오 자동완료, `N > 0`: N회 전송 종료. peak: 60, routine_missed: 300, normal_routine: 308, sensor_fault: `0` 또는 $D+20$만 허용하며 그 외의 값은 연결 전 충돌 에러로 차단) |
 | `--start-time` | | `None` | 시작 가상 시각 (예: `08:04:58`). CLI 기본값: normal_routine: 오늘 08:04:58 KST, routine_missed: 오늘 08:15:00 KST (웹: 08:10:01 KST) |
 | `--host` | | `localhost` | MQTT 브로커 호스트 주소 (**TLS 사용 시 인증서 SAN과 반드시 일치해야 함. EC2-A 로컬 실행 시에도 localhost가 아닌 A 사설 IP 사용**) |
 | `--port` | `-p` | `None` | MQTT 브로커 포트 번호 (미지정 시 `MQTT_PORT` 환경변수 또는 TLS 여부에 따라 `8883`/`1883` 자동 결정) |
@@ -167,6 +188,15 @@ python simulator.py --scenario normal_routine
 
 # 피크 60초 시연 모드 (10초 시점 3,000W+ 도달)
 python simulator.py --scenario peak
+
+# H001 센서 고장 140초 기본 시연 모드 (120초간 MQTT 무발행 결측 검증)
+python simulator.py --scenario sensor_fault
+
+# H001 센서 고장 30초 단축 결측 시연 (총 50사이클, 20건 발행)
+python simulator.py --scenario sensor_fault --fault-duration-sec 30
+
+# H001 센서 고장 180초 결측 시연 및 명시적 총 사이클 수 지정
+python simulator.py --scenario sensor_fault --fault-duration-sec 180 --count 200
 
 # 08:10 루틴 누락(ROUTINE_MISSED) 300초 이상치 검증 모드
 python simulator.py --scenario routine_missed
@@ -305,6 +335,9 @@ python web_server.py \
 * **`[▶ H001 이상 감지]` 원클릭 버튼 (주황색)**:
   * 클릭 한 번으로 이전 시뮬레이터를 초기화하고, `H001` 가구 상태를 재생성한 후 `routine_missed` 시나리오를 할당하여 실시간 MQTT 발행을 즉시 시작합니다.
   * 08:10:01 KST부터 전자레인지 미가동 대기전력 상태를 유지하며 299초 분석 버퍼 충족("299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기") 후 300초에 "H001 루틴 누락 전력 패턴 발행 완료" 상태로 자동 종료됩니다.
+* **`[▶ H001 센서 고장]` 원클릭 버튼 (보라색)**:
+  * 클릭 한 번으로 이전 시뮬레이터를 초기화하고, `H001` 가구 상태를 재생성한 후 `sensor_fault` 시나리오를 할당하여 실시간 결측 시뮬레이션을 시작합니다.
+  * cycle 1~10 대기전력 정상 발행 후, cycle 11~130 동안 120초간 MQTT 메시지를 한 건도 발행하지 않으며(0W 위조 없이 실제 무발행), cycle 131부터 정상 복구되어 140초 완주 후 자동 완료됩니다.
 * **초기화 실패 안전장치**:
   * 원클릭 버튼 실행 시 내부 초기화(reset)가 HTTP 503이나 네트워크 오류로 실패하면 새 시나리오를 시작하지 않으며, 기존 상태와 SSE 스트림을 안전하게 보존하고 오류 안내 메시지를 표시합니다.
 * **실시간 제어 바**: 일시정지, 재생, 리셋(발행 중지), 기준 날짜 선택, 관찰 가구 변경, 재생 속도 조절(1x, 2x, 5x, 10x 배속)
@@ -337,18 +370,43 @@ python web_server.py \
   }
   ```
   * `households`: 1개 이상 10개 이하의 가구 설정 배열 (중복 가구 ID 불허).
-  * 각 원소는 `house`(`H001`~`H010`)와 `scenario`(`normal_routine`, `peak`, `routine_missed`, `random`, `manual`)를 포함해야 합니다.
+  * 각 원소는 `house`(`H001`~`H010`)와 `scenario`(`normal_routine`, `peak`, `routine_missed`, `sensor_fault`, `random`, `manual`)를 포함해야 합니다.
 
 * **방법 2. 단일 가구 하위 호환 요청 (기존 규격)**:
   ```json
   {
-    "scenario": "normal_routine",
+    "scenario": "sensor_fault",
     "house": "H001",
     "simulation_date": "2026-09-15"
   }
   ```
   * 기존 단일 가구 요청은 내부적으로 `[{"house": house, "scenario": scenario}]`로 정규화되어 동작하므로 100% 하위 호환됩니다.
   * 단일 지정 필드(`house`/`scenario`)와 다중 지정 필드(`households`)를 동시에 전달하면 충돌로 간주하여 HTTP `400 Bad Request`로 거절됩니다.
+
+* **방법 3. 웹 API curl 실행 예시 (`sensor_fault` 및 복합 시나리오)**:
+  ```bash
+  # 1) H001 단일 가구 기본 120초 센서 결측 시연 시작
+  curl -X POST http://127.0.0.1:8085/api/start \
+    -H "Content-Type: application/json" \
+    -d '{"scenario": "sensor_fault", "house": "H001"}'
+
+  # 2) H001 단일 가구 30초 결측 시간 지정 시연 시작
+  curl -X POST http://127.0.0.1:8085/api/start \
+    -H "Content-Type: application/json" \
+    -d '{"scenario": "sensor_fault", "house": "H001", "fault_duration_sec": 30}'
+
+  # 3) 다중 가구 동시 실행 (H001 센서 결측 180초 + H002 피크 검증)
+  curl -X POST http://127.0.0.1:8085/api/start \
+    -H "Content-Type: application/json" \
+    -d '{
+      "households": [
+        { "house": "H001", "scenario": "sensor_fault" },
+        { "house": "H002", "scenario": "peak" }
+      ],
+      "fault_duration_sec": 180,
+      "simulation_date": "2026-09-17"
+    }'
+  ```
 
 * **다중 가구 공통 가상 시작 시각(`base_dt`) 결정 규칙 및 충돌 방어**:
   * **normal_routine의 H001 전용 제한 (HTTP 400 방어)**:

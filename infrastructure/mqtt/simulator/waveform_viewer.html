@@ -251,6 +251,13 @@
       border: 1px solid rgba(245, 158, 11, 0.4);
     }
 
+    .status-fault {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      animation: pulse 1s infinite;
+    }
+
     @keyframes pulse {
 
       0%,
@@ -521,6 +528,12 @@
       border: 1px solid rgba(239, 68, 68, 0.4);
     }
 
+    .badge-hh-fault {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
     /* 발표용 원클릭 시연 제어 패널 스타일 */
     .presentation-panel {
       background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
@@ -585,6 +598,31 @@
       cursor: not-allowed;
       transform: none;
     }
+    .presentation-btn-fault {
+      background: linear-gradient(135deg, #dc2626, #b91c1c);
+      color: #ffffff;
+      border: 1px solid rgba(248, 113, 113, 0.6);
+      padding: 11px 22px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .presentation-btn-fault:hover:not(:disabled) {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(239, 68, 68, 0.55);
+    }
+    .presentation-btn-fault:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
     details.advanced-config-details summary {
       cursor: pointer;
       font-weight: 600;
@@ -624,6 +662,11 @@
         <label for="simDateInput" style="font-size: 0.85rem; font-weight: 600; color: #94a3b8;">기준 날짜:</label>
         <input type="date" id="simDateInput" class="speed-select" style="padding: 6px 10px;" />
       </div>
+      <div class="fault-duration-group" style="display: inline-flex; align-items: center; gap: 6px;">
+        <label for="faultDurationInput" style="font-size: 0.85rem; font-weight: 600; color: #94a3b8;" title="센서 고장 시나리오 결측 지속 시간(초, 1~3600)">결측 시간:</label>
+        <input type="number" id="faultDurationInput" class="speed-select" min="1" max="3600" step="1" value="120" style="width: 76px; padding: 6px 8px; text-align: right;" placeholder="120" />
+        <span style="font-size: 0.8rem; color: #94a3b8;">초 (가상 시간 기준, 배속 적용)</span>
+      </div>
       <div class="observe-control-group"
         style="display: inline-flex; align-items: center; gap: 6px; background: rgba(56, 189, 248, 0.1); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.3);">
         <label for="observedHouseSelect" style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">관찰 가구:</label>
@@ -660,6 +703,9 @@
       <button id="btnDemoRoutineMissed" class="presentation-btn-missed" onclick="startRoutineMissedDemo()">
         ▶ H001 이상 감지
       </button>
+      <button id="btnDemoSensorFault" class="presentation-btn-fault" onclick="startSensorFaultDemo()">
+        ▶ H001 센서 고장
+      </button>
     </div>
   </div>
 
@@ -679,6 +725,7 @@
           <span style="font-size: 0.8rem; color: #94a3b8; margin-right: 4px; font-weight: 600;">프리셋:</span>
           <button type="button" id="btnPresetPeak" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('peak_single')">H001 피크 단독</button>
           <button type="button" id="btnPresetMissed" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('missed_single')">H001 루틴누락 단독</button>
+          <button type="button" id="btnPresetFault" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('fault_single')">H001 센서 고장</button>
           <button type="button" id="btnPresetManual" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('manual_single')">H001 수동제어 단독</button>
           <button type="button" id="btnPresetMulti" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('comprehensive')">종합 시연 (H001~H004)</button>
           <button type="button" id="btnPresetAllRandom" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('all_random')">전체 랜덤 (10가구)</button>
@@ -930,6 +977,7 @@
           ...(house === 'H001' ? [{ val: 'normal_routine', text: 'normal_routine (H001 정상 일상 루틴)' }] : []),
           { val: 'peak', text: 'peak (피크 부하 시연)' },
           { val: 'routine_missed', text: 'routine_missed (루틴 누락 시연)' },
+          { val: 'sensor_fault', text: 'sensor_fault (센서 결측 및 복구)' },
           { val: 'random', text: 'random (랜덤 부하 시뮬레이션)' },
           { val: 'manual', text: 'manual (가전 수동 제어)' }
         ];
@@ -978,6 +1026,9 @@
         } else if (type === 'missed_single') {
           chk.checked = (house === 'H001');
           if (house === 'H001') sel.value = 'routine_missed';
+        } else if (type === 'fault_single') {
+          chk.checked = (house === 'H001');
+          if (house === 'H001') sel.value = 'sensor_fault';
         } else if (type === 'manual_single') {
           chk.checked = (house === 'H001');
           if (house === 'H001') sel.value = 'manual';
@@ -1005,7 +1056,7 @@
       const btnStart = document.getElementById('btnStartSimulation');
       if (btnStart) btnStart.disabled = !enabled;
 
-      ['btnPresetPeak', 'btnPresetMissed', 'btnPresetManual', 'btnPresetMulti', 'btnPresetAllRandom'].forEach(id => {
+      ['btnPresetPeak', 'btnPresetMissed', 'btnPresetFault', 'btnPresetManual', 'btnPresetMulti', 'btnPresetAllRandom'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.disabled = !enabled;
       });
@@ -1014,6 +1065,11 @@
       if (btnDemoNormal) btnDemoNormal.disabled = !enabled;
       const btnDemoMissed = document.getElementById('btnDemoRoutineMissed');
       if (btnDemoMissed) btnDemoMissed.disabled = !enabled;
+      const btnDemoFault = document.getElementById('btnDemoSensorFault');
+      if (btnDemoFault) btnDemoFault.disabled = !enabled;
+
+      const faultDurInput = document.getElementById('faultDurationInput');
+      if (faultDurInput) faultDurInput.disabled = !enabled;
 
       setSimulationDateInputEnabled(enabled);
     }
@@ -1037,10 +1093,13 @@
       }
     }
 
-    function updateHouseholdTableRow(house, status, sec, totalP) {
+    function updateHouseholdTableRow(house, status, sec, totalP, isFault = false, gapElapsed = 0, faultDuration = 120) {
       const badge = document.getElementById(`status_badge_${house}`);
       if (badge) {
-        if (status === 'completed') {
+        if (isFault) {
+          badge.className = 'badge-hh badge-hh-fault';
+          badge.textContent = `센서고장 (${gapElapsed ?? 0}/${faultDuration ?? 120}초)`;
+        } else if (status === 'completed') {
           badge.className = 'badge-hh badge-hh-completed';
           badge.textContent = `완료 (${sec}s)`;
         } else if (status === 'running') {
@@ -1055,8 +1114,12 @@
         }
       }
       const pCell = document.getElementById(`power_val_${house}`);
-      if (pCell && typeof totalP === 'number') {
-        pCell.textContent = `${totalP.toFixed(1)} W`;
+      if (pCell) {
+        if (isFault || totalP === null || totalP === undefined) {
+          pCell.textContent = '—';
+        } else if (typeof totalP === 'number') {
+          pCell.textContent = `${totalP.toFixed(1)} W`;
+        }
       }
     }
 
@@ -1253,7 +1316,8 @@
             borderWidth: 2.2,
             fill: true,
             tension: 0.15,
-            pointRadius: 0
+            pointRadius: 0,
+            spanGaps: false
           },
           {
             label: '피상전력 (Apparent S, VA)',
@@ -1263,7 +1327,8 @@
             borderDash: [4, 4],
             fill: false,
             tension: 0.15,
-            pointRadius: 0
+            pointRadius: 0,
+            spanGaps: false
           },
           {
             label: '무효전력 (Reactive Q, var)',
@@ -1272,7 +1337,8 @@
             borderWidth: 1.5,
             fill: false,
             tension: 0.15,
-            pointRadius: 0
+            pointRadius: 0,
+            spanGaps: false
           }
         ]
       },
@@ -1311,7 +1377,8 @@
             borderColor: '#f43f5e',
             borderWidth: 2,
             pointRadius: 0,
-            yAxisID: 'yCurrent'
+            yAxisID: 'yCurrent',
+            spanGaps: false
           },
           {
             label: '역률 (Power Factor PF)',
@@ -1319,7 +1386,8 @@
             borderColor: '#10b981',
             borderWidth: 1.8,
             pointRadius: 0,
-            yAxisID: 'yPf'
+            yAxisID: 'yPf',
+            spanGaps: false
           }
         ]
       },
@@ -1821,18 +1889,23 @@
       currentSec = m.sec;
 
       const house = m.house || observedHouse;
-      const curMax = maxPowerByHouse.get(house) || 0.0;
-      if (m.totalP > curMax) {
-        maxPowerByHouse.set(house, m.totalP);
+      const isFault = !!(m.sensorFault || m.measurementAvailable === false);
+      const isNullPower = m.totalP === null || m.totalP === undefined;
+
+      if (typeof m.totalP === 'number') {
+        const curMax = maxPowerByHouse.get(house) || 0.0;
+        if (m.totalP > curMax) {
+          maxPowerByHouse.set(house, m.totalP);
+        }
       }
       const displayMax = maxPowerByHouse.get(house) || 0.0;
 
-      document.getElementById('valPower').textContent = m.totalP.toFixed(1);
-      document.getElementById('valApparent').textContent = m.apparentS.toFixed(1);
-      document.getElementById('valCurrent').textContent = m.currentA.toFixed(2);
-      document.getElementById('valVoltage').textContent = m.voltage.toFixed(1);
-      document.getElementById('valPf').textContent = m.pf.toFixed(3);
-      document.getElementById('valReactive').textContent = m.totalQ.toFixed(1);
+      document.getElementById('valPower').textContent = isNullPower ? "—" : m.totalP.toFixed(1);
+      document.getElementById('valApparent').textContent = (m.apparentS === null || m.apparentS === undefined) ? "—" : m.apparentS.toFixed(1);
+      document.getElementById('valCurrent').textContent = (m.currentA === null || m.currentA === undefined) ? "—" : m.currentA.toFixed(2);
+      document.getElementById('valVoltage').textContent = (m.voltage === null || m.voltage === undefined) ? "—" : m.voltage.toFixed(1);
+      document.getElementById('valPf').textContent = (m.pf === null || m.pf === undefined) ? "—" : m.pf.toFixed(3);
+      document.getElementById('valReactive').textContent = (m.totalQ === null || m.totalQ === undefined) ? "—" : m.totalQ.toFixed(1);
       document.getElementById('valTime').textContent = `T+${String(m.sec).padStart(2, '0')}s`;
       document.getElementById('valMaxPower').textContent = `${displayMax.toFixed(1)} W`;
 
@@ -1846,7 +1919,13 @@
 
       if (status === 'completed') {
         badgeStatus.className = "badge-status status-normal";
-        if (scenario === 'normal_routine') {
+        if (scenario === 'sensor_fault') {
+          const faultDur = m.faultDurationSec ?? 120;
+          badgeStatus.textContent = `${m.house} 센서 결측 시연 완료`;
+          timelineNotice.style.color = "#4ade80";
+          timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.4)";
+          timelineNotice.innerHTML = `<strong>[시연 완료]</strong> ${timeLabel}${m.house} ${faultDur}초 결측 구간 종료 및 정상 복구 완료`;
+        } else if (scenario === 'normal_routine') {
           badgeStatus.textContent = "H001 정상 일상 전력 패턴 발행 완료";
           timelineNotice.style.color = "#4ade80";
           timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.4)";
@@ -1862,7 +1941,17 @@
           timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.4)";
           timelineNotice.innerHTML = `<strong>[가구 ${m.house} 완료]</strong> ${timeLabel}T+${m.sec}s: 시연 목표 달성 후 정상 완료되었습니다.`;
         }
-      } else if (m.totalP >= 3000.0) {
+      } else if (isFault) {
+        cardPower.className = "stat-card";
+        badgeStatus.className = "badge-status status-fault";
+        const faultDur = m.faultDurationSec ?? 120;
+        const elapsed = m.gapElapsedSec ?? (m.sec - 10);
+        const remaining = m.gapRemainingSec ?? Math.max(0, faultDur - elapsed);
+        badgeStatus.textContent = `${m.house} 센서 고장 (${elapsed}/${faultDur}초)`;
+        timelineNotice.style.color = "#fbbf24";
+        timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
+        timelineNotice.innerHTML = `<strong>[센서 고장 중]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 센서 결측 (${faultDur}초 결측 중 <strong>${elapsed}초 경과</strong>, 잔여 ${remaining}초, MQTT 발행 중단)`;
+      } else if (typeof m.totalP === 'number' && m.totalP >= 3000.0) {
         cardPower.className = "stat-card alert-card";
         badgeStatus.className = "badge-status status-peak";
         badgeStatus.textContent = `${m.house} 피크 경보 (3,000W+ 초과!)`;
@@ -1877,13 +1966,13 @@
           badgeStatus.textContent = `${m.house} 정상 루틴 (전자레인지 가동 중)`;
           timelineNotice.style.color = "#38bdf8";
           timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.4)";
-          timelineNotice.innerHTML = `<strong>[아침 루틴 가동]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 전자레인지 가동 중 (총 전력: <strong>${m.totalP.toFixed(1)} W</strong>, 08:10 이전 정상 루틴 60초)`;
+          timelineNotice.innerHTML = `<strong>[아침 루틴 가동]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 전자레인지 가동 중 (총 전력: <strong>${(m.totalP || 0).toFixed(1)} W</strong>, 08:10 이전 정상 루틴 60초)`;
         } else {
           badgeStatus.className = "badge-status status-normal";
           badgeStatus.textContent = `${m.house} 정상 일상 루틴 진행 중`;
           timelineNotice.style.color = "#4ade80";
           timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.3)";
-          timelineNotice.innerHTML = `<strong>[정상 일상 진행 중]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 대기전력 유지 중 (총 전력: <strong>${m.totalP.toFixed(1)} W</strong>)`;
+          timelineNotice.innerHTML = `<strong>[정상 일상 진행 중]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 대기전력 유지 중 (총 전력: <strong>${(m.totalP || 0).toFixed(1)} W</strong>)`;
         }
       } else if (scenario === 'manual') {
         cardPower.className = "stat-card";
@@ -1892,33 +1981,53 @@
         timelineNotice.style.color = "#a78bfa";
         timelineNotice.style.borderColor = "rgba(167, 139, 250, 0.4)";
         const actDevs = (m.activeNames && m.activeNames.length > 0) ? m.activeNames.join(', ') : "가전 대기(OFF)";
-        timelineNotice.innerHTML = `<strong>[가전 수동 제어]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 총 전력 <strong>${m.totalP.toFixed(1)} W</strong> (가전: ${actDevs})`;
+        timelineNotice.innerHTML = `<strong>[가전 수동 제어]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 총 전력 <strong>${(m.totalP || 0).toFixed(1)} W</strong> (가전: ${actDevs})`;
       } else if (scenario === 'routine_missed') {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-missed";
         badgeStatus.textContent = "H001 루틴 누락 전력 패턴 발행 중";
         timelineNotice.style.color = "#fbbf24";
         timelineNotice.style.borderColor = "rgba(245, 158, 11, 0.4)";
-        timelineNotice.innerHTML = `<strong>[루틴 누락 감시]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 루틴 누락 전력 패턴 발행 중 (총 전력: <strong>${m.totalP.toFixed(1)} W</strong>, 대기전력 유지)`;
+        timelineNotice.innerHTML = `<strong>[루틴 누락 감시]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 루틴 누락 전력 패턴 발행 중 (총 전력: <strong>${(m.totalP || 0).toFixed(1)} W</strong>, 대기전력 유지)`;
+      } else if (scenario === 'sensor_fault') {
+        cardPower.className = "stat-card";
+        badgeStatus.className = "badge-status status-normal";
+        if (m.sec <= 10) {
+          badgeStatus.textContent = `${m.house} 정상 계측 (고장 대기)`;
+          timelineNotice.style.color = "#38bdf8";
+          timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.3)";
+          timelineNotice.innerHTML = `<strong>[정상 대기]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 정상 계측 중 (소비전력 <strong>${(m.totalP || 0).toFixed(1)} W</strong>, cycle 11 센서 고장 예정)`;
+        } else {
+          badgeStatus.textContent = `${m.house} 센서 복구 정상 계측`;
+          timelineNotice.style.color = "#4ade80";
+          timelineNotice.style.borderColor = "rgba(74, 222, 128, 0.3)";
+          timelineNotice.innerHTML = `<strong>[센서 복구]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 센서 정상 복구 완료 (소비전력 <strong>${(m.totalP || 0).toFixed(1)} W</strong> 실시간 발행 중)`;
+        }
       } else {
         cardPower.className = "stat-card";
         badgeStatus.className = "badge-status status-normal";
         badgeStatus.textContent = `${m.house} 실시간 발행 중`;
         timelineNotice.style.color = "#38bdf8";
         timelineNotice.style.borderColor = "rgba(56, 189, 248, 0.3)";
-        timelineNotice.innerHTML = `<strong>[MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 전력 ${m.totalP.toFixed(1)} W`;
+        timelineNotice.innerHTML = `<strong>[MQTT 발행 중]</strong> ${timeLabel}T+${m.sec}s: 가구 ${m.house} 전력 ${(m.totalP || 0).toFixed(1)} W`;
       }
 
       // 이벤트 로그 기록 (현재 관찰 가구인 경우에만 추가)
       if (m.eventNoticeText) {
         let evType = "상태 안내";
-        if (m.eventNoticeText.includes("피크 발생")) evType = "피크 경보";
+        if (m.eventNoticeText.includes("시나리오 완료") || m.eventNoticeText.includes("시연 완료")) evType = "시연 완료";
+        else if (m.eventNoticeText.includes("센서 복구")) evType = "센서 복구";
+        else if (m.eventNoticeText.includes("고장 시작") || m.eventNoticeText.includes("센서 고장")) evType = "센서 고장";
+        else if (m.eventNoticeText.includes("피크 발생")) evType = "피크 경보";
         else if (m.eventNoticeText.includes("피크 해소")) evType = "피크 해소";
         else if (m.eventNoticeText.includes("정상 복귀")) evType = "정상 복귀";
         else if (m.eventNoticeText.includes("이상치") || m.eventNoticeText.includes("버퍼 충족")) evType = "이상치 감지";
         else if (m.eventNoticeText.includes("루틴 검증") || m.eventNoticeText.includes("루틴 누락")) evType = "루틴 감시";
         else if (m.eventNoticeText.includes("아침 루틴") || m.eventNoticeText.includes("정상 일상")) evType = "정상 루틴";
-        addEventRow(m.sec, `[${m.house}] ${evType}`, m.activeNames.join(', ') || (scenario === 'routine_missed' ? '전자레인지 미가동' : '가전 정지'), `${m.totalP.toFixed(0)} W`, m.eventNoticeText);
+
+        const powerStr = (typeof m.totalP === 'number') ? `${m.totalP.toFixed(0)} W` : "측정 없음";
+        const devStr = isFault ? "센서 블랙아웃" : ((m.activeNames || []).join(', ') || (scenario === 'routine_missed' ? '전자레인지 미가동' : '가전 정지'));
+        addEventRow(m.sec, `[${m.house}] ${evType}`, devStr, powerStr, m.eventNoticeText);
       }
 
       // 가전 상태 칩 갱신
@@ -1931,7 +2040,7 @@
           if (pendingInfo && devInfo.enabled === pendingInfo.enabled) {
             clearPendingRequest(dev);
           }
-          renderDeviceState(dev, scenario, m.totalP);
+          renderDeviceState(dev, scenario, m.totalP || 0);
         });
       }
       updateApplianceButtonsState();
@@ -1941,26 +2050,30 @@
     function processServerMetrics(m) {
       const house = m.house || "H001";
       latestMetricsByHouse.set(house, m);
+      const isFault = !!(m.sensorFault || m.measurementAvailable === false);
 
       // 가구별 최고 전력 독립 갱신
-      const curMax = maxPowerByHouse.get(house) || 0.0;
-      if (m.totalP > curMax) {
-        maxPowerByHouse.set(house, m.totalP);
+      if (typeof m.totalP === 'number') {
+        const curMax = maxPowerByHouse.get(house) || 0.0;
+        if (m.totalP > curMax) {
+          maxPowerByHouse.set(house, m.totalP);
+        }
       }
 
       // 가구별 독립 히스토리 버퍼에 저장
       const hist = getOrCreateHistory(house);
       const timeLabel = m.simTimeKst || new Date().toLocaleTimeString('ko-KR');
       hist.times.push(timeLabel);
-      hist.activeP.push(m.totalP);
-      hist.reactiveP.push(m.totalQ);
-      hist.apparentS.push(m.apparentS);
-      hist.currents.push(m.currentA);
-      hist.pfs.push(m.pf);
-      hist.voltages.push(m.voltage);
-      hist.activeLabels.push((m.activeNames || []).join(', '));
+      hist.activeP.push(isFault ? null : m.totalP);
+      hist.reactiveP.push(isFault ? null : m.totalQ);
+      hist.apparentS.push(isFault ? null : m.apparentS);
+      hist.currents.push(isFault ? null : m.currentA);
+      hist.pfs.push(isFault ? null : m.pf);
+      hist.voltages.push(isFault ? null : m.voltage);
+      hist.activeLabels.push(isFault ? '센서 고장' : ((m.activeNames || []).join(', ')));
 
-      if (hist.times.length > 120) {
+      const maxHistoryLen = Math.max(150, (m.faultDurationSec ?? 120) + 30);
+      if (hist.times.length > maxHistoryLen) {
         hist.times.shift();
         hist.activeP.shift();
         hist.reactiveP.shift();
@@ -1972,7 +2085,7 @@
       }
 
       // 가구 테이블 행 상태(뱃지, 전력) 갱신
-      updateHouseholdTableRow(house, m.status, m.sec, m.totalP);
+      updateHouseholdTableRow(house, m.status, m.sec, m.totalP, isFault, m.gapElapsedSec, m.faultDurationSec ?? 120);
 
       // 관찰 가구 드롭다운 옵션 유지 (running, completed 모두 유지)
       ensureHouseInObservedSelect(house);
@@ -1983,19 +2096,19 @@
 
         const label = timeLabel;
         chartMain.data.labels.push(label);
-        chartMain.data.datasets[0].data.push(m.totalP);
-        chartMain.data.datasets[1].data.push(m.apparentS);
-        chartMain.data.datasets[2].data.push(m.totalQ);
-        if (chartMain.data.labels.length > 120) {
+        chartMain.data.datasets[0].data.push(isFault ? null : m.totalP);
+        chartMain.data.datasets[1].data.push(isFault ? null : m.apparentS);
+        chartMain.data.datasets[2].data.push(isFault ? null : m.totalQ);
+        if (chartMain.data.labels.length > maxHistoryLen) {
           chartMain.data.labels.shift();
           chartMain.data.datasets.forEach(ds => ds.data.shift());
         }
         chartMain.update('none');
 
         chartSecondary.data.labels.push(label);
-        chartSecondary.data.datasets[0].data.push(m.currentA);
-        chartSecondary.data.datasets[1].data.push(m.pf);
-        if (chartSecondary.data.labels.length > 120) {
+        chartSecondary.data.datasets[0].data.push(isFault ? null : m.currentA);
+        chartSecondary.data.datasets[1].data.push(isFault ? null : m.pf);
+        if (chartSecondary.data.labels.length > maxHistoryLen) {
           chartSecondary.data.labels.shift();
           chartSecondary.data.datasets.forEach(ds => ds.data.shift());
         }
@@ -2029,6 +2142,8 @@
             document.getElementById('badgeStatus').textContent = "H001 정상 일상 전력 패턴 발행 완료";
           } else if (singleScenario === 'routine_missed') {
             document.getElementById('badgeStatus').textContent = "H001 루틴 누락 전력 패턴 발행 완료";
+          } else if (singleScenario === 'sensor_fault') {
+            document.getElementById('badgeStatus').textContent = `${singleHouse} 센서 결측 시연 완료`;
           } else {
             document.getElementById('badgeStatus').textContent = `${singleHouse} 시연 완료`;
           }
@@ -2145,6 +2260,20 @@
         }
       }
 
+      // 선택된 가구 중 sensor_fault 시나리오가 포함되어 있을 때만 faultDurationInput 검증
+      const hasSensorFault = selected.some(item => item.scenario === 'sensor_fault');
+      let effectiveFaultDuration = null;
+      if (hasSensorFault) {
+        const faultDurationEl = document.getElementById('faultDurationInput');
+        const rawVal = faultDurationEl ? faultDurationEl.value.trim() : '';
+        const parsed = parseInt(rawVal, 10);
+        if (!rawVal || isNaN(parsed) || parsed < 1 || parsed > 3600 || String(parsed) !== rawVal) {
+          showNoticeError("결측 시간은 1~3600 사이의 정수(초)여야 합니다.");
+          return;
+        }
+        effectiveFaultDuration = parsed;
+      }
+
       if (!isServerConnected) {
         showNoticeError("백엔드 서버에 연결되어 있지 않습니다. 다중 가구 시뮬레이션은 서버 실행 상태에서만 가능합니다.");
         return;
@@ -2167,6 +2296,9 @@
       };
       if (simDate && simDate.trim()) {
         payload.simulation_date = simDate.trim();
+      }
+      if (effectiveFaultDuration !== null) {
+        payload.fault_duration_sec = effectiveFaultDuration;
       }
 
       currentMode = (selected.length === 1) ? selected[0].scenario : 'multi';
@@ -2247,6 +2379,11 @@
 
     async function startRoutineMissedDemo() {
       applyPreset('missed_single');
+      await startMultiSimulation();
+    }
+
+    async function startSensorFaultDemo() {
+      applyPreset('fault_single');
       await startMultiSimulation();
     }
 
@@ -2549,15 +2686,23 @@
 
       let badgeClass = 'status-normal';
       if (type.includes('피크') || type.includes('이상치')) badgeClass = 'status-peak';
+      else if (type.includes('고장')) badgeClass = 'status-fault';
       else if (type.includes('켜짐') || type.includes('수동')) badgeClass = 'status-running';
       else if (type.includes('루틴')) badgeClass = 'status-missed';
+
+      let displayPower = "—";
+      if (typeof power === 'number') {
+        displayPower = `${power.toFixed(0)} W`;
+      } else if (power !== null && power !== undefined) {
+        displayPower = String(power);
+      }
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>T+${String(sec).padStart(2, '0')}s</strong></td>
         <td><span class="badge-status ${badgeClass}">${type}</span></td>
         <td><strong>${device}</strong></td>
-        <td style="color:#38bdf8; font-weight:600;">${power}</td>
+        <td style="color:#38bdf8; font-weight:600;">${displayPower}</td>
         <td style="color:#cbd5e1;">${desc}</td>
       `;
       tbody.insertBefore(tr, tbody.firstChild);
@@ -2574,6 +2719,9 @@
       let csvContent = "\uFEFF" + headers.join(",") + "\r\n";
 
       for (let i = 0; i < hist.times.length; i++) {
+        if (hist.activeP[i] === null || hist.activeP[i] === undefined) {
+          continue; // 결측 행은 CSV에 기록하지 않음 (오직 실제 계측치만 포함)
+        }
         const row = [
           hist.times[i],
           targetHouse,
