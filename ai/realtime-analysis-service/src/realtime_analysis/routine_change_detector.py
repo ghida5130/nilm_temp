@@ -7,6 +7,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from time import perf_counter
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.anomaly_detector import event_id_for
 from realtime_analysis.baseline_updater import first_valid_logical_use
+from realtime_analysis.metrics import AnalysisMetrics, METRICS
 from realtime_analysis.models import (
     APPLIANCE_TYPES,
     ApplianceUsageSession,
@@ -79,38 +81,55 @@ class RoutineChangeDetectionService:
         policy_repository: SqlAlchemyPolicyRepository,
         publisher: EventPublisher,
         timezone_name: str,
+        metrics: AnalysisMetrics = METRICS,
     ) -> None:
         self._session_factory = session_factory
         self._policies = policy_repository
         self._publisher = publisher
         self._timezone = ZoneInfo(timezone_name)
+        self._metrics = metrics
         self._active_signatures: dict[tuple[str, str], str] = {}
 
     def detect_and_publish(self, as_of_date: date) -> int:
-        policy = self._policies.get("ROUTINE_CHANGED")
-        if policy is None:
-            return 0
-        criteria = _DetectionCriteria.from_parameters(
-            as_of_date,
-            policy.parameters,
-        )
-
-        with self._session_factory() as session:
-            by_household = self._observations_by_household(
-                session,
-                criteria.reference_start,
+        started_at = perf_counter()
+        result = "not_detected"
+        try:
+            policy = self._policies.get("ROUTINE_CHANGED")
+            if policy is None:
+                result = "skipped"
+                return 0
+            criteria = _DetectionCriteria.from_parameters(
                 as_of_date,
+                policy.parameters,
             )
-            return sum(
-                self._detect_for_household(
+
+            with self._session_factory() as session:
+                by_household = self._observations_by_household(
                     session,
-                    household_id,
-                    household_observations,
+                    criteria.reference_start,
                     as_of_date,
-                    criteria,
                 )
-                for household_id, household_observations in by_household.items()
+                detected = sum(
+                    self._detect_for_household(
+                        session,
+                        household_id,
+                        household_observations,
+                        as_of_date,
+                        criteria,
+                    )
+                    for household_id, household_observations in by_household.items()
+                )
+            result = "detected" if detected else "not_detected"
+            return detected
+        except Exception:
+            result = "error"
+            raise
+        finally:
+            self._metrics.observe_pattern_detection(
+                "ROUTINE_CHANGED",
+                perf_counter() - started_at,
             )
+            self._metrics.record_pattern_detection("ROUTINE_CHANGED", result)
 
     @staticmethod
     def _observations_by_household(
@@ -211,19 +230,19 @@ class RoutineChangeDetectionService:
         if self._active_signatures.get(key) == signature:
             return 0
 
-        self._publisher.publish(
-            self._change_event(
-                household_id,
-                appliance_type,
-                signature,
-                direction,
-                reference_median,
-                recent_median,
-                shift_seconds,
-                len(recent_observations),
-                len(reference_observations),
-            )
+        event = self._change_event(
+            household_id,
+            appliance_type,
+            signature,
+            direction,
+            reference_median,
+            recent_median,
+            shift_seconds,
+            len(recent_observations),
+            len(reference_observations),
         )
+        self._publisher.publish(event)
+        self._metrics.record_pattern_event(event.event_type)
         self._active_signatures[key] = signature
         return 1
 
