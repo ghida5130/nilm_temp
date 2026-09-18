@@ -28,6 +28,9 @@ from realtime_analysis.data_quality_monitor import (
 )
 from realtime_analysis.data_quality_publisher import DataQualityEventPublisher
 from realtime_analysis.dlq import DlqPublisher
+from realtime_analysis.event_emission_repository import (
+    SqlAlchemyEventEmissionRepository,
+)
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.health_server import ObservabilityServer
@@ -92,6 +95,7 @@ def main() -> None:
         ),
         policy_repository=policy_repository,
         timezone_name=settings.analysis_timezone,
+        emission_repository=SqlAlchemyEventEmissionRepository(session_factory),
     )
     bootstrap_baselines = BaselineRepository.from_json_file(
         settings.baseline_file

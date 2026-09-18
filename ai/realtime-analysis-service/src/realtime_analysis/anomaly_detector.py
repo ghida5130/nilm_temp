@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from realtime_analysis.event_emission_repository import EventEmissionRepository
 from realtime_analysis.metrics import AnalysisMetrics, METRICS
 from realtime_analysis.models import (
     ApplianceUsageSession,
@@ -270,15 +271,15 @@ class RealtimeAnomalyDetector:
         repository: SqlAlchemyEventDetectionRepository,
         policy_repository: SqlAlchemyPolicyRepository,
         timezone_name: str,
+        emission_repository: EventEmissionRepository,
         metrics: AnalysisMetrics = METRICS,
     ) -> None:
         self._repository = repository
         self._policies = policy_repository
         self._timezone = ZoneInfo(timezone_name)
+        self._emissions = emission_repository
         self._metrics = metrics
         self._last_evaluated_at: dict[str, datetime] = {}
-        self._emitted_event_ids: set[UUID] = set()
-        self._last_emitted_at: dict[tuple[str, str, str], datetime] = {}
 
     def detect(
         self,
@@ -329,7 +330,7 @@ class RealtimeAnomalyDetector:
         return [
             anomaly
             for anomaly in pending
-            if anomaly.event.event_id not in self._emitted_event_ids
+            if not self._emissions.was_emitted(anomaly.event.event_id)
             and not self._is_in_cooldown(anomaly)
         ]
 
@@ -364,40 +365,41 @@ class RealtimeAnomalyDetector:
         return [
             baseline
             for baseline in baselines
-            if event_id_for(
-                household_id,
-                "ROUTINE_MISSED",
-                baseline.appliance_type,
-                activity_date.isoformat(),
+            if not self._emissions.was_emitted(
+                event_id_for(
+                    household_id,
+                    "ROUTINE_MISSED",
+                    baseline.appliance_type,
+                    activity_date.isoformat(),
+                )
             )
-            not in self._emitted_event_ids
         ]
 
     def mark_emitted(self, anomaly: PendingAnomaly) -> None:
-        self._emitted_event_ids.add(anomaly.event.event_id)
-        self._last_emitted_at[self._cooldown_key(anomaly)] = (
-            anomaly.event.occurred_at.astimezone(timezone.utc)
+        self._emissions.record_emission(
+            event_id=anomaly.event.event_id,
+            household_id=anomaly.event.household_id,
+            event_type=anomaly.event.event_type,
+            appliance_type=anomaly.appliance_type,
+            emitted_at=anomaly.event.occurred_at.astimezone(timezone.utc),
         )
 
     def _is_in_cooldown(self, anomaly: PendingAnomaly) -> bool:
         policy = self._policies.get(anomaly.event.event_type)
         if policy is None or policy.cooldown_hours <= 0:
             return False
-        last_emitted_at = self._last_emitted_at.get(
-            self._cooldown_key(anomaly)
-        )
-        if last_emitted_at is None:
-            return False
-        return anomaly.event.occurred_at.astimezone(timezone.utc) < (
-            last_emitted_at + timedelta(hours=policy.cooldown_hours)
-        )
-
-    @staticmethod
-    def _cooldown_key(anomaly: PendingAnomaly) -> tuple[str, str, str]:
-        return (
+        last_emitted_at = self._emissions.last_emitted_at(
             anomaly.event.household_id,
             anomaly.event.event_type,
             anomaly.appliance_type,
+        )
+        if last_emitted_at is None:
+            return False
+        if last_emitted_at.tzinfo is None:
+            last_emitted_at = last_emitted_at.replace(tzinfo=timezone.utc)
+        return anomaly.event.occurred_at.astimezone(timezone.utc) < (
+            last_emitted_at.astimezone(timezone.utc)
+            + timedelta(hours=policy.cooldown_hours)
         )
 
     def _is_due(self, household_id: str, observed_at: datetime) -> bool:

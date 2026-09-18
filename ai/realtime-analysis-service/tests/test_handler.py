@@ -2,9 +2,13 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock
 from uuid import UUID
 
+import pytest
 from prometheus_client import CollectorRegistry
 
-from realtime_analysis.anomaly_detector import RoutineMissedDetector
+from realtime_analysis.anomaly_detector import (
+    PendingAnomaly,
+    RoutineMissedDetector,
+)
 from realtime_analysis.baseline import BaselineRepository
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.data_quality_monitor import DataQualityMonitor
@@ -138,6 +142,47 @@ def test_pipeline_publishes_event_after_buffer_is_ready() -> None:
         "nilm_pattern_events_total",
         {"event_type": "ROUTINE_MISSED"},
     ) == 1
+
+
+def test_pipeline_does_not_mark_event_when_kafka_publish_fails() -> None:
+    observed = measurement(0)
+    pending = PendingAnomaly(
+        event=AnalysisEvent(
+            event_id=UUID("34c12866-8329-51e3-9e22-57c326f0a395"),
+            household_id="H001",
+            event_type="PROLONGED_INACTIVITY",
+            occurred_at=observed.measured_at,
+            reason={},
+        ),
+        activity_date=observed.measured_at.date(),
+        appliance_type="*",
+        baseline_type="PROLONGED_INACTIVITY",
+    )
+    detector = Mock()
+    detector.detect.return_value = [pending]
+    publisher = Mock()
+    publisher.publish.side_effect = RuntimeError("Kafka publish failed")
+    handler = MeasurementHandler(
+        buffer=HouseholdBuffer(window_size=1),
+        predictor=FakePredictor(),
+        state_decider=ApplianceStateDecider(
+            {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
+        ),
+        state_transition_detector=ApplianceStateTransitionDetector(3, 3, 0.05),
+        activity_repository=Mock(),
+        baseline_repository=BaselineRepository([]),
+        tracker=DailyActivityTracker(),
+        detector=detector,
+        event_publisher=publisher,
+        snapshot_publisher=RecordingSnapshotPublisher(),
+        timezone_name="Asia/Seoul",
+    )
+
+    with pytest.raises(RuntimeError, match="Kafka publish failed"):
+        handler(observed)
+
+    publisher.publish.assert_called_once_with(pending.event)
+    detector.mark_emitted.assert_not_called()
 
 
 def test_pipeline_records_usage_only_after_confirmed_on_transition() -> None:
