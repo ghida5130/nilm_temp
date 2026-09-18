@@ -2,10 +2,12 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+from prometheus_client import CollectorRegistry
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.database import Base
+from realtime_analysis.metrics import AnalysisMetrics
 from realtime_analysis.models import (
     ApplianceUsageSession,
     HouseholdActivityDaily,
@@ -100,11 +102,14 @@ def test_daily_detector_emits_sustained_first_use_time_shift(
         ]
     )
     publisher = RecordingPublisher()
+    registry = CollectorRegistry()
+    metrics = AnalysisMetrics(registry)
     service = RoutineChangeDetectionService(
         session_factory,
         policies,
         publisher,
         "Asia/Seoul",
+        metrics,
     )
 
     assert service.detect_and_publish(as_of_date) == 1
@@ -114,3 +119,19 @@ def test_daily_detector_emits_sustained_first_use_time_shift(
     assert event.reason["previous_time"] == "08:00"
     assert event.reason["recent_time"] == "10:30"
     assert event.reason["shift_minutes"] == 150
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_CHANGED", "result": "detected"},
+    ) == 1
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_CHANGED", "result": "not_detected"},
+    ) == 1
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_duration_seconds_count",
+        {"pattern": "ROUTINE_CHANGED"},
+    ) == 2
+    assert registry.get_sample_value(
+        "nilm_pattern_events_total",
+        {"event_type": "ROUTINE_CHANGED"},
+    ) == 1

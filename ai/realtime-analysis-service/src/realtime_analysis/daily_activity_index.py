@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from threading import Event, Thread
+from time import perf_counter
 from typing import Literal, Protocol
 from uuid import UUID, uuid5
 from zoneinfo import ZoneInfo
@@ -16,6 +17,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import distinct, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from realtime_analysis.metrics import AnalysisMetrics, METRICS
 from realtime_analysis.models import (
     ApplianceUsageSession,
     HouseholdActivityDaily,
@@ -402,14 +404,33 @@ class DailyActivityIndexService:
         configured_household_ids: Collection[str],
         baseline_updater: DailyBaselineUpdater | None = None,
         daily_event_detector: DailyEventDetector | None = None,
+        metrics: AnalysisMetrics = METRICS,
     ) -> None:
         self._repository = repository
         self._publisher = publisher
         self._configured_household_ids = tuple(configured_household_ids)
         self._baseline_updater = baseline_updater
         self._daily_event_detector = daily_event_detector
+        self._metrics = metrics
 
     def publish_date(self, activity_date: date) -> int:
+        published = self._run_daily_job(
+            "activity_index",
+            lambda: self._publish_activity_index(activity_date),
+        )
+        if self._daily_event_detector is not None:
+            self._run_daily_job(
+                "routine_changed",
+                lambda: self._daily_event_detector.detect_and_publish(activity_date),
+            )
+        if self._baseline_updater is not None:
+            self._run_daily_job(
+                "baseline_update",
+                lambda: self._baseline_updater.update(activity_date),
+            )
+        return published
+
+    def _publish_activity_index(self, activity_date: date) -> int:
         messages = self._repository.build_messages(
             activity_date,
             self._configured_household_ids,
@@ -421,11 +442,23 @@ class DailyActivityIndexService:
             activity_date,
             len(messages),
         )
-        if self._daily_event_detector is not None:
-            self._daily_event_detector.detect_and_publish(activity_date)
-        if self._baseline_updater is not None:
-            self._baseline_updater.update(activity_date)
         return len(messages)
+
+    def _run_daily_job(
+        self,
+        job: str,
+        operation: Callable[[], int],
+    ) -> int:
+        started_at = perf_counter()
+        status = "success"
+        try:
+            return operation()
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            self._metrics.observe_daily_job(job, perf_counter() - started_at)
+            self._metrics.record_daily_job(job, status)
 
 
 class DailyActivityIndexScheduler:

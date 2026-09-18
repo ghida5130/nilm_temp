@@ -492,3 +492,6 @@ infrastructure/**/certs/
 !*.env.example
 !**/.env.example
 .deployment/
+
+**/bin/
+bin/
