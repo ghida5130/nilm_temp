@@ -131,11 +131,12 @@ def update_env(path, data):
     validate(data)
     path = Path(path)
     controlled = {"REGISTRY", "IMAGE_PREFIX", "IMAGE_TAG", "IMAGE_REPOSITORY", "RELEASE_ID",
-                  "CONFIG_ROOT", *SERVICES.values()}
+                  "CONFIG_ROOT", "OBSERVABILITY_ROOT", *SERVICES.values()}
     lines = path.read_text(encoding="utf-8-sig").splitlines()
     lines = [line for line in lines if line.split("=", 1)[0].strip() not in controlled]
     lines.extend(["IMAGE_TAG=" + data["git_sha"], "RELEASE_ID=" + data["release_id"],
-                  "IMAGE_REPOSITORY=" + data["repository"], "CONFIG_ROOT=/opt/nilm"])
+                  "IMAGE_REPOSITORY=" + data["repository"], "CONFIG_ROOT=/opt/nilm",
+                  "OBSERVABILITY_ROOT=/opt/nilm/observability"])
     lines.extend(f'{variable}={data["images"][service]["reference"]}'
                  for service, variable in SERVICES.items())
     temporary = None

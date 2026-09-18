@@ -29,10 +29,13 @@ if [[ "$target" == "b" ]]; then
 fi
 install -m 644 release.json /opt/nilm/release.json
 if [[ "$target" == a ]]; then
-  install -d /opt/nilm/keycloak /opt/nilm/nginx /opt/nilm/mqtt
+  install -d /opt/nilm/keycloak /opt/nilm/nginx /opt/nilm/mqtt /opt/nilm/observability
   install -m 644 infrastructure/keycloak/nilm-realm.json /opt/nilm/keycloak/nilm-realm.json
   install -m 644 infrastructure/nginx/default.conf.template /opt/nilm/nginx/default.conf.template
   install -m 644 infrastructure/mqtt/config/mosquitto.production.conf /opt/nilm/mqtt/mosquitto.conf
+  cp -R infrastructure/observability/blackbox /opt/nilm/observability/
+  cp -R infrastructure/observability/grafana /opt/nilm/observability/
+  cp -R infrastructure/observability/prometheus /opt/nilm/observability/
 else
   install -d /opt/nilm/postgres
   install -m 644 infrastructure/postgres/01-create-databases.sql /opt/nilm/postgres/01-create-databases.sql

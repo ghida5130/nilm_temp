@@ -16,9 +16,9 @@ case "$phase" in
     docker compose run --rm hdfs-init
     ;;
   a)
-    docker compose pull redis mosquitto keycloak
+    docker compose pull redis mosquitto keycloak prometheus grafana blackbox-exporter
     docker compose up -d --wait --wait-timeout 360 redis mosquitto keycloak
-    docker compose up -d --pull never --remove-orphans --wait --wait-timeout 360 api-gateway iot-device-service monitoring-service frontend
+    docker compose up -d --pull never --remove-orphans --wait --wait-timeout 360 api-gateway iot-device-service monitoring-service frontend prometheus grafana blackbox-exporter
     ;;
   b-analysis)
     docker compose up -d --pull never --no-deps --wait --wait-timeout 180 realtime-analysis-service
