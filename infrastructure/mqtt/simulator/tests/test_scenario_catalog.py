@@ -59,8 +59,10 @@ class CountingFakeMqttClient:
         self.publish_count: int = 0
         self.first_topic: str | None = None
         self.first_payload: str | None = None
+        self.first_cycle: int | None = None
         self.last_topic: str | None = None
         self.last_payload: str | None = None
+        self.last_cycle: int | None = None
         self.last_measured_at: datetime | None = None
         self.monotonic_measured_at: bool = True
 
@@ -80,13 +82,20 @@ class CountingFakeMqttClient:
         self.last_topic = topic
         self.last_payload = payload
 
-        # 타임스탬프 단조 증가 검증 (페이로드 미누적)
+        # 타임스탬프 단조 증가 및 사이클 검증 (페이로드 미누적)
         data = json.loads(payload)
         dt = datetime.fromisoformat(data["measured_at"])
         if self.last_measured_at is not None:
             if dt <= self.last_measured_at:
                 self.monotonic_measured_at = False
         self.last_measured_at = dt
+
+        ref_dt = datetime(dt.year, dt.month, dt.day, 0, 0, 0, tzinfo=KST)
+        second_of_day = int((dt - ref_dt).total_seconds())
+        cycle = second_of_day + 1
+        if self.first_cycle is None:
+            self.first_cycle = cycle
+        self.last_cycle = cycle
 
 
 class TestScenarioCatalogAPI(unittest.TestCase):
@@ -541,13 +550,13 @@ class TestDeterminismAndRegression(unittest.IsolatedAsyncioTestCase):
 
     async def test_catalog_integration_with_executor_burst(self):
         """
-        대표 시나리오(ACTIVITY_LOW)를 실제 DeterministicScheduleExecutor BURST 모드로
+        대표 시나리오(ACTIVITY_NORMAL, 2026-09-16)를 실제 DeterministicScheduleExecutor BURST 모드로
         실제 DeterministicScheduleRunner 및 실제 publish_scheduled_tick 경로를 사용하여 실행하고,
         가짜 객체는 오직 MQTT client(CountingFakeMqttClient)에만 사용하여
-        86,400개 슬롯을 메모리 누적 없이 완주하고 기존 3B 엔진과 완벽 호환됨을 검증.
+        86,400개 슬롯 완주, cycle 1~86,400, 14개 필드 규격을 메모리 누적 없이 검증.
         """
-        defn = get_activity_scenario_definition("ACTIVITY_LOW")
-        plan = compile_schedule(defn, date(2026, 9, 17))
+        defn = get_activity_scenario_definition("ACTIVITY_NORMAL")
+        plan = compile_schedule(defn, date(2026, 9, 16))
         config = ExecutorConfig(mode=ExecutionMode.BURST)
 
         executor = DeterministicScheduleExecutor(
@@ -570,20 +579,42 @@ class TestDeterminismAndRegression(unittest.IsolatedAsyncioTestCase):
         # 2. MQTT 클라이언트 발행 검증 (페이로드 미누적 확인)
         self.assertEqual(client.publish_count, 86_400)
         self.assertTrue(client.monotonic_measured_at)
+        self.assertEqual(client.first_cycle, 1)
+        self.assertEqual(client.last_cycle, 86_400)
+
         expected_topic = build_scheduled_topic("H001")
         self.assertEqual(client.first_topic, expected_topic)
         self.assertEqual(client.last_topic, expected_topic)
 
-        # 첫 번째 및 마지막 페이로드 검증
+        # 3. 첫 번째 및 마지막 페이로드의 정확한 14개 필드 규격 검증
+        exact_14_keys = {
+            "message_id",
+            "household_id",
+            "device_id",
+            "measured_at",
+            "active_power",
+            "reactive_power",
+            "power_factor",
+            "current",
+            "house",
+            "device",
+            "ts",
+            "power_w",
+            "voltage",
+            "apparent_power",
+        }
+
         self.assertIsNotNone(client.first_payload)
         first_data = json.loads(client.first_payload)
-        self.assertEqual(first_data["measured_at"], "2026-09-17T00:00:00+09:00")
+        self.assertEqual(first_data["measured_at"], "2026-09-16T00:00:00+09:00")
         self.assertEqual(first_data["household_id"], "H001")
+        self.assertEqual(set(first_data.keys()), exact_14_keys)
 
         self.assertIsNotNone(client.last_payload)
         last_data = json.loads(client.last_payload)
-        self.assertEqual(last_data["measured_at"], "2026-09-17T23:59:59+09:00")
+        self.assertEqual(last_data["measured_at"], "2026-09-16T23:59:59+09:00")
         self.assertEqual(last_data["household_id"], "H001")
+        self.assertEqual(set(last_data.keys()), exact_14_keys)
 
 
 if __name__ == "__main__":
