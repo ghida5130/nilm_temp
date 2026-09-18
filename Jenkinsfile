@@ -124,7 +124,7 @@ pipeline {
                         sh 'bash infrastructure/scripts/build.sh'
                     }
                 }
-                stash name: 'deploy-config', includes: 'infrastructure/ec2-*/compose.yaml,infrastructure/scripts/**,infrastructure/nginx/*.template,infrastructure/keycloak/*.json,infrastructure/postgres/*.sql,infrastructure/mqtt/config/mosquitto.production.conf', excludes: '**/__pycache__/**'
+                stash name: 'deploy-config', includes: 'infrastructure/ec2-*/compose.yaml,infrastructure/ec2-b/hdfs-init.sh,infrastructure/observability/**,infrastructure/scripts/**,infrastructure/nginx/*.template,infrastructure/keycloak/*.json,infrastructure/postgres/*.sql,infrastructure/mqtt/config/mosquitto.production.conf', excludes: '**/__pycache__/**'
                 script {
                     if (env.DEPLOY == 'true') {
                         withCredentials([usernamePassword(credentialsId: 'registry-login',
@@ -220,6 +220,14 @@ pipeline {
             steps {
                 unstash 'deploy-config'
                 sh 'bash infrastructure/scripts/deploy.sh b-bridge'
+            }
+        }
+        stage('Deploy bronze loader') {
+            when { beforeAgent true; allOf { branch 'master'; expression { env.DEPLOY == 'true' } } }
+            agent { label 'ec2-b' }
+            steps {
+                unstash 'deploy-config'
+                sh 'bash infrastructure/scripts/deploy.sh b-loader'
             }
         }
         stage('Record success A') {

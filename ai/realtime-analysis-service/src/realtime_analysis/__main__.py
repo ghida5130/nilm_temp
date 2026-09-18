@@ -9,13 +9,28 @@ from confluent_kafka.admin import AdminClient
 from realtime_analysis.activity_repository import (
     SqlAlchemyApplianceActivityRepository,
 )
-from realtime_analysis.anomaly_detector import RoutineMissedDetector
-from realtime_analysis.baseline import BaselineRepository
+from realtime_analysis.anomaly_detector import (
+    RealtimeAnomalyDetector,
+    SqlAlchemyEventDetectionRepository,
+)
+from realtime_analysis.baseline import (
+    BaselineRepository,
+    SqlAlchemyBaselineRepository,
+)
+from realtime_analysis.baseline_refresh import BaselineCacheRefresher
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.config import get_settings
 from realtime_analysis.consumer import AnalysisConsumer
 from realtime_analysis.database import create_session_factory
+from realtime_analysis.data_quality_monitor import (
+    DataQualityMonitor,
+    DataQualityWatchdog,
+)
+from realtime_analysis.data_quality_publisher import DataQualityEventPublisher
 from realtime_analysis.dlq import DlqPublisher
+from realtime_analysis.event_emission_repository import (
+    SqlAlchemyEventEmissionRepository,
+)
 from realtime_analysis.event_producer import AnalysisEventPublisher
 from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.health_server import ObservabilityServer
@@ -23,6 +38,10 @@ from realtime_analysis.metrics import METRICS
 from realtime_analysis.model_manifest import ModelManifest
 from realtime_analysis.predictor import FakePredictor
 from realtime_analysis.preprocessing import StandardizingPredictor
+from realtime_analysis.policy import (
+    PolicyRepository,
+    SqlAlchemyPolicyRepository,
+)
 from realtime_analysis.readiness import (
     ReadinessProbe,
     database_readiness_check,
@@ -57,11 +76,57 @@ def main() -> None:
     manifest = ModelManifest.from_json_file(settings.model_manifest_file)
     METRICS.set_model_info(manifest.model_name, manifest.version)
     session_factory = create_session_factory(settings)
-    # Fake Predictor 생성 
-    detector = RoutineMissedDetector(
-        tracker=tracker,
-        score_threshold=settings.analysis_score_threshold,
+    bootstrap_policies = PolicyRepository.from_json_file(
+        settings.analysis_policy_file
+    )
+    policy_repository = SqlAlchemyPolicyRepository(session_factory)
+    seeded_policies = policy_repository.seed_missing(
+        bootstrap_policies.policies
+    )
+    if seeded_policies:
+        logger.info(
+            "Bootstrap analysis policies inserted: rows=%s",
+            seeded_policies,
+        )
+    detector = RealtimeAnomalyDetector(
+        repository=SqlAlchemyEventDetectionRepository(
+            session_factory=session_factory,
+            timezone_name=settings.analysis_timezone,
+        ),
+        policy_repository=policy_repository,
         timezone_name=settings.analysis_timezone,
+        emission_repository=SqlAlchemyEventEmissionRepository(session_factory),
+    )
+    bootstrap_baselines = BaselineRepository.from_json_file(
+        settings.baseline_file
+    )
+    baseline_repository = SqlAlchemyBaselineRepository(
+        session_factory=session_factory,
+        timezone_name=settings.analysis_timezone,
+    )
+    seeded_baselines = baseline_repository.seed_missing(
+        bootstrap_baselines.baselines
+    )
+    if seeded_baselines:
+        logger.info(
+            "Bootstrap routine baselines inserted: rows=%s",
+            seeded_baselines,
+        )
+    activity_repository = SqlAlchemyApplianceActivityRepository(
+        session_factory=session_factory,
+        timezone_name=settings.analysis_timezone,
+        expected_samples_per_day=settings.analysis_expected_samples_per_day,
+    )
+    event_publisher = AnalysisEventPublisher(settings)
+    data_quality_monitor = DataQualityMonitor(
+        publisher=DataQualityEventPublisher(settings),
+        gap_threshold_seconds=(
+            settings.analysis_data_gap_threshold_seconds
+        ),
+        recovery_confirmation_samples=(
+            settings.analysis_data_recovery_confirmation_samples
+        ),
+        on_gap=activity_repository.close_open_sessions,
     )
     handler = MeasurementHandler(
         buffer=HouseholdBuffer(settings.model_window_size),
@@ -78,22 +143,14 @@ def main() -> None:
         ),
         # 환경변수의 analysis_db 접속 정보로 SessionFactory를 만들고
         # 실제 SQLAlchemy Repository를 Handler에 주입한다.
-        activity_repository=SqlAlchemyApplianceActivityRepository(
-            session_factory=session_factory,
-            timezone_name=settings.analysis_timezone,
-            expected_samples_per_day=settings.analysis_expected_samples_per_day,
-            valid_coverage_ratio=(
-                settings.analysis_observation_valid_coverage_ratio
-            ),
-        ),
-        baseline_repository=BaselineRepository.from_json_file(
-            settings.baseline_file  
-        ),
+        activity_repository=activity_repository,
+        baseline_repository=baseline_repository,
         tracker=tracker,
         detector=detector,
-        event_publisher=AnalysisEventPublisher(settings),
+        event_publisher=event_publisher,
         snapshot_publisher=AnalysisSnapshotPublisher(settings),
         timezone_name=settings.analysis_timezone,
+        data_quality_monitor=data_quality_monitor,
     )
     consumer = AnalysisConsumer(
         settings=settings,
@@ -105,9 +162,14 @@ def main() -> None:
     )
     readiness = ReadinessProbe(
         {
-            "kafka": kafka_readiness_check(
+            "kafka_input": kafka_readiness_check(
                 kafka_admin,
                 settings.kafka_input_topic,
+                settings.readiness_timeout_seconds,
+            ),
+            "kafka_data_quality": kafka_readiness_check(
+                kafka_admin,
+                settings.kafka_analysis_data_quality_topic,
                 settings.readiness_timeout_seconds,
             ),
             "database": database_readiness_check(session_factory),
@@ -121,10 +183,24 @@ def main() -> None:
         settings.http_port,
         readiness,
     )
-    observability_server.start()
+    baseline_cache_refresher = BaselineCacheRefresher(
+        repository=baseline_repository,
+        interval_seconds=settings.routine_baseline_refresh_seconds,
+    )
+    data_quality_watchdog = DataQualityWatchdog(
+        monitor=data_quality_monitor,
+        poll_seconds=settings.analysis_data_quality_poll_seconds,
+    )
     try:
+        observability_server.start()
+        baseline_cache_refresher.start()
+        data_quality_watchdog.start(stop_event)
+
         consumer.run(stop_event)
     finally:
+        stop_event.set()
+        data_quality_watchdog.stop()
+        baseline_cache_refresher.stop()
         observability_server.stop()
 
 

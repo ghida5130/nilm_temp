@@ -79,6 +79,11 @@ def test_metrics_endpoint_exposes_dashboard_metrics() -> None:
     metrics.record_message("processed")
     metrics.replace_consumer_lag({("power.raw.v1", 3): 17})
     metrics.set_model_info("nilm-tcn", "v1.0.0")
+    metrics.observe_pattern_detection("ROUTINE_MISSED", 0.025)
+    metrics.record_pattern_detection("ROUTINE_MISSED", "detected")
+    metrics.record_pattern_event("ROUTINE_MISSED")
+    metrics.observe_daily_job("activity_index", 0.5)
+    metrics.record_daily_job("activity_index", "success")
 
     server = ObservabilityServer(
         "127.0.0.1",
@@ -103,6 +108,53 @@ def test_metrics_endpoint_exposes_dashboard_metrics() -> None:
         in output
     )
     assert 'nilm_analysis_model_info{name="nilm-tcn",version="v1.0.0"} 1.0' in output
+    assert (
+        'nilm_pattern_detection_duration_seconds_count{pattern="ROUTINE_MISSED"} 1.0'
+        in output
+    )
+    assert (
+        'nilm_pattern_detection_total{pattern="ROUTINE_MISSED",result="detected"} 1.0'
+        in output
+    )
+    assert 'nilm_pattern_events_total{event_type="ROUTINE_MISSED"} 1.0' in output
+    assert (
+        'nilm_daily_job_duration_seconds_count{job="activity_index"} 1.0'
+        in output
+    )
+    assert (
+        'nilm_daily_job_runs_total{job="activity_index",status="success"} 1.0'
+        in output
+    )
+
+
+def test_fixed_counter_labels_are_exposed_at_zero_before_first_increment() -> None:
+    registry = CollectorRegistry()
+    AnalysisMetrics(registry)
+
+    assert registry.get_sample_value(
+        "nilm_analysis_messages_total",
+        {"status": "processed"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_analysis_dlq_messages_total",
+        {"reason": "INVALID_JSON"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_MISSED", "result": "detected"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_pattern_detection_total",
+        {"pattern": "ROUTINE_CHANGED", "result": "skipped"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_pattern_events_total",
+        {"event_type": "ROUTINE_MISSED"},
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_daily_job_runs_total",
+        {"job": "activity_index", "status": "success"},
+    ) == 0
 
 
 def test_pipeline_timing_updates_histogram_and_throughput(monkeypatch) -> None:

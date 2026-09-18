@@ -1,7 +1,7 @@
 # Realtime Analysis Service
 
 Kafka 전력 데이터를 검증하고, 가구별 입력 버퍼와 MVP용 가전 ON/OFF 예측을 거쳐
-평소 루틴이 누락된 가구의 이상 이벤트를 `analysis.event.v1`로 발행합니다.
+위험 이벤트와 생활 패턴 변화 이벤트를 `analysis.event.v1`로 발행합니다.
 
 이 문서는 전력 데이터 시뮬레이터·MQTT-Kafka Bridge 담당자와
 `analysis.event.v1` 이상 이벤트 수신 담당자가 함께 사용하는 연동 계약입니다.
@@ -14,8 +14,8 @@ power.raw.v1
   -> FakePredictor 가전 6종 ON 확률
   -> model_manifest.json의 threshold로 ON/OFF 판정
   -> 연속 판정과 히스테리시스로 확정한 상태를 analysis.snapshot.v1로 발행
-  -> JSON baseline과 일일 사용 상태 비교
-  -> score가 임계치 이상이면 analysis.event.v1 발행
+  -> analysis_db의 활성 routine_baseline과 일일 사용 상태 비교
+  -> 기준선 강도가 설정값 이상이면 analysis.event.v1 발행
 ```
 
 MVP 대상 가전과 Predictor 출력 순서는 AI 실험 결과 및 모델 명세를 기준으로 다음과 같이
@@ -173,7 +173,7 @@ Kafka Key: H001
 | Kafka 토픽 | `analysis.event.v1` |
 | Kafka Record Key | `household_id` |
 | Value 형식 | UTF-8 JSON Object |
-| 현재 MVP 이벤트 의미 | 가구의 평소 활동 루틴 누락 후보 |
+| 현재 이벤트 유형 | `ROUTINE_MISSED`, `PROLONGED_INACTIVITY`, `PROLONGED_APPLIANCE_USE`, `ROUTINE_CHANGED` |
 | 전달 보장 | At-least-once, 논리적 중복 가능 |
 
 ### MVP 출력 계약
@@ -182,9 +182,10 @@ Kafka Key: H001
 {
   "event_id": "f46567d2-2b29-486f-9051-8cae3ff28d6a",
   "household_id": "H001",
-  "score": 86,
+  "event_type": "ROUTINE_MISSED",
   "occurred_at": "2026-09-08T03:41:06.120000Z",
   "reason": {
+    "appliance_type": "MICROWAVE",
     "expected_until": "08:10",
     "normal_days": 12,
     "window_days": 14
@@ -196,23 +197,35 @@ Kafka Key: H001
 | --- | --- | --- |
 | `event_id` | UUID | 발행된 이벤트 한 건의 고유 ID |
 | `household_id` | String | 이상 후보가 감지된 가구 ID |
-| `score` | Integer | 0~100 범위 이상 점수 |
+| `event_type` | String | 감지된 이벤트 유형 |
 | `occurred_at` | ISO 8601 Timestamp | 이상을 판단한 시각, UTC로 발행 |
 | `reason` | JSON Object | 알고리즘이 판단에 사용한 근거 |
 
 `reason`은 사용자에게 바로 노출할 한국어 문장이 아니라 알고리즘별 근거 데이터입니다.
 화면 문구가 필요하면 수신 서비스에서 해당 값을 이용해 만듭니다.
 
+| 이벤트 | 분류 | 판단 기준 | `reason` 주요 필드 |
+| --- | --- | --- | --- |
+| `ROUTINE_MISSED` | 위험 | 기대 시각 전까지 해당 가전 사용 없음 | `appliance_type`, `expected_until`, `normal_days`, `window_days` |
+| `PROLONGED_INACTIVITY` | 위험 | 전체 가전의 마지막 사용 종료 후 기본 12시간 경과 | `last_activity_at`, `threshold_hours` |
+| `PROLONGED_APPLIANCE_USE` | 위험 | 위험 가전의 열린 세션이 허용 시간 초과 | `appliance_type`, `started_at`, `allowed_duration_minutes` |
+| `ROUTINE_CHANGED` | 정보 | 최근 7일 첫 사용 중앙시각이 이전 21일보다 기본 120분 이상 이동 | `appliance_type`, `previous_time`, `recent_time`, `shift_minutes` |
+
+세 위험 이벤트는 측정 시각을 기준으로 가구별 기본 60초마다 평가합니다.
+`ROUTINE_CHANGED`는 전날 관측 마감 후 하루 한 번 평가하며 위험 점수에 직접 반영하지
+않습니다. 임계값은 `analysis_policy`의 `parameters`에서 읽습니다.
+
 ```text
 최근 14일 중 12일 동안 08:10 이전에 확인된 활동이 오늘은 감지되지 않았습니다.
 ```
 
-### 현재 점수 의미
+### 기준선 강도 필터
 
-현재 MVP의 점수 공식은 다음과 같습니다.
+`ROUTINE_MISSED` 대상 기준선을 고르는 내부 계산은 다음과 같습니다. 이 값은
+이벤트 위험 점수가 아니며 Kafka 메시지에는 포함하지 않습니다.
 
 ```text
-score = normal_days / window_days × 100 × reliability_weight
+baseline_strength = normal_days / window_days × 100 × reliability_weight
 ```
 
 예시 기준선에서는 다음과 같이 86점이 됩니다.
@@ -221,32 +234,26 @@ score = normal_days / window_days × 100 × reliability_weight
 12 / 14 × 100 × 1.0 = 85.71 → 86
 ```
 
-분석 서비스의 임계치가 80이면 `86 >= 80`이므로 이벤트를 발행합니다.
-점수 계산식과 임계치는 MVP 검증용이며 추후 변경될 수 있습니다.
+분석 서비스의 최소 기준선 강도가 80이면 `86 >= 80`인 기준선만 감지에 사용합니다.
 
 ### 수신 및 중복 처리 주의사항
 
 - Kafka Consumer Group은 수신 서비스 전용 이름을 사용합니다.
 - 비즈니스 처리가 끝난 뒤에 Offset을 커밋합니다.
 - `event_id`가 같은 이벤트를 다시 받으면 중복 처리하지 않습니다.
-- 분석 서비스 재시작 시 같은 날짜의 논리적으로 동일한 이벤트가 새 `event_id`로 다시 발행될 수 있습니다.
-- 현재 5개 필드 계약에는 `event_type`과 `appliance_type`이 없습니다.
-- 현재 토픽의 이벤트는 가구 단위 `ROUTINE_MISSED` 후보로 해석합니다.
-- 여러 이벤트 유형이나 가전 표시가 필요해지면 기존 필드 의미를 바꾸지 않고 새 계약을 합의합니다.
+- `event_id`는 논리 이벤트 키로부터 결정적으로 생성하므로 재시작 후 같은 이벤트도 같은 ID를 사용합니다.
+- 가전별 이벤트의 `appliance_type`은 `reason`에 둡니다.
+- 위험 점수와 심각도는 분석 서비스가 발행하지 않습니다.
 
-MVP에서 논리적 중복을 줄이려면 `event_id` 외에도 다음 조합을 임시 중복 기준으로 사용할 수
-있습니다.
-
-```text
-household_id + occurred_at의 한국 날짜 + reason.expected_until
-```
+프로세스 안에서는 정책의 `cooldown_hours`와 이벤트 ID로 반복 발행을 제한합니다. 재시작
+후 재전달될 수 있으므로 수신 서비스도 반드시 `event_id`로 멱등 처리해야 합니다.
 
 ### 이상 이벤트 수신 체크리스트
 
 - [ ] `analysis.event.v1`을 전용 Consumer Group으로 구독하는가
 - [ ] Kafka Key를 String으로 읽는가
 - [ ] Value를 UTF-8 JSON으로 역직렬화하는가
-- [ ] `score`를 0~100으로 처리하는가
+- [ ] `event_type`을 지원하는 유형으로 처리하는가
 - [ ] `occurred_at`을 UTC로 파싱하는가
 - [ ] `reason`을 고정 문자열이 아닌 JSON Object로 처리하는가
 - [ ] 이벤트 처리 완료 후 Offset을 커밋하는가
@@ -257,6 +264,208 @@ household_id + occurred_at의 한국 날짜 + reason.expected_until
 분석 서비스의 Producer `flush()`는 이벤트가 Kafka 브로커에 전달됐는지만 확인합니다.
 이벤트 수신 서비스가 메시지를 가져가 비즈니스 처리를 완료했는지는 확인하지 않습니다.
 수신 완료 응답 이벤트는 현재 MVP 범위에 포함하지 않습니다.
+
+## 일일 활동 지수 계약
+
+하루 단위 절대 활동 지수는 `analysis.activity.v1`으로 발행하며 Kafka Key는
+`household_id`입니다. 위험 점수는 이 메시지에 포함하지 않고 모니터링 서비스가 별도로
+계산합니다.
+
+```json
+{
+  "message_id": "8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6",
+  "household_id": "H001",
+  "activity_date": "2026-09-16",
+  "activity_index": 85,
+  "data_status": "VALID",
+  "components": {
+    "usage_count": 5,
+    "appliance_type_count": 3,
+    "usage_duration_seconds": 2400,
+    "usage_count_score": 83,
+    "appliance_diversity_score": 100,
+    "usage_duration_score": 67
+  }
+}
+```
+
+관측 데이터가 부족하면 0점으로 발행하지 않습니다. `activity_index`는 `null`로 보내고
+`components`는 생략합니다.
+
+```json
+{
+  "message_id": "8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6",
+  "household_id": "H001",
+  "activity_date": "2026-09-16",
+  "activity_index": null,
+  "data_status": "INSUFFICIENT_DATA"
+}
+```
+
+### 계산 및 발행 시점
+
+기본값은 한국 시간 `00:10`에 전날 지수를 한 번 계산해 발행하는 것입니다. 자정 직후
+도착하는 지연 샘플을 받을 수 있도록 10분의 마감 여유를 둡니다. 실행 시각은
+`ACTIVITY_INDEX_PUBLISH_HOUR`, `ACTIVITY_INDEX_PUBLISH_MINUTE`로 변경할 수 있습니다.
+
+관측률이 `ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO` 이상인 날만 지수를 계산합니다.
+관측이 부족하거나 하루 전체가 비어 있으면 `INSUFFICIENT_DATA`로 발행합니다.
+
+```text
+usage_count_score
+  = min(논리적 사용 횟수 / 6, 1) × 100
+
+appliance_diversity_score
+  = min(사용한 가전 종류 수 / 3, 1) × 100
+
+usage_duration_score
+  = min(가전별 상한이 적용된 사용시간 합계 / 3,600초, 1) × 100
+
+activity_index
+  = 0.50 × usage_count_score
+  + 0.30 × appliance_diversity_score
+  + 0.20 × usage_duration_score
+```
+
+ON/OFF 히스테리시스가 샘플 단위 노이즈를 제거한 뒤, 일일 집계에서 같은 가전의 가까운
+세션을 하나의 논리적 사용으로 다시 묶습니다. 기본 병합 간격은 일반 가전 60초,
+인덕션 120초, 다리미 300초입니다. 인버터·온도조절 주기를 여러 번 사용한 것으로
+계산하지 않기 위한 값입니다. 10초 미만 논리적 사용은 활동 지수에서 제외합니다.
+
+`usage_duration_seconds`에는 실제 측정 시간을 저장합니다. 점수 계산에만 아래 가전별
+상한을 적용하여 장시간 방치가 활동 점수를 계속 올리지 않게 합니다.
+
+| 가전 | 점수 반영 일일 상한 |
+| --- | ---: |
+| 전기포트 | 10분 |
+| 전자레인지 | 30분 |
+| 헤어드라이기 | 30분 |
+| 다리미 | 60분 |
+| 진공청소기 | 90분 |
+| 인덕션 | 180분 |
+
+전기포트는 짧은 물 끓이기, 전자레인지·헤어드라이기는 짧은 단발 작업, 다리미·청소기는
+가사 작업, 인덕션은 식사 준비라는 사용 특성을 기준으로 MVP 상한을 다르게 두었습니다.
+운영 데이터가 쌓이면 이 값은 분포의 상위 분위수로 조정합니다.
+
+같은 가전의 사용 횟수도 점수에는 하루 최대 3회까지만 반영합니다. 원본 횟수와 원본
+사용시간은 `components`에 제한 전 값으로 전달합니다. 사용시간은 각 가전의 활성 시간을
+합한 값이므로 여러 가전이 동시에 켜져 있으면 겹친 시간도 가전별로 각각 포함됩니다.
+
+`message_id`는 `household_id + activity_date`로 결정적으로 생성합니다. 서비스 재시작이나
+재시도로 같은 날짜 메시지가 다시 전달돼도 같은 ID이므로 수신 서비스가 멱등 처리할 수
+있습니다.
+
+### 모니터링 서비스 전달 사항
+
+- 이 값은 위험 점수가 아니라 그날의 절대 활동량입니다.
+- `VALID`인 메시지만 위험 점수와 EWMA 계산에 사용합니다.
+- `INSUFFICIENT_DATA`의 `activity_index=null`을 0점으로 바꾸면 안 됩니다.
+- 저장 및 갱신 키는 `message_id` 또는 `household_id + activity_date`를 사용합니다.
+- EWMA는 모니터링 서비스에서 유효한 일일 지수에만 적용합니다. 시작값은 첫 유효 지수,
+  초기 `alpha`는 `0.3`을 권장합니다.
+- 급락은 직전 한 건보다 이전 EWMA와 현재 지수의 차이로 판단하면 일시적 변동에 덜
+  민감합니다.
+- 일일 발행이므로 기존의 `15분 × 4회` 규칙은 적용할 수 없습니다. 연속 저하는
+  `연속 N일` 기준으로 다시 정의해야 합니다.
+- 위험 점수를 계산할 때 `activity_index`와 세 component 점수를 동시에 합산하면 같은
+  활동을 중복 반영하게 됩니다. 위험 계산에는 최종 지수만 사용하고 components는 설명과
+  디버깅에 사용합니다.
+
+## 일일 루틴 기준선 생성과 갱신
+
+일일 활동 지수를 발행한 직후 같은 `activity_date`까지의 데이터를 이용해
+`routine_baseline`을 갱신합니다. 기본 스케줄이 한국 시간 `00:10`이므로 전날 관측을 먼저
+마감하고 활동 지수를 발행한 다음 기준선을 계산합니다. 샘플 단위 갱신은 하지 않습니다.
+
+```text
+전날 관측 마감
+  → activity_index 발행
+  → 최근 28일 조회
+  → VALID 날짜만 선택
+  → 가구·가전별 기준선 계산
+  → routine_baseline UPSERT
+  → 탐지용 메모리 캐시 교체
+```
+
+`INSUFFICIENT_DATA`, `SENSOR_GAP`, 처리 실패일은 표본과 사용일 양쪽에서 모두 제외합니다.
+유효 관측일이 기본 14일 미만이면 기존 기준선을 유지하고 새 기준선을 만들지 않습니다.
+
+```text
+sample_days = 최근 계산 구간의 VALID 날짜 수
+active_days = 해당 가전을 10초 이상 사용한 VALID 날짜 수
+daily_use_probability = active_days / sample_days
+reliability_weight = min(sample_days / 최소 표본일, 1)
+```
+
+사용 루틴의 마감 시각은 가전별 일일 첫 사용 시각의 90백분위수(P90)로 계산합니다. 평균보다
+늦은 정상 사용을 허용하여 `ROUTINE_MISSED` 오탐을 줄이기 위한 선택입니다. 전체 기준과
+함께 요일별 표본도 `baseline_data.weekday_profiles`에 저장하며, 해당 요일의 유효 표본이
+기본 4일 이상일 때만 요일별 마감 시각을 사용합니다. 표본이 부족하면 전체 요일 기준으로
+대체합니다.
+
+일 사용확률이 기본 `0.70` 이상이고 첫 사용 시각이 있는 행만 `enabled=true`가 됩니다.
+탐지 시에는 `analysis_policy`의 `minimum_baseline_strength` 검사도 적용되므로 드물게
+사용하는 가전은 이벤트 대상에서 제외됩니다.
+
+같은 `household_id + appliance_type + baseline_type` 행을 갱신하므로 같은 날짜 작업이
+재실행되어도 기준선 행이 중복되지 않습니다. 초기 로컬 시연이 가능하도록
+`config/baselines.json` 값은 DB에 해당 키가 없을 때만 부트스트랩 행으로 등록되고,
+충분한 `VALID` 데이터가 쌓이면 일일 계산 결과로 교체됩니다.
+
+| 환경변수 | 기본값 | 의미 |
+| --- | ---: | --- |
+| `ROUTINE_BASELINE_WINDOW_DAYS` | 28 | 기준선을 계산할 최근 달력 일수 |
+| `ROUTINE_BASELINE_MINIMUM_SAMPLE_DAYS` | 14 | 생성·갱신에 필요한 최소 VALID 일수 |
+| `ROUTINE_BASELINE_MINIMUM_WEEKDAY_SAMPLE_DAYS` | 4 | 요일별 기준을 사용하기 위한 최소 표본 |
+| `ROUTINE_BASELINE_MINIMUM_DAILY_USE_PROBABILITY` | 0.70 | 기준선 활성화 최소 일 사용확률 |
+
+## 데이터 품질 이벤트 계약
+
+데이터 수집 상태 변화는 `analysis.data-quality.v1`으로 발행하며 Kafka Key는
+`household_id`입니다.
+
+```json
+{
+  "event_id": "1bb4edcf-77ae-44d6-ad7c-b87a6e071f5a",
+  "household_id": "H001",
+  "event_type": "DATA_GAP",
+  "occurred_at": "2026-09-16T10:02:00+09:00",
+  "reason": {
+    "last_valid_received_at": "2026-09-16T10:00:00+09:00",
+    "gap_seconds": 120
+  }
+}
+```
+
+복구 시에는 같은 계약에서 `event_type`을 `DATA_RECOVERED`로 발행합니다. 가구별로
+마지막 정상 입력 수신 시각을 추적하며 기본 120초 동안 새 입력이 없으면 `DATA_GAP`을
+한 번 발행합니다. 이후 기본 3개의 최신 측정값이 연속으로 확인되면
+`DATA_RECOVERED`를 한 번 발행합니다.
+
+공백 상태와 복구 확인 중에는 위험 이벤트 판단을 보류합니다. 공백 전에 열려 있던 가전
+세션은 마지막 유효 측정 시각에서 종료하고, 복구 첫 입력에서 모델 버퍼와 히스테리시스
+상태를 초기화하여 공백 전후 데이터를 하나의 연속 사용으로 해석하지 않습니다.
+
+```json
+{
+  "event_id": "b5e4ce49-b101-5a3a-b476-0f93512dd427",
+  "household_id": "H001",
+  "event_type": "DATA_RECOVERED",
+  "occurred_at": "2026-09-16T10:05:05+09:00",
+  "reason": {
+    "last_valid_received_at": "2026-09-16T10:00:00+09:00",
+    "gap_detected_at": "2026-09-16T10:02:00+09:00",
+    "gap_seconds": 305
+  }
+}
+```
+
+| 환경변수 | 기본값 | 의미 |
+| --- | ---: | --- |
+| `ANALYSIS_DATA_GAP_THRESHOLD_SECONDS` | 120 | 입력 공백 판정 시간 |
+| `ANALYSIS_DATA_QUALITY_POLL_SECONDS` | 5 | watchdog 검사 주기 |
+| `ANALYSIS_DATA_RECOVERY_CONFIRMATION_SAMPLES` | 3 | 복구 확정에 필요한 최신 입력 수 |
 
 ## 로컬 실행
 
@@ -288,6 +497,31 @@ python -m realtime_analysis
 Grafana의 단계별 레이턴시, E2E 지연, Consumer Lag, 처리량 패널에는 각각
 `nilm_analysis_stage_duration_seconds`, `nilm_analysis_e2e_duration_seconds`,
 `nilm_analysis_consumer_lag_messages`, `nilm_analysis_messages_total`을 사용합니다.
+
+패턴 감지와 일일 작업은 다음 메트릭으로 별도 계측합니다.
+
+| 메트릭 | 라벨 | 의미 |
+| --- | --- | --- |
+| `nilm_pattern_detection_duration_seconds` | `pattern` | 실제 패턴 알고리즘 호출 시간 Histogram |
+| `nilm_pattern_detection_total` | `pattern`, `result` | 패턴 판정 결과 누적 건수 |
+| `nilm_pattern_events_total` | `event_type` | Kafka 발행에 성공한 패턴 이벤트 누적 건수 |
+| `nilm_daily_job_duration_seconds` | `job` | 일일 작업 전체 실행시간 Histogram |
+| `nilm_daily_job_runs_total` | `job`, `status` | 일일 작업 성공·오류 누적 건수 |
+
+실시간 `pattern`은 `ROUTINE_MISSED`, `PROLONGED_INACTIVITY`,
+`PROLONGED_APPLIANCE_USE`, 일일 패턴은 `ROUTINE_CHANGED`를 사용합니다. 실시간 판정
+Counter와 Histogram은 공통 평가 주기 및 데이터 유효성 검사를 통과하여 실제 알고리즘을
+호출한 경우에만 증가합니다. `result=detected`는 cooldown·중복 제거 전 후보가 나온 경우이며,
+최종 발행 성공 건수는 `nilm_pattern_events_total`로 확인합니다.
+
+고정 라벨을 사용하는 Counter는 프로세스 시작 시 가능한 라벨 조합을 `0`으로 노출하여,
+Prometheus가 첫 증가 전에 한 번 이상 수집했다면 첫 이벤트도 `rate()`와 `increase()`에
+포함됩니다. 동일 가구·가전·날짜의 `ROUTINE_MISSED`가 이미 발행된 경우에는 이후 평가에서
+해당 기준선을 조기에 제외합니다. 다른 가전과 다음 날짜의 후보는 계속 평가합니다.
+
+일일 `job`은 `activity_index`, `routine_changed`, `baseline_update`, `status`는
+`success`, `error`를 사용합니다. `ROUTINE_CHANGED` 정책이 없으면 패턴 판정 결과에는
+`result=skipped`가 기록되지만 일일 작업 자체는 성공으로 종료됩니다.
 
 ## analysis_db 스키마
 
@@ -429,7 +663,8 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 
 - 실제 AI 모델 대신 결정적인 FakePredictor를 사용합니다.
 - 실제 학습 `mean`, `std`와 가전별 Validation threshold는 AI 모델 전달 후 교체해야 합니다.
-- baseline과 당일 활동 상태는 아직 각각 JSON과 메모리에 저장합니다.
+- 당일 `ROUTINE_MISSED` 중복 상태와 사용 여부는 아직 프로세스 메모리에 저장합니다.
+- `config/baselines.json`은 최초 DB 부트스트랩과 로컬 테스트 가구 목록에만 사용합니다.
 - 재시작하면 299개 버퍼와 당일 활동·발행 상태가 초기화됩니다.
 - 완전히 데이터가 들어오지 않은 가구의 `SENSOR_GAP` 판정에는 별도 가구 목록 기반 마감
   스케줄러가 추가로 필요합니다.

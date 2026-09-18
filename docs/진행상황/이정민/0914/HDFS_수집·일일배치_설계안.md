@@ -246,7 +246,7 @@ Kafka 보관 기간은 최대 HDFS 장애 시간과 따라잡기 시간보다 �
 - [웹 시뮬레이터 실행 관리](../../../../infrastructure/mqtt/simulator/server/manager.py)
 - [MQTT payload 생성](../../../../infrastructure/mqtt/simulator/engine/publisher.py)
 - [현재 HDFS Compose](../../../../infrastructure/hdfs/docker-compose.yml)
-- [현재 HDFS Loader](../../../../infrastructure/hdfs/loader/loader.py)
+- [현재 원본 적재기](../../../../collection/bronze-loader/loader.py)
 - [B 서비스 Compose](../../../../infrastructure/ec2-b/compose.yaml)
 - [분석 DB ORM](../../../../ai/realtime-analysis-service/src/realtime_analysis/models.py)
 - [관측 및 활동 저장](../../../../ai/realtime-analysis-service/src/realtime_analysis/activity_repository.py)

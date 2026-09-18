@@ -32,6 +32,9 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchange -> exchange
                         .pathMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                        // 가입·로그인·토큰 갱신은 토큰이 없는 상태에서 호출된다
+                        .pathMatchers("/api/auth/signup", "/api/auth/login",
+                                "/api/auth/refresh").permitAll()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
         return http.build();

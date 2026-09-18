@@ -7,9 +7,10 @@
   ],
   "timezone": "browser",
   "schemaVersion": 41,
-  "version": 1,
+  "version": 2,
   "editable": false,
-  "refresh": "15s",
+  "refresh": "1s",
+  "timepicker": { "refresh_intervals": ["1s", "5s", "10s", "30s", "1m", "5m"] },
   "time": {
     "from": "now-1h",
     "to": "now"
@@ -96,6 +97,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "up{job=\"ai-analysis\",instance=~\"$instance\"}",
           "legendFormat": "{{instance}}",
           "datasource": {
@@ -145,6 +147,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "nilm_analysis_model_info{job=\"ai-analysis\",instance=~\"$instance\"}",
           "legendFormat": "{{name}} / {{version}} / {{instance}}",
           "datasource": {
@@ -195,6 +198,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "sum by(status) (rate(nilm_analysis_messages_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "{{status}}",
           "datasource": {
@@ -244,6 +248,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "sum by(status) (increase(nilm_analysis_messages_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range]))",
           "legendFormat": "{{status}}",
           "datasource": {
@@ -294,6 +299,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "histogram_quantile(0.95, sum by(le, stage) (rate(nilm_analysis_stage_duration_seconds_bucket{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval])))",
           "legendFormat": "{{stage}}",
           "datasource": {
@@ -344,6 +350,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "sum by(stage) (rate(nilm_analysis_stage_duration_seconds_sum{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval])) / sum by(stage) (rate(nilm_analysis_stage_duration_seconds_count{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "{{stage}}",
           "datasource": {
@@ -394,6 +401,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "histogram_quantile(0.5, sum by(le) (rate(nilm_analysis_e2e_duration_seconds_bucket{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "datasource": {
@@ -405,6 +413,7 @@
         },
         {
           "refId": "B",
+          "interval": "1s",
           "expr": "histogram_quantile(0.95, sum by(le) (rate(nilm_analysis_e2e_duration_seconds_bucket{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "datasource": {
@@ -416,6 +425,7 @@
         },
         {
           "refId": "C",
+          "interval": "1s",
           "expr": "histogram_quantile(0.99, sum by(le) (rate(nilm_analysis_e2e_duration_seconds_bucket{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "datasource": {
@@ -466,6 +476,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "sum(rate(nilm_analysis_e2e_duration_seconds_count{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "",
           "datasource": {
@@ -516,6 +527,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "nilm_analysis_consumer_lag_messages{job=\"ai-analysis\",instance=~\"$instance\"}",
           "legendFormat": "{{instance}} / {{topic}} / {{partition}}",
           "datasource": {
@@ -566,6 +578,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "sum by(topic) (nilm_analysis_consumer_lag_messages{job=\"ai-analysis\",instance=~\"$instance\"})",
           "legendFormat": "{{topic}}",
           "datasource": {
@@ -616,6 +629,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "sum by(reason) (rate(nilm_analysis_dlq_messages_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "{{reason}}",
           "datasource": {
@@ -666,6 +680,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "sum by(stage,error_type) (rate(nilm_analysis_errors_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "{{stage}} / {{error_type}}",
           "datasource": {
@@ -716,6 +731,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "process_resident_memory_bytes{job=\"ai-analysis\",instance=~\"$instance\"}",
           "legendFormat": "{{instance}}",
           "datasource": {
@@ -766,6 +782,7 @@
       "targets": [
         {
           "refId": "A",
+          "interval": "1s",
           "expr": "rate(process_cpu_seconds_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval])",
           "legendFormat": "{{instance}}",
           "datasource": {

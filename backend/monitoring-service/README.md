@@ -36,12 +36,20 @@ VAPID 키 없이 서버를 시작할 수 있다. Kafka까지 끄려면
 
 ## Kafka 실제 이벤트 처리
 
-local 프로필로 실행하면 Flyway 완료 후 Kafka 수신 전에 테스트 대상자 한 명을
-자동 등록한다. 기본 가구 ID는 HOUSE001, auth_sub는 PUSH_TEST_AUTH_SUB 설정값이다.
-TEST_SUBJECT_HOUSEHOLD_ID로 실제 분석 이벤트의 가구 ID를 지정할 수 있다.
-TEST_SUBJECT_ENABLED=false이면 자동 등록하지 않는다.
-기존 가구 ID 또는 auth_sub가 있으면 등록을 생략하며 이름·외출 상태 등을 덮어쓰지 않는다.
-설정을 변경해도 기존 행을 이동/수정하지 않으므로 필요하면 기존 연결을 직접 확인한다.
+`TEST_DATA_ENABLED=true`로 실행하면 Flyway 완료 후 Kafka 수신 전에
+IoT Device Service의 실제 회원가입·로그인·가구 등록 API를 호출한다.
+
+- `subject01@nilm.local` ~ `subject10@nilm.local`: `H001` ~ `H010`을 등록하고
+  `subjects.auth_sub`에 Keycloak user ID를 연결한다.
+- `manager01@nilm.local` ~ `manager10@nilm.local`: 기관 담당자로 가입하고
+  `managers.auth_sub`에 Keycloak user ID를 연결한다.
+- 각 대상자는 같은 번호의 담당자에게 1:1로 배정된다.
+- 비밀번호는 `TEST_ACCOUNT_PASSWORD`, API 주소는 `IOT_DEVICE_SERVICE_URL`로
+  주입한다. 테스트 데이터가 켜져 있는데 비밀번호가 비어 있으면 시작을 실패한다.
+
+재시작 시 기존 계정은 로그인으로 복구하고, 이미 소유한 가구와 로컬 row는
+재사용한다. 같은 가구 ID나 auth_sub가 다른 사용자와 충돌하면 기존 데이터를
+덮어쓰지 않고 시작을 실패한다.
 
 - 해당 household_id를 가진 대상자가 subjects에 정확히 한 명 있어야 한다.
 - 대상자 auth_sub와 브라우저 구독 auth_sub가 같아야 실제 전송된다.

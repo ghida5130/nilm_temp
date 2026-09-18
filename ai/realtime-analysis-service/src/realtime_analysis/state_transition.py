@@ -56,6 +56,15 @@ class ApplianceStateTransitionDetector:
         memory = self._memory.get((household_id, appliance_type))
         return memory.stable_is_on if memory is not None else False
 
+    def reset(self, household_id: str) -> None:
+        """Discard hysteresis state whose continuity was broken by a data gap."""
+
+        stale_keys = [
+            key for key in self._memory if key[0] == household_id
+        ]
+        for key in stale_keys:
+            self._memory.pop(key, None)
+
     def _detect_one(
         self,
         household_id: str,

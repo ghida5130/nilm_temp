@@ -69,6 +69,8 @@ services:
     environment:
       KAFKA_RAW_TOPIC: ${KAFKA_RAW_TOPIC:-power.raw.v1}
       KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
+      KAFKA_ANALYSIS_ACTIVITY_TOPIC: ${KAFKA_ANALYSIS_ACTIVITY_TOPIC:-analysis.activity.v1}
+      KAFKA_ANALYSIS_DATA_QUALITY_TOPIC: ${KAFKA_ANALYSIS_DATA_QUALITY_TOPIC:-analysis.data-quality.v1}
       KAFKA_ANALYSIS_SNAPSHOT_TOPIC: ${KAFKA_ANALYSIS_SNAPSHOT_TOPIC:-analysis.snapshot.v1}
       KAFKA_ANALYSIS_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
@@ -81,11 +83,15 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_SNAPSHOT_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_DLQ_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_MONITORING_DLQ_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_ACTIVITY_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_DATA_QUALITY_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_RAW_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_SNAPSHOT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_DLQ_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_MONITORING_DLQ_TOPIC"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_ACTIVITY_TOPIC"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_DATA_QUALITY_TOPIC"
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
@@ -104,6 +110,7 @@ services:
       KC_HEALTH_ENABLED: "true"
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN required}
       NILM_SMOKE_CLIENT_SECRET: ${NILM_SMOKE_CLIENT_SECRET:?NILM_SMOKE_CLIENT_SECRET required}
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
     volumes:
       - ../keycloak/nilm-realm.json:/opt/keycloak/data/import/nilm-realm.json:ro
     ports:
@@ -198,6 +205,8 @@ services:
       KAFKA_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
       KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
       KAFKA_ANALYSIS_SNAPSHOT_TOPIC: ${KAFKA_ANALYSIS_SNAPSHOT_TOPIC:-analysis.snapshot.v1}
+      KAFKA_ANALYSIS_ACTIVITY_TOPIC: ${KAFKA_ANALYSIS_ACTIVITY_TOPIC:-analysis.activity.v1}
+      KAFKA_ANALYSIS_DATA_QUALITY_TOPIC: ${KAFKA_ANALYSIS_DATA_QUALITY_TOPIC:-analysis.data-quality.v1}
       KAFKA_GROUP_ID: ${ANALYSIS_KAFKA_GROUP_ID:-realtime-analysis-service-v1}
       KAFKA_AUTO_OFFSET_RESET: ${ANALYSIS_KAFKA_AUTO_OFFSET_RESET:-earliest}
       DATABASE_HOST: postgres
@@ -216,12 +225,26 @@ services:
       APPLIANCE_ON_CONFIRMATION_SAMPLES: ${ANALYSIS_APPLIANCE_ON_CONFIRMATION_SAMPLES:-3}
       APPLIANCE_OFF_CONFIRMATION_SAMPLES: ${ANALYSIS_APPLIANCE_OFF_CONFIRMATION_SAMPLES:-3}
       APPLIANCE_OFF_THRESHOLD_MARGIN: ${ANALYSIS_APPLIANCE_OFF_THRESHOLD_MARGIN:-0.05}
+      ANALYSIS_DATA_GAP_THRESHOLD_SECONDS: ${ANALYSIS_DATA_GAP_THRESHOLD_SECONDS:-120}
+      ANALYSIS_DATA_QUALITY_POLL_SECONDS: ${ANALYSIS_DATA_QUALITY_POLL_SECONDS:-5}
+      ANALYSIS_DATA_RECOVERY_CONFIRMATION_SAMPLES: ${ANALYSIS_DATA_RECOVERY_CONFIRMATION_SAMPLES:-3}
+      ROUTINE_BASELINE_REFRESH_SECONDS: ${ROUTINE_BASELINE_REFRESH_SECONDS:-60}
       LOG_LEVEL: ${ANALYSIS_LOG_LEVEL:-INFO}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5).close()"
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 12
     logging:
       driver: json-file
       options:
@@ -266,6 +289,9 @@ services:
     container_name: nilm-iot-device
     restart: unless-stopped
     environment:
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: nilm
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
       SERVER_PORT: 8081
       APP_SECURITY_ENABLED: "${APP_SECURITY_ENABLED:-true}"
       JWT_ISSUER_URI: ${JWT_ISSUER_URI:?JWT_ISSUER_URI required}
@@ -362,6 +388,61 @@ services:
     depends_on:
       api-gateway:
         condition: service_healthy
+
+  aggregation-service:
+    build:
+      context: ../..
+      dockerfile: batch/aggregation_service/Dockerfile
+      target: runtime
+    image: nilm-aggregation:local
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 5m
+    environment:
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8000
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
+      KAFKA_ANALYSIS_ACTIVITY_TOPIC: ${KAFKA_ANALYSIS_ACTIVITY_TOPIC:-analysis.activity.v1}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: analysis_db
+      DATABASE_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      BASELINE_FILE: config/baselines.json
+      ANALYSIS_TIMEZONE: ${ANALYSIS_TIMEZONE:-Asia/Seoul}
+      ANALYSIS_EXPECTED_SAMPLES_PER_DAY: ${ANALYSIS_EXPECTED_SAMPLES_PER_DAY:-86400}
+      ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO: ${ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO:-0.95}
+      ACTIVITY_INDEX_PUBLISH_HOUR: ${ACTIVITY_INDEX_PUBLISH_HOUR:-0}
+      ACTIVITY_INDEX_PUBLISH_MINUTE: ${ACTIVITY_INDEX_PUBLISH_MINUTE:-10}
+      ACTIVITY_INDEX_SCHEDULER_POLL_SECONDS: ${ACTIVITY_INDEX_SCHEDULER_POLL_SECONDS:-30}
+      ROUTINE_BASELINE_WINDOW_DAYS: ${ROUTINE_BASELINE_WINDOW_DAYS:-28}
+      ROUTINE_BASELINE_MINIMUM_SAMPLE_DAYS: ${ROUTINE_BASELINE_MINIMUM_SAMPLE_DAYS:-14}
+      ROUTINE_BASELINE_MINIMUM_WEEKDAY_SAMPLE_DAYS: ${ROUTINE_BASELINE_MINIMUM_WEEKDAY_SAMPLE_DAYS:-4}
+      ROUTINE_BASELINE_MINIMUM_DAILY_USE_PROBABILITY: ${ROUTINE_BASELINE_MINIMUM_DAILY_USE_PROBABILITY:-0.70}
+      LOG_LEVEL: ${AGGREGATION_LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      realtime-analysis-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5).close()"
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:

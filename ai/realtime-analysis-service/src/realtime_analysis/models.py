@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     SmallInteger,
     String,
@@ -98,7 +99,10 @@ class RoutineBaselineModel(Base):
     active_days: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     daily_use_probability: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
     reliability_weight: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
-    baseline_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    baseline_data: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -107,22 +111,43 @@ class AnalysisPolicy(Base):
     __tablename__ = "analysis_policy"
     __table_args__ = (
         UniqueConstraint("policy_code", name="uq_analysis_policy_code"),
-        CheckConstraint("score BETWEEN 0 AND 100", name="score"),
         CheckConstraint("cooldown_hours >= 0", name="cooldown_hours_nonnegative"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     policy_code: Mapped[str] = mapped_column(String(50), nullable=False)
     algorithm_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    score: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    severity: Mapped[str] = mapped_column(String(20), nullable=False)
     cooldown_hours: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
+
+
+class AnalysisEventEmission(Base):
+    """Successfully published analysis events used for cooldown checks."""
+
+    __tablename__ = "analysis_event_emission"
+    __table_args__ = (
+        Index(
+            "ix_analysis_event_emission_cooldown",
+            "household_id",
+            "event_type",
+            "appliance_type",
+            "emitted_at",
+        ),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(primary_key=True)
+    household_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    appliance_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    emitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class HouseholdObservationDaily(Base):

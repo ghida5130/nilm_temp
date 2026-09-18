@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     kafka_input_topic: str = "power.raw.v1"
     kafka_dlq_topic: str = "dlq.analysis"
     kafka_analysis_event_topic: str = "analysis.event.v1"
+    kafka_analysis_activity_topic: str = "analysis.activity.v1"
+    kafka_analysis_data_quality_topic: str = "analysis.data-quality.v1"
     kafka_analysis_snapshot_topic: str = "analysis.snapshot.v1"
     kafka_group_id: str = "realtime-analysis-service-v1"
     kafka_auto_offset_reset: str = "earliest"
@@ -35,13 +37,47 @@ class Settings(BaseSettings):
     model_manifest_file: str = "config/model_manifest.json"
     fake_on_appliances: str = ""
     baseline_file: str = "config/baselines.json"
-    analysis_score_threshold: int = Field(default=80, ge=0, le=100)
+    analysis_policy_file: str = "config/analysis_policies.json"
     analysis_timezone: str = "Asia/Seoul"
     analysis_expected_samples_per_day: int = Field(default=86_400, ge=1)
     analysis_observation_valid_coverage_ratio: float = Field(
         default=0.95,
         ge=0,
         le=1,
+    )
+    activity_index_publish_hour: int = Field(default=0, ge=0, le=23)
+    activity_index_publish_minute: int = Field(default=10, ge=0, le=59)
+    activity_index_scheduler_poll_seconds: float = Field(
+        default=30,
+        gt=0,
+        le=300,
+    )
+    routine_baseline_window_days: int = Field(default=28, ge=1, le=365)
+    routine_baseline_minimum_sample_days: int = Field(default=14, ge=1, le=365)
+    routine_baseline_minimum_weekday_sample_days: int = Field(
+        default=4,
+        ge=1,
+        le=52,
+    )
+    routine_baseline_minimum_daily_use_probability: float = Field(
+        default=0.70,
+        ge=0,
+        le=1,
+    )
+    routine_baseline_refresh_seconds: float = Field(
+        default=60,
+        gt=0,
+        le=3600,
+    )
+    analysis_data_gap_threshold_seconds: float = Field(default=120, gt=0)
+    analysis_data_quality_poll_seconds: float = Field(
+        default=5,
+        gt=0,
+        le=300,
+    )
+    analysis_data_recovery_confirmation_samples: int = Field(
+        default=3,
+        ge=1,
     )
     appliance_on_confirmation_samples: int = Field(default=3, ge=1)
     appliance_off_confirmation_samples: int = Field(default=3, ge=1)
@@ -51,6 +87,33 @@ class Settings(BaseSettings):
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     consumer_lag_refresh_seconds: float = Field(default=5.0, gt=0, le=300)
     log_level: str = "INFO"
+
+    hdfs_url: str = "http://namenode:9870"
+    bronze_base: str = "/nilm/bronze/power"
+    bronze_manifest_base: str = "/nilm/manifests/job=bronze-loader"
+    retention_manifest_base: str = "/nilm/manifests/job=retention"
+    retention_enabled: bool = True
+    retention_apply: bool = False
+    retention_require_compaction: bool = True
+    bronze_retention_days: int = Field(default=14, ge=1, le=3650)
+    bronze_grace_days: int = Field(default=3, ge=0, le=365)
+    retention_max_delete_bytes: int = Field(
+        default=5 * 1024 * 1024 * 1024,
+        ge=1,
+    )
+    retention_max_delete_dates: int = Field(default=1, ge=1, le=31)
+
+    @model_validator(mode="after")
+    def baseline_sample_days_must_fit_window(self) -> "Settings":
+        if (
+            self.routine_baseline_minimum_sample_days
+            > self.routine_baseline_window_days
+        ):
+            raise ValueError(
+                "ROUTINE_BASELINE_MINIMUM_SAMPLE_DAYS must not exceed "
+                "ROUTINE_BASELINE_WINDOW_DAYS"
+            )
+        return self
 
     @property
     def fake_on_appliance_types(self) -> tuple[str, ...]:
