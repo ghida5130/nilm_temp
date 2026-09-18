@@ -17,6 +17,7 @@ from realtime_analysis.baseline import (
     BaselineRepository,
     SqlAlchemyBaselineRepository,
 )
+from realtime_analysis.baseline_refresh import BaselineCacheRefresher
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.config import get_settings
 from realtime_analysis.consumer import AnalysisConsumer
@@ -181,17 +182,24 @@ def main() -> None:
         settings.http_port,
         readiness,
     )
+    baseline_cache_refresher = BaselineCacheRefresher(
+        repository=baseline_repository,
+        interval_seconds=settings.routine_baseline_refresh_seconds,
+    )
     data_quality_watchdog = DataQualityWatchdog(
         monitor=data_quality_monitor,
         poll_seconds=settings.analysis_data_quality_poll_seconds,
     )
-    observability_server.start()
-    data_quality_watchdog.start(stop_event)
     try:
+        observability_server.start()
+        baseline_cache_refresher.start()
+        data_quality_watchdog.start(stop_event)
+
         consumer.run(stop_event)
     finally:
         stop_event.set()
         data_quality_watchdog.stop()
+        baseline_cache_refresher.stop()
         observability_server.stop()
 
 

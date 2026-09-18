@@ -14,6 +14,7 @@ def test_default_topic_contracts() -> None:
     assert settings.http_port == 8000
     assert settings.activity_index_publish_hour == 0
     assert settings.activity_index_publish_minute == 10
+    assert settings.routine_baseline_refresh_seconds == 60
     assert settings.analysis_data_gap_threshold_seconds == 120
     assert settings.analysis_data_quality_poll_seconds == 5
     assert settings.analysis_data_recovery_confirmation_samples == 3

@@ -64,6 +64,11 @@ class Settings(BaseSettings):
         ge=0,
         le=1,
     )
+    routine_baseline_refresh_seconds: float = Field(
+        default=60,
+        gt=0,
+        le=3600,
+    )
     analysis_data_gap_threshold_seconds: float = Field(default=120, gt=0)
     analysis_data_quality_poll_seconds: float = Field(
         default=5,
