@@ -6,6 +6,9 @@ for service in api-gateway iot-device-service monitoring-service; do
 done
 docker build --target test ai/realtime-analysis-service
 docker build --target runtime -t "$IMAGE_REPOSITORY:realtime-analysis-service-$RELEASE_ID" ai/realtime-analysis-service
+docker build --target test -f batch/aggregation_service/Dockerfile .
+docker build --target runtime -f batch/aggregation_service/Dockerfile \
+  -t "$IMAGE_REPOSITORY:aggregation-service-$RELEASE_ID" .
 docker build -t "$IMAGE_REPOSITORY:mqtt-kafka-bridge-$RELEASE_ID" infrastructure/mqtt-kafka-bridge
 frontend_args=()
 if [[ -n "${FRONTEND_ENV:-}" ]]; then

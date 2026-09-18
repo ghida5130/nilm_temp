@@ -21,6 +21,7 @@ case "$phase" in
     ;;
   b-analysis)
     docker compose up -d --pull never --no-deps --wait --wait-timeout 180 realtime-analysis-service
+    docker compose up -d --pull never --no-deps --wait --wait-timeout 180 aggregation-service
     ;;
   b-bridge)
     docker compose up -d --pull never --no-deps --wait --wait-timeout 180 mqtt-kafka-bridge

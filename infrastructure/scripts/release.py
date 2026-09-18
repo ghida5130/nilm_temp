@@ -14,6 +14,7 @@ SERVICES = {
     "iot-device-service": "IOT_DEVICE_IMAGE",
     "monitoring-service": "MONITORING_IMAGE",
     "realtime-analysis-service": "REALTIME_ANALYSIS_IMAGE",
+    "aggregation-service": "AGGREGATION_IMAGE",
     "frontend": "FRONTEND_IMAGE",
     "mqtt-kafka-bridge": "MQTT_KAFKA_BRIDGE_IMAGE",
 }
@@ -24,7 +25,11 @@ TARGETS = {
         "monitoring-service",
         "frontend",
     ),
-    "b": ("realtime-analysis-service", "mqtt-kafka-bridge"),
+    "b": (
+        "realtime-analysis-service",
+        "aggregation-service",
+        "mqtt-kafka-bridge",
+    ),
 }
 REPOSITORY = re.compile(r"docker\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*/[a-z0-9]+(?:[._-][a-z0-9]+)*")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
@@ -42,7 +47,7 @@ def identity(repository, sha, release_id):
 def validate(data):
     identity(data["repository"], data["git_sha"], data["release_id"])
     if data.get("schema") != 1 or set(data["images"]) != set(SERVICES):
-        raise ValueError("Release must contain exactly the six application images")
+        raise ValueError("Release must contain exactly the application images")
     for service, entry in data["images"].items():
         if not DIGEST.fullmatch(entry["digest"]):
             raise ValueError("Invalid image digest")

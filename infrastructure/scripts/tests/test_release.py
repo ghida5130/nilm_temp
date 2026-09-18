@@ -122,8 +122,8 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(release, "docker_json", side_effect=self.docker_metadata), \
                 patch.object(release.subprocess, "run") as run:
             release.check_images(self.data, "b", pull=True)
-        self.assertEqual(run.call_count, 2)
-        for service in ("realtime-analysis-service", "mqtt-kafka-bridge"):
+        self.assertEqual(run.call_count, 3)
+        for service in ("realtime-analysis-service", "aggregation-service", "mqtt-kafka-bridge"):
             self.assertIn(self.data["images"][service]["reference"], str(run.call_args_list))
         self.assertNotIn(self.data["images"]["api-gateway"]["reference"], str(run.call_args_list))
 
@@ -132,7 +132,7 @@ class ReleaseTests(unittest.TestCase):
                 patch.object(release.subprocess, "run") as run:
             release.check_images(self.data, "a", pull=True)
         self.assertEqual(run.call_count, 4)
-        for service in ("realtime-analysis-service", "mqtt-kafka-bridge"):
+        for service in ("realtime-analysis-service", "aggregation-service", "mqtt-kafka-bridge"):
             self.assertNotIn(self.data["images"][service]["reference"], str(run.call_args_list))
 
     def test_platform_and_digest_mismatch_block_deployment(self):
@@ -155,12 +155,15 @@ class ReleaseTests(unittest.TestCase):
                 return 1 if fail else 0
         return Process()
 
-    def test_publish_creates_manifest_only_after_six_pushes(self):
+    def test_publish_creates_manifest_only_after_all_pushes(self):
         with patch.object(release.subprocess, "Popen", side_effect=self.push_process) as push, \
                 contextlib.redirect_stdout(io.StringIO()):
             release.publish(self.manifest)
-        self.assertEqual(push.call_count, 6)
-        self.assertEqual(len(release.load(self.manifest)["images"]), 6)
+        self.assertEqual(push.call_count, len(release.SERVICES))
+        self.assertEqual(
+            len(release.load(self.manifest)["images"]),
+            len(release.SERVICES),
+        )
         for call in push.call_args_list:
             self.assertTrue(call.args[0][2].startswith(self.data["repository"] + ":"))
 
