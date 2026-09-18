@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.anomaly_detector import event_id_for
-from realtime_analysis.baseline_updater import first_valid_logical_use
+from aggregation_service.baseline_updater import first_valid_logical_use
 from realtime_analysis.metrics import AnalysisMetrics, METRICS
 from realtime_analysis.models import (
     APPLIANCE_TYPES,

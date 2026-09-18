@@ -7,7 +7,7 @@ from prometheus_client import CollectorRegistry
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from realtime_analysis.daily_activity_index import (
+from aggregation_service.daily_activity_index import (
     DailyActivityIndexCalculator,
     DailyActivityIndexRepository,
     DailyActivityIndexScheduler,

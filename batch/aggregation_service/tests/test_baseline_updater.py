@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.baseline import SqlAlchemyBaselineRepository
-from realtime_analysis.baseline_updater import (
+from aggregation_service.baseline_updater import (
     RoutineBaselineCalculator,
     RoutineBaselineUpdateService,
     first_valid_logical_use,

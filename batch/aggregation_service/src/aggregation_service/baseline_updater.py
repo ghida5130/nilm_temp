@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.baseline import SqlAlchemyBaselineRepository
-from realtime_analysis.daily_activity_index import (
+from aggregation_service.daily_activity_index import (
     MINIMUM_SESSION_SECONDS,
     SESSION_MERGE_GAP_SECONDS,
 )

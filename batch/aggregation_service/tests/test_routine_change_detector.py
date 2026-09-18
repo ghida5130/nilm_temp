@@ -14,7 +14,7 @@ from realtime_analysis.models import (
     HouseholdObservationDaily,
 )
 from realtime_analysis.policy import SqlAlchemyPolicyRepository
-from realtime_analysis.routine_change_detector import RoutineChangeDetectionService
+from aggregation_service.routine_change_detector import RoutineChangeDetectionService
 from realtime_analysis.schemas import AnalysisEvent, AnalysisPolicyDefinition
 
 

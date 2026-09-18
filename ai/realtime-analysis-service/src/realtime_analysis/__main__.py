@@ -9,7 +9,6 @@ from confluent_kafka.admin import AdminClient
 from realtime_analysis.activity_repository import (
     SqlAlchemyApplianceActivityRepository,
 )
-from realtime_analysis.activity_publisher import ActivityIndexPublisher
 from realtime_analysis.anomaly_detector import (
     RealtimeAnomalyDetector,
     SqlAlchemyEventDetectionRepository,
@@ -18,16 +17,10 @@ from realtime_analysis.baseline import (
     BaselineRepository,
     SqlAlchemyBaselineRepository,
 )
-from realtime_analysis.baseline_updater import RoutineBaselineUpdateService
 from realtime_analysis.buffer import HouseholdBuffer
 from realtime_analysis.config import get_settings
 from realtime_analysis.consumer import AnalysisConsumer
 from realtime_analysis.database import create_session_factory
-from realtime_analysis.daily_activity_index import (
-    DailyActivityIndexRepository,
-    DailyActivityIndexScheduler,
-    DailyActivityIndexService,
-)
 from realtime_analysis.data_quality_monitor import (
     DataQualityMonitor,
     DataQualityWatchdog,
@@ -51,9 +44,6 @@ from realtime_analysis.readiness import (
     kafka_readiness_check,
 )
 from realtime_analysis.snapshot_publisher import AnalysisSnapshotPublisher
-from realtime_analysis.routine_change_detector import (
-    RoutineChangeDetectionService,
-)
 from realtime_analysis.state_tracker import DailyActivityTracker
 from realtime_analysis.state_decider import ApplianceStateDecider
 from realtime_analysis.state_transition import ApplianceStateTransitionDetector
@@ -175,11 +165,6 @@ def main() -> None:
                 settings.kafka_input_topic,
                 settings.readiness_timeout_seconds,
             ),
-            "kafka_activity": kafka_readiness_check(
-                kafka_admin,
-                settings.kafka_analysis_activity_topic,
-                settings.readiness_timeout_seconds,
-            ),
             "kafka_data_quality": kafka_readiness_check(
                 kafka_admin,
                 settings.kafka_analysis_data_quality_topic,
@@ -196,59 +181,17 @@ def main() -> None:
         settings.http_port,
         readiness,
     )
-    daily_activity_service = DailyActivityIndexService(
-        repository=DailyActivityIndexRepository(
-            session_factory=session_factory,
-            timezone_name=settings.analysis_timezone,
-            expected_samples_per_day=settings.analysis_expected_samples_per_day,
-            valid_coverage_ratio=(
-                settings.analysis_observation_valid_coverage_ratio
-            ),
-        ),
-        publisher=ActivityIndexPublisher(settings),
-        configured_household_ids=bootstrap_baselines.household_ids,
-        baseline_updater=RoutineBaselineUpdateService(
-            session_factory=session_factory,
-            baseline_repository=baseline_repository,
-            timezone_name=settings.analysis_timezone,
-            window_days=settings.routine_baseline_window_days,
-            minimum_sample_days=(
-                settings.routine_baseline_minimum_sample_days
-            ),
-            minimum_weekday_sample_days=(
-                settings.routine_baseline_minimum_weekday_sample_days
-            ),
-            minimum_daily_use_probability=(
-                settings.routine_baseline_minimum_daily_use_probability
-            ),
-        ),
-        daily_event_detector=RoutineChangeDetectionService(
-            session_factory=session_factory,
-            policy_repository=policy_repository,
-            publisher=event_publisher,
-            timezone_name=settings.analysis_timezone,
-        ),
-    )
-    daily_activity_scheduler = DailyActivityIndexScheduler(
-        service=daily_activity_service,
-        timezone_name=settings.analysis_timezone,
-        publish_hour=settings.activity_index_publish_hour,
-        publish_minute=settings.activity_index_publish_minute,
-        poll_seconds=settings.activity_index_scheduler_poll_seconds,
-    )
     data_quality_watchdog = DataQualityWatchdog(
         monitor=data_quality_monitor,
         poll_seconds=settings.analysis_data_quality_poll_seconds,
     )
     observability_server.start()
-    daily_activity_scheduler.start(stop_event)
     data_quality_watchdog.start(stop_event)
     try:
         consumer.run(stop_event)
     finally:
         stop_event.set()
         data_quality_watchdog.stop()
-        daily_activity_scheduler.stop()
         observability_server.stop()
 
 
