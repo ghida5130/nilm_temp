@@ -707,3 +707,139 @@ python visualize_waveform.py --random --seconds 600
                   ▼
      다운스트림 서비스 (BE-2 Flink 분석, BE-3 모니터링 SSE, HDFS 로더)
 ```
+
+---
+
+## 9. 일일 활동 시나리오 시뮬레이터 원천 MQTT 발행 검증 (`tools/verify_activity_normal_mqtt.py`)
+
+외부 서비스(Kafka, PostgreSQL, AI 추론)에 연결하지 않고, Mosquitto MQTT 브로커와 시뮬레이터 HTTP API만을 활용하여 H001 가구의 6개 일일 활동 시나리오(`ACTIVITY_NORMAL`, `ACTIVITY_LOW`, `ACTIVITY_NONE`, `ACTIVITY_INSUFFICIENT`, `ACTIVITY_SESSION_MERGE`, `ACTIVITY_DURATION_CAP`) 1일치 원천 데이터가 QoS 1로 계획 결측을 제외하고 결측 없이 정확히 발행되는지 독립적으로 검증하는 스트리밍 검증 도구입니다.
+
+### 9.1 모듈 실행 방법
+시뮬레이터 루트 디렉터리(`infrastructure/mqtt/simulator`)에서 모듈로 실행합니다:
+
+```bash
+# 기본 실행 (기본 브로커 localhost:1883, API http://127.0.0.1:8085, 기본 시나리오 ACTIVITY_NORMAL, 기준일자 2026-09-16)
+python -m tools.verify_activity_normal_mqtt \
+  --api-url http://127.0.0.1:8085
+
+# 특정 시나리오 및 기준 일자 지정 실행 예시 (결측 시나리오 검증)
+python -m tools.verify_activity_normal_mqtt \
+  --scenario ACTIVITY_INSUFFICIENT \
+  --reference-date 2026-09-16 \
+  --api-url http://127.0.0.1:8085
+```
+
+### 환경변수 지정 및 타임아웃 상세 설정 예시
+
+#### 1) Linux/macOS Bash (비밀번호 입력 시 화면 미출력)
+```bash
+read -rsp "MQTT Password: " MQTT_PASS
+export MQTT_PASS
+echo
+python -m tools.verify_activity_normal_mqtt \
+  --scenario ACTIVITY_NORMAL \
+  --broker-host localhost \
+  --broker-port 1883 \
+  --broker-user simulator_user \
+  --api-url http://127.0.0.1:8085 \
+  --idle-timeout 30.0 \
+  --overall-timeout 600.0
+```
+
+#### 2) Windows PowerShell (SecureString 기반 안전한 환경변수 등록)
+```powershell
+$env:MQTT_PASS = [System.Net.NetworkCredential]::new(
+    '',
+    (Read-Host -Prompt "MQTT Password" -AsSecureString)
+).Password
+python -m tools.verify_activity_normal_mqtt `
+  --scenario ACTIVITY_NORMAL `
+  --broker-host localhost `
+  --broker-port 1883 `
+  --broker-user simulator_user `
+  --api-url http://127.0.0.1:8085 `
+  --idle-timeout 30.0 `
+  --overall-timeout 600.0
+```
+
+> **비밀번호 보안 주의**:
+> CLI에 `--broker-pass` 옵션은 제공되지 않습니다. 브로커 인증 비밀번호는 `MQTT_PASS` 환경변수를 통해 전달하며, 로그·오류 메시지·JSON 결과 어디에도 비밀번호가 노출되지 않습니다.
+
+> **시작 API 응답 유실 시 제한사항**:
+> 시작 API 응답 자체가 유실되어 run_id를 확보하지 못한 경우 자동 stop을 보장할 수 없다. 이 경우 시뮬레이터 관리 화면 또는 서버 로그에서 활성 실행을 확인해야 한다.
+
+### 9.2 지원 옵션 및 타임아웃 기본값
+| CLI 옵션 | 기본값 | 설명 |
+|---|---|---|
+| `--scenario` | `ACTIVITY_NORMAL` | 일일 활동 시나리오 ID (6종 허용: `ACTIVITY_NORMAL`, `ACTIVITY_LOW`, `ACTIVITY_NONE`, `ACTIVITY_INSUFFICIENT`, `ACTIVITY_SESSION_MERGE`, `ACTIVITY_DURATION_CAP`) |
+| `--reference-date` | `2026-09-16` | 시뮬레이션 기준 일자 (YYYY-MM-DD) |
+| `--broker-host` | `localhost` / `MQTT_HOST` | MQTT 브로커 호스트명 |
+| `--broker-port` | `1883` (평문) / `8883` (TLS) | MQTT 브로커 포트 번호 (`resolve_mqtt_port` 규칙) |
+| `--broker-user` | `MQTT_USER` | MQTT 브로커 인증 계정 |
+| `--tls-enabled` | `false` / `MQTT_TLS_ENABLED` | TLS 암호화 사용 여부 (`parse_tls_enabled` 해석) |
+| `--ca-file` | `MQTT_CA_FILE` | TLS CA 인증서 파일 경로 |
+| `--api-url` | `http://127.0.0.1:8085` | 시뮬레이터 Web API URL (기본 포트: 8085) |
+| `--connect-timeout` | `10.0`초 | 브로커 소켓 연결 제한시간 |
+| `--subscribe-timeout`| `10.0`초 | `v1/power/sim/H001/main` SUBACK 수신 대기시간 |
+| `--http-timeout` | `15.0`초 | 시뮬레이터 API (`POST /runs`, `GET /runs/{id}`) 요청 제한시간 |
+| `--idle-timeout` | `30.0`초 | 타겟 신규 메시지 미수신 시 유휴 타임아웃 |
+| `--overall-timeout` | `600.0`초 | 전체 검증 최대 허용 시간 |
+| `--poll-interval` | `0.5`초 | 시뮬레이터 완료 상태 폴링 주기 |
+
+### 9.3 메모리 복잡도 및 비트맵 검증
+- **메모리 복잡도**: $O(\text{SECONDS\_PER\_DAY})$
+- **메모리 점유**: 1일(86,400초) 기준 `bytearray(86400)` 약 **86KB**
+- 86,400개의 JSON payload 전체 목록을 메모리에 저장하지 않고, 실시간으로 타임스탬프의 `second_of_day` (0~86,399)를 인덱스로 비트맵에 마킹합니다.
+- `run_id` 기반 실시간 기대 UUID5와 대조하여 `target_unique_messages`, `duplicate_deliveries`, `foreign_run_messages`를 엄격히 분리 집계합니다.
+
+### 9.4 다운스트림 AI 팀 연동 명세 (Handoff Specification)
+시뮬레이터 원천 검증 완료 후, downstream AI 서비스(`realtime-analysis-service`) 팀에 공식 인계하는 계약 명세입니다:
+
+```yaml
+scenario_id: "ACTIVITY_NORMAL"
+household_id: "H001"
+reference_date: "2026-09-16"
+timezone: "Asia/Seoul"
+virtual_interval: "1s"
+total_planned_slots: 86400
+total_published_samples: 86400
+omitted_samples: 0
+mqtt_topic: "v1/power/sim/H001/main"
+mqtt_qos: 1
+payload_fields_count: 14
+first_sample_measured_at: "2026-09-16T00:00:00+09:00"
+last_sample_measured_at: "2026-09-16T23:59:59+09:00"
+simulator_completion_status: "COMPLETED"
+appliance_schedule_summary:
+  - appliance: "kettle"
+    start_time: "07:00:00"
+    duration_seconds: 120
+    second_of_day_range: [25200, 25319]
+    absolute_cycle_range: [25201, 25320]
+  - appliance: "microwave"
+    start_time: "09:00:00"
+    duration_seconds: 300
+    second_of_day_range: [32400, 32699]
+    absolute_cycle_range: [32401, 32700]
+  - appliance: "kettle"
+    start_time: "12:00:00"
+    duration_seconds: 120
+    second_of_day_range: [43200, 43319]
+    absolute_cycle_range: [43201, 43320]
+  - appliance: "vacuum_cleaner"
+    start_time: "15:00:00"
+    duration_seconds: 1200
+    second_of_day_range: [54000, 55199]
+    absolute_cycle_range: [54001, 55200]
+  - appliance: "microwave"
+    start_time: "18:00:00"
+    duration_seconds: 300
+    second_of_day_range: [64800, 65099]
+    absolute_cycle_range: [64801, 65100]
+  - appliance: "kettle"
+    start_time: "21:00:00"
+    duration_seconds: 120
+    second_of_day_range: [75600, 75719]
+    absolute_cycle_range: [75601, 75720]
+expected_physical_on_seconds: 2160
+```
