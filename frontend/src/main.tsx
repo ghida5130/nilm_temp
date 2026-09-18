@@ -5,7 +5,9 @@ import App from './App.tsx'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js')
+    void navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
+      console.error('알림 서비스 워커를 등록하지 못했습니다.', error)
+    })
   })
 }
 
