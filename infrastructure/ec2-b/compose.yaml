@@ -219,8 +219,74 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    restart: unless-stopped
+    environment:
+      CLUSTER_NAME: nilm
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      HDFS_CONF_dfs_replication: 1
+      HDFS_CONF_dfs_permissions_enabled: "false"
+    ports:
+      - "${EC2_B_PRIVATE_IP:?EC2_B_PRIVATE_IP required}:9870:9870"
+    volumes:
+      - namenode_data:/hadoop/dfs/name
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    restart: unless-stopped
+    environment:
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      HDFS_CONF_dfs_replication: 1
+      HDFS_CONF_dfs_permissions_enabled: "false"
+      SERVICE_PRECONDITION: "namenode:9870"
+    volumes:
+      - datanode_data:/hadoop/dfs/data
+    depends_on:
+      - namenode
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bronze-loader:
+    image: ${BRONZE_LOADER_IMAGE:?BRONZE_LOADER_IMAGE required}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 60s
+    environment:
+      KAFKA_BOOTSTRAP: kafka:19092
+      KAFKA_TOPIC: ${KAFKA_RAW_TOPIC:-power.raw.v1}
+      GROUP_ID: ${BRONZE_KAFKA_GROUP_ID:-hdfs-bronze-loader}
+      HDFS_URL: http://namenode:9870
+      BRONZE_BASE: ${BRONZE_BASE:-/nilm/bronze/power}
+      QUARANTINE_BASE: ${BRONZE_QUARANTINE_BASE:-/nilm/quarantine/power}
+      MANIFEST_BASE: ${BRONZE_MANIFEST_BASE:-/nilm/manifests/job=bronze-loader}
+      FLUSH_SECS: ${BRONZE_FLUSH_SECS:-300}
+      MAX_BUFFER: ${BRONZE_MAX_BUFFER:-50000}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      datanode:
+        condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres_data:
     name: nilm-b_postgres_data
   kafka_data:
     name: nilm-b_kafka_data
+  namenode_data:
+    name: nilm-b_namenode_data
+  datanode_data:
+    name: nilm-b_datanode_data

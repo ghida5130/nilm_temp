@@ -17,6 +17,7 @@ SERVICES = {
     "aggregation-service": "AGGREGATION_IMAGE",
     "frontend": "FRONTEND_IMAGE",
     "mqtt-kafka-bridge": "MQTT_KAFKA_BRIDGE_IMAGE",
+    "bronze-loader": "BRONZE_LOADER_IMAGE",
 }
 TARGETS = {
     "a": (
@@ -29,6 +30,7 @@ TARGETS = {
         "realtime-analysis-service",
         "aggregation-service",
         "mqtt-kafka-bridge",
+        "bronze-loader",
     ),
 }
 REPOSITORY = re.compile(r"docker\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*/[a-z0-9]+(?:[._-][a-z0-9]+)*")

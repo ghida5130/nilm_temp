@@ -222,6 +222,14 @@ pipeline {
                 sh 'bash infrastructure/scripts/deploy.sh b-bridge'
             }
         }
+        stage('Deploy bronze loader') {
+            when { beforeAgent true; allOf { branch 'master'; expression { env.DEPLOY == 'true' } } }
+            agent { label 'ec2-b' }
+            steps {
+                unstash 'deploy-config'
+                sh 'bash infrastructure/scripts/deploy.sh b-loader'
+            }
+        }
         stage('Record success A') {
             when { beforeAgent true; allOf { branch 'master'; expression { env.DEPLOY == 'true' } } }
             agent { label 'ec2-a' }

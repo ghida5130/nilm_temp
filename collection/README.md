@@ -23,6 +23,9 @@ docker compose -f infrastructure/hdfs/docker-compose.yml up -d --build
 컨테이너 이름은 `nilm-bronze-loader`, Kafka consumer group은 `hdfs-bronze-loader`다.
 토픽·플러시 주기·HDFS 경로는 모두 Compose의 환경변수로 조정한다.
 
+운영에서는 `infrastructure/ec2-b/compose.yaml`의 `bronze-loader` 서비스로 실행한다.
+빌드 컨텍스트가 아니라 Jenkins가 푸시한 이미지를 digest로 지정한다.
+
 ## 관련 문서
 
 - [HDFS 수집·일일배치 설계안](../docs/진행상황/이정민/0914/HDFS_수집·일일배치_설계안.md)

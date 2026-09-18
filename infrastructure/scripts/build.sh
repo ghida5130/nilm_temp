@@ -10,6 +10,7 @@ docker build --target test -f batch/aggregation_service/Dockerfile .
 docker build --target runtime -f batch/aggregation_service/Dockerfile \
   -t "$IMAGE_REPOSITORY:aggregation-service-$RELEASE_ID" .
 docker build -t "$IMAGE_REPOSITORY:mqtt-kafka-bridge-$RELEASE_ID" infrastructure/mqtt-kafka-bridge
+docker build -t "$IMAGE_REPOSITORY:bronze-loader-$RELEASE_ID" collection/bronze-loader
 frontend_args=()
 if [[ -n "${FRONTEND_ENV:-}" ]]; then
   frontend_hash=$(sha256sum "$FRONTEND_ENV" | cut -d ' ' -f 1)

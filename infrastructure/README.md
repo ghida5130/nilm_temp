@@ -12,10 +12,12 @@ docker compose --env-file .env --profile frontend --profile tools up -d --build 
 
 - `local/compose.yaml`: 로컬 전체 서비스. PostgreSQL·Kafka의 기존 프로젝트/볼륨 이름을 보존하고 실시간 분석 서비스를 함께 실행한다.
 - `ec2-a/compose.yaml`: Backend, Keycloak, Redis, Mosquitto, Frontend/Nginx.
-- `ec2-b/compose.yaml`: PostgreSQL, Kafka, 토픽 초기화, 실시간 분석 서비스, Bridge.
+- `ec2-b/compose.yaml`: PostgreSQL, Kafka, 토픽 초기화, 실시간 분석 서비스, 집계 서비스, Bridge, HDFS(NameNode/DataNode), 원본 적재기.
 - 서비스 코드와 SQL은 기존 `postgres/`, `mqtt/`, `mqtt-kafka-bridge/`, `kafka/` 및 저장소 `backend/`에 둔다.
 - 실시간 분석 서비스 코드는 저장소 `ai/realtime-analysis-service/`에서 로컬 이미지를 빌드한다. 운영에서는 EC2-B에서 실행하며 같은 Compose의 `kafka:19092`와 `postgres`의 `analysis_db`에 연결한다.
-- HDFS는 별도 실험용으로 유지하며 `nilm-net`에 접속한다. 클러스터 구성만 `hdfs/`에 두고, 원본 적재기(`power.raw.v1` -> HDFS Bronze) 코드는 저장소 `collection/bronze-loader/`에서 빌드한다.
+- HDFS와 원본 적재기(`power.raw.v1` -> HDFS Bronze)는 운영에서 EC2-B Compose로 실행한다. 적재기 코드는 저장소 `collection/bronze-loader/`에서 빌드하며 같은 Compose의 `kafka:19092`와 `namenode`에 연결한다.
+- `hdfs/docker-compose.yml`은 로컬 실험용으로 유지한다. `nilm-net`에 접속하고 적재기를 로컬 빌드한다. 로컬 `compose.yaml`에는 포함하지 않는다.
+- NameNode UI 9870은 EC2-B 사설 IP에만 바인딩한다. `dfs.permissions`가 꺼져 있으므로 보안 그룹에서 접근 대상을 제한한다. Spark 등 HDFS RPC 클라이언트를 붙일 때 9000 공개 여부를 별도로 결정한다.
 - [전체 구조](../docs/배포설정/로컬_EC2_Compose_Jenkins_구조.md), [Jenkins 설정](../docs/배포설정/Jenkins_실행_및_검증.md)
 
 ## 최초 로컬 설정 (Windows PowerShell)
