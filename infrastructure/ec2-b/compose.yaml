@@ -138,6 +138,8 @@ services:
       ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO: ${ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO:-0.95}
       ROUTINE_BASELINE_REFRESH_SECONDS: ${ROUTINE_BASELINE_REFRESH_SECONDS:-60}
       LOG_LEVEL: ${ANALYSIS_LOG_LEVEL:-INFO}
+    ports:
+      - "${EC2_B_PRIVATE_IP:?EC2_B_PRIVATE_IP required}:8000:8000"
     depends_on:
       kafka-init:
         condition: service_completed_successfully
