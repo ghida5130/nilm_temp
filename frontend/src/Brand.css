@@ -1,0 +1,81 @@
+:root {
+  --brand: #d97e3f;
+  --brand-hover: #cc7031;
+  --brand-ink: #352013;
+  --brand-dark: #934715;
+  --brand-soft: #fff0e3;
+  --brand-pale: #fff8f1;
+  --brand-border: #e5c4a9;
+  --ink: #352d27;
+  --muted: #76695e;
+  --coral: var(--brand);
+  --coral-dark: var(--brand-dark);
+  --cream: #faf5ee;
+}
+html, body { background: #faf7f3; }
+.mvp { background: #faf7f3; color: var(--ink); }
+.mvp a { color: var(--brand-dark); }
+.mvp p { color: var(--muted); }
+.mvp h2 .mvp-icon { color: #a36538; }
+.mvp button, .mvp .mvp-button { background: var(--brand); color: var(--brand-ink); }
+.mvp button:hover, .mvp .mvp-button:hover { background: var(--brand-hover); color: #29170c; }
+.mvp .secondary { background: #f5ece3; color: #67452d; }
+.mvp .secondary:hover { background: #eddccf; color: #4e301a; }
+.mvp button.danger-button { background: #a9362d; color: white; }
+.mvp button.danger-button:hover { background: #872a23; color: white; }
+.mvp button:focus-visible, .mvp a:focus-visible, .mvp input:focus-visible,
+.mvp textarea:focus-visible, .mvp summary:focus-visible, .mvp select:focus-visible,
+.role-home a:focus-visible { outline: 3px solid var(--brand-dark); outline-offset: 4px; }
+.mvp button.text-button, .mvp button.icon-button { background: transparent; color: #78604e; }
+.mvp button.text-button:hover, .mvp button.icon-button:hover { background: var(--brand-soft); color: var(--brand-dark); }
+.brand-symbol { background: var(--brand); color: var(--brand-ink); }
+.mvp-card, .mvp-summary section { border-color: #eae1d8; box-shadow: 0 3px 12px #57321904; }
+.staff-sidebar, .staff-topbar { border-color: #eae1d8; }
+.staff-sidebar nav a { color: #796d63; }
+.staff-sidebar nav a:hover { background: var(--brand-pale); }
+.staff-sidebar nav a.selected { background: var(--brand-soft); color: var(--brand-dark); }
+.staff-avatar, .person-avatar, .user-avatar, .person-avatar.large { background: #f7e8da; color: #8c542e; }
+.summary-icon { background: #fff0e3; color: #ac5b23; }
+.summary-icon.amber { background: #fcf0d4; color: #976910; }
+.summary-icon.coral { background: #fbe8e5; color: #a9362d; }
+.summary-icon.blue { background: #eeeaf5; color: #72518d; }
+.mvp .table-tabs button { background: transparent; color: #857363; }
+.mvp .table-tabs button.active { color: var(--brand-dark); border-color: var(--brand); }
+.mvp .table-tabs button:hover { color: var(--brand-dark); }
+.search-box, .mvp th { background: #fcf9f5; border-color: #ede4db; }
+.mvp .search-box input, .care-form input, .care-form textarea, .date-picker input { color: var(--ink); }
+.care-form input, .care-form textarea, .date-picker input { border-color: #d8c8b9; }
+.care-form label, .date-picker { color: #69584a; }
+.mvp summary, .login-card .eyebrow, .user-greeting > p:first-child { color: var(--brand-dark); }
+.mvp .detail-button { border-color: var(--brand-border); color: #87532e; background: var(--brand-pale); }
+.mvp .detail-button:hover { background: var(--brand-soft); color: var(--brand-dark); }
+.mvp .mvp-back { color: var(--brand-dark) !important; }
+.organization-tag { background: #f4eae0; color: #79614d; }
+.bar-track span { background: var(--brand); }
+.bar-track span.partial { background: #ecc09f; }
+.trend-chart polyline { stroke: var(--brand); }
+.trend-chart circle { fill: var(--brand); }
+.trend-chart text { fill: #857363; }
+.status-illustration { background: #fbe0c9; border-color: #fff3e8; color: #a45a24; }
+.user-status-card { background: #fff1e4; }
+.user-status-card h2 { color: #864519; }
+.user-status-card p { color: #9a7557; }
+.mvp .duration-presets button { background: #faf5ef; border-color: #e7d6c6; color: #98765a; }
+.mvp .duration-presets button.selected { background: var(--brand-soft); color: var(--brand-dark); border-color: var(--brand); }
+.mvp .duration-presets button:hover { background: #f8e2cd; }
+.mvp-feedback { background: #fff0e1; color: #80491e !important; }
+.user-bottom-nav { background: #fffdfaf5; border-color: #ecdfd2; }
+.mvp .user-bottom-nav button { background: transparent; color: #ac9786; }
+.mvp .user-bottom-nav button.selected { color: var(--brand-dark); }
+.mvp .user-bottom-nav button:hover { background: var(--brand-pale); }
+.role-home { background: radial-gradient(circle at 12% 15%, #d97e3f22, transparent 30%), radial-gradient(circle at 90% 86%, #edbc842e, transparent 32%), #faf6f0; }
+.role-home__panel { border-color: #eadbcd; box-shadow: 0 28px 90px #70451f12; }
+.role-home__brand, .role-home__intro h1 { color: var(--ink); }
+.role-home__brand > span { background: var(--brand); color: var(--brand-ink); }
+.role-home__intro p { color: var(--brand-dark); }
+.role-home__intro > span { color: var(--muted); }
+.role-home__choices a { background: #fffcf8; border-color: #e5d3c2; color: var(--ink); }
+.role-home__choices a:hover { border-color: var(--brand); box-shadow: 0 12px 28px #9b5b2420; }
+.role-home__choices small { color: var(--muted); }
+.role-home__choice-icon { background: #ffebd6; color: #9b5725; }
+.role-home__choice-icon--staff { background: #f4d8c1; color: #8d4318; }

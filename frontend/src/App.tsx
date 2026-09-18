@@ -8,8 +8,10 @@ import UserDashboard from './UserDashboard'
 import './Mvp.css'
 import './RootApp.css'
 import './App.css'
+import './Brand.css'
+import './Senior.css'
 
-function Login({ staff, onLogin }: { staff: boolean; onLogin: () => void }) {
+function Login({ staff, comparison, onLogin }: { staff: boolean; comparison: boolean; onLogin: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -28,7 +30,7 @@ function Login({ staff, onLogin }: { staff: boolean; onLogin: () => void }) {
     } catch (cause) { setError(message(cause)) }
     finally { setBusy(false) }
   }
-  return <main className="mvp login-page"><section className="mvp-card login-card">
+  return <main className={`mvp login-page${!staff && !comparison ? ' senior-login' : ''}`}><section className="mvp-card login-card">
     <a className="mvp-brand" href="/"><span className="brand-symbol"><Icon name="shield" /></span>On:마음</a>
     <p className="eyebrow">일상을 잇는 안심 돌봄</p><h1>{staff ? '복지담당자' : '복지대상자'} 로그인</h1><p>등록된 계정으로 로그인해 주세요.</p>
     <form className="care-form" onSubmit={(event) => void submit(event)}>
@@ -43,18 +45,19 @@ function Login({ staff, onLogin }: { staff: boolean; onLogin: () => void }) {
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(hasSession)
   const path = window.location.pathname
+  const comparison = path.replace(/\/+$/, '') === '/user/orange-preview'
   const staff = path === '/staff' || path.startsWith('/staff/')
   const user = path === '/user' || path.startsWith('/user/') || (path === '/' && new URLSearchParams(window.location.search).has('notificationId'))
   useEffect(() => {
-    document.title = `On:마음 | ${staff ? '복지담당자' : user ? '안심 돌봄' : '서비스 선택'}`
+    document.title = `On:마음 | ${staff ? '복지담당자' : comparison ? '대상자 기존 디자인 비교' : user ? '안심 돌봄' : '서비스 선택'}`
     const expired = () => setLoggedIn(false)
     window.addEventListener('session-expired', expired)
     return () => window.removeEventListener('session-expired', expired)
-  }, [staff, user])
+  }, [staff, user, comparison])
   function logout() { clearSession(); setLoggedIn(false) }
   if (staff || user) {
-    if (!loggedIn) return <Login staff={staff} onLogin={() => setLoggedIn(true)} />
-    return staff ? <StaffDashboard onLogout={logout} /> : <UserDashboard onLogout={logout} />
+    if (!loggedIn) return <Login staff={staff} comparison={comparison} onLogin={() => setLoggedIn(true)} />
+    return staff ? <StaffDashboard onLogout={logout} /> : <UserDashboard comparison={comparison} onLogout={logout} />
   }
   return <main className="role-home"><div className="role-home__panel">
     <a className="role-home__brand" href="/"><span><Icon name="shield" /></span><strong>On:마음</strong></a>
