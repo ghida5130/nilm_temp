@@ -9,9 +9,9 @@ HDFS_수집·일일배치_설계안(0914)의 지적 4건을 반영한 개정판:
      5분 / 50,000건 중 먼저 도달하는 조건으로 플러시.
   4) 토픽 통일: 기본 power.raw.v1 (브릿지·B Compose와 동일).
 
-보존 필드: 현재 메시지 계약(house/device/ts/power_w) + Kafka 위치(topic/partition/offset/
-kafka_ts) + 수신 시각 + 원본 payload 바이트. reactive_power 등 추가 계측 필드는
-메시지 계약 확장 후 도입한다 (계약 초안 참조).
+보존 필드: 현재 메시지 계약(message_id/household_id/device_id/measured_at/
+active_power/reactive_power/power_factor/current) + Kafka 위치(topic/partition/offset/
+kafka_ts) + 수신 시각 + 원본 payload 바이트.
 
 경로 구조 (도착일 기준):
   {BRONZE}/ingest_date=YYYY-MM-DD/hour=HH/partition=P/part-P-{startOffset}-{endOffset}.parquet
@@ -20,9 +20,11 @@ kafka_ts) + 수신 시각 + 원본 payload 바이트. reactive_power 등 추가 
 """
 import io
 import json
+import math
 import os
 import signal
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -42,10 +44,14 @@ FLUSH_SECS = int(os.getenv("FLUSH_SECS", "300"))
 MAX_BUFFER = int(os.getenv("MAX_BUFFER", "50000"))
 
 OK_SCHEMA = pa.schema([
-    ("house", pa.string()),
-    ("device", pa.string()),
-    ("ts", pa.string()),            # 생산자 측정 시각 (ISO 8601 UTC)
-    ("power_w", pa.float64()),
+    ("message_id", pa.string()),
+    ("household_id", pa.string()),
+    ("device_id", pa.string()),
+    ("measured_at", pa.string()),   # 생산자 측정 시각 (ISO 8601, timezone 필수)
+    ("active_power", pa.float64()),
+    ("reactive_power", pa.float64()),
+    ("power_factor", pa.float64()),
+    ("current", pa.float64()),
     ("topic", pa.string()),
     ("partition", pa.int32()),
     ("kafka_offset", pa.int64()),
@@ -71,6 +77,66 @@ def iso(epoch_ms: int | None) -> str:
     if epoch_ms is None or epoch_ms < 0:
         return ""
     return datetime.fromtimestamp(epoch_ms / 1000, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def required_id(row: dict, field_name: str) -> str:
+    value = row[field_name]
+    if not isinstance(value, str):
+        raise TypeError(f"{field_name} must be a string")
+    value = value.strip()
+    if not 1 <= len(value) <= 50:
+        raise ValueError(f"{field_name} length must be between 1 and 50")
+    return value
+
+
+def required_number(row: dict, field_name: str) -> float:
+    value = row[field_name]
+    if isinstance(value, bool):
+        raise TypeError(f"{field_name} must be a number")
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"{field_name} must be finite")
+    return value
+
+
+def parse_measurement(raw: bytes) -> dict:
+    """신규 power.raw.v1 계약을 검증하고 Bronze 컬럼으로 정규화한다."""
+    row = json.loads(raw)
+    if not isinstance(row, dict):
+        raise TypeError("payload must be a JSON object")
+
+    message_id = str(uuid.UUID(str(row["message_id"])))
+    household_id = required_id(row, "household_id")
+    device_id = required_id(row, "device_id")
+
+    measured_at_raw = row["measured_at"]
+    if not isinstance(measured_at_raw, str):
+        raise TypeError("measured_at must be a string")
+    measured_at = datetime.fromisoformat(measured_at_raw.replace("Z", "+00:00"))
+    if measured_at.tzinfo is None or measured_at.utcoffset() is None:
+        raise ValueError("measured_at must include a timezone")
+
+    active_power = required_number(row, "active_power")
+    reactive_power = required_number(row, "reactive_power")
+    power_factor = required_number(row, "power_factor")
+    current = required_number(row, "current")
+    if active_power < 0:
+        raise ValueError("active_power must be greater than or equal to 0")
+    if not -1 <= power_factor <= 1:
+        raise ValueError("power_factor must be between -1 and 1")
+    if current < 0:
+        raise ValueError("current must be greater than or equal to 0")
+
+    return {
+        "message_id": message_id,
+        "household_id": household_id,
+        "device_id": device_id,
+        "measured_at": measured_at.isoformat(),
+        "active_power": active_power,
+        "reactive_power": reactive_power,
+        "power_factor": power_factor,
+        "current": current,
+    }
 
 
 @dataclass
@@ -132,12 +198,8 @@ class BronzeLoader:
             "raw_payload": raw,
         }
         try:
-            row = json.loads(raw)
             record = {
-                "house": str(row["house"]),
-                "device": str(row.get("device", "main")),
-                "ts": str(row["ts"]),
-                "power_w": float(row["power_w"]),
+                **parse_measurement(raw),
                 **meta,
             }
             buf.ok_rows.append(record)
