@@ -471,11 +471,15 @@ class DailyActivityIndexScheduler:
         publish_hour: int,
         publish_minute: int,
         poll_seconds: float,
+        run_repository: object | None = None,
+        completion_hook: Callable[[date], object] | None = None,
     ) -> None:
         self._service = service
         self._timezone = ZoneInfo(timezone_name)
         self._publish_time = time(publish_hour, publish_minute)
         self._poll_seconds = poll_seconds
+        self._run_repository = run_repository
+        self._completion_hook = completion_hook
         self._thread: Thread | None = None
         self._stop_event: Event | None = None
         self._last_published_date: date | None = None
@@ -508,9 +512,21 @@ class DailyActivityIndexScheduler:
         activity_date = self.due_activity_date(now)
         if self._last_published_date == activity_date:
             return False
-        self._service.publish_date(activity_date)
+        ran_daily = True
+        if self._run_repository is None:
+            self._service.publish_date(activity_date)
+        elif self._run_repository.has_succeeded("daily-aggregation", activity_date):
+            ran_daily = False
+        else:
+            self._run_repository.run(
+                "daily-aggregation",
+                activity_date,
+                lambda: self._service.publish_date(activity_date),
+            )
+        if self._completion_hook is not None:
+            self._completion_hook(activity_date)
         self._last_published_date = activity_date
-        return True
+        return ran_daily
 
     def _run(self) -> None:
         assert self._stop_event is not None

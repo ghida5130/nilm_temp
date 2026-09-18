@@ -72,16 +72,34 @@ services:
       KAFKA_ANALYSIS_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
       KAFKA_PARTITIONS: ${KAFKA_PARTITIONS:-24}
+      KAFKA_RAW_RETENTION_MS: ${KAFKA_RAW_RETENTION_MS:-604800000}
+      KAFKA_RAW_RETENTION_BYTES: ${KAFKA_RAW_RETENTION_BYTES:-2147483648}
+      KAFKA_RAW_SEGMENT_BYTES: ${KAFKA_RAW_SEGMENT_BYTES:-268435456}
+      KAFKA_ANALYSIS_RETENTION_MS: ${KAFKA_ANALYSIS_RETENTION_MS:-604800000}
+      KAFKA_ANALYSIS_RETENTION_BYTES: ${KAFKA_ANALYSIS_RETENTION_BYTES:-134217728}
+      KAFKA_ANALYSIS_SEGMENT_BYTES: ${KAFKA_ANALYSIS_SEGMENT_BYTES:-134217728}
+      KAFKA_DLQ_RETENTION_MS: ${KAFKA_DLQ_RETENTION_MS:-2592000000}
+      KAFKA_DLQ_RETENTION_BYTES: ${KAFKA_DLQ_RETENTION_BYTES:-268435456}
+      KAFKA_DLQ_SEGMENT_BYTES: ${KAFKA_DLQ_SEGMENT_BYTES:-134217728}
     entrypoint: ["/bin/bash", "-ec"]
     command:
       - |
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_RAW_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_ACTIVITY_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_DATA_QUALITY_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_SNAPSHOT_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_DLQ_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
-        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_MONITORING_DLQ_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
+        configure_topic() {
+          topic="$$1"
+          retention_ms="$$2"
+          retention_bytes="$$3"
+          segment_bytes="$$4"
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$topic" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
+          /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:19092 --entity-type topics --entity-name "$$topic" --alter --add-config "cleanup.policy=delete,retention.ms=$$retention_ms,retention.bytes=$$retention_bytes,segment.bytes=$$segment_bytes"
+          /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:19092 --entity-type topics --entity-name "$$topic" --describe
+        }
+        configure_topic "$$KAFKA_RAW_TOPIC" "$$KAFKA_RAW_RETENTION_MS" "$$KAFKA_RAW_RETENTION_BYTES" "$$KAFKA_RAW_SEGMENT_BYTES"
+        configure_topic "$$KAFKA_ANALYSIS_EVENT_TOPIC" "$$KAFKA_ANALYSIS_RETENTION_MS" "$$KAFKA_ANALYSIS_RETENTION_BYTES" "$$KAFKA_ANALYSIS_SEGMENT_BYTES"
+        configure_topic "$$KAFKA_ANALYSIS_ACTIVITY_TOPIC" "$$KAFKA_ANALYSIS_RETENTION_MS" "$$KAFKA_ANALYSIS_RETENTION_BYTES" "$$KAFKA_ANALYSIS_SEGMENT_BYTES"
+        configure_topic "$$KAFKA_ANALYSIS_DATA_QUALITY_TOPIC" "$$KAFKA_ANALYSIS_RETENTION_MS" "$$KAFKA_ANALYSIS_RETENTION_BYTES" "$$KAFKA_ANALYSIS_SEGMENT_BYTES"
+        configure_topic "$$KAFKA_ANALYSIS_SNAPSHOT_TOPIC" "$$KAFKA_ANALYSIS_RETENTION_MS" "$$KAFKA_ANALYSIS_RETENTION_BYTES" "$$KAFKA_ANALYSIS_SEGMENT_BYTES"
+        configure_topic "$$KAFKA_ANALYSIS_DLQ_TOPIC" "$$KAFKA_DLQ_RETENTION_MS" "$$KAFKA_DLQ_RETENTION_BYTES" "$$KAFKA_DLQ_SEGMENT_BYTES"
+        configure_topic "$$KAFKA_MONITORING_DLQ_TOPIC" "$$KAFKA_DLQ_RETENTION_MS" "$$KAFKA_DLQ_RETENTION_BYTES" "$$KAFKA_DLQ_SEGMENT_BYTES"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_RAW_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_ACTIVITY_TOPIC"
@@ -169,6 +187,17 @@ services:
       ROUTINE_BASELINE_MINIMUM_WEEKDAY_SAMPLE_DAYS: ${ROUTINE_BASELINE_MINIMUM_WEEKDAY_SAMPLE_DAYS:-4}
       ROUTINE_BASELINE_MINIMUM_DAILY_USE_PROBABILITY: ${ROUTINE_BASELINE_MINIMUM_DAILY_USE_PROBABILITY:-0.70}
       LOG_LEVEL: ${AGGREGATION_LOG_LEVEL:-INFO}
+      HDFS_URL: http://namenode:9870
+      BRONZE_BASE: ${BRONZE_BASE:-/nilm/bronze/power}
+      BRONZE_MANIFEST_BASE: ${BRONZE_MANIFEST_BASE:-/nilm/manifests/job=bronze-loader}
+      RETENTION_MANIFEST_BASE: ${RETENTION_MANIFEST_BASE:-/nilm/manifests/job=retention}
+      RETENTION_ENABLED: ${RETENTION_ENABLED:-true}
+      RETENTION_APPLY: ${RETENTION_APPLY:-false}
+      RETENTION_REQUIRE_COMPACTION: ${RETENTION_REQUIRE_COMPACTION:-true}
+      BRONZE_RETENTION_DAYS: ${BRONZE_RETENTION_DAYS:-14}
+      BRONZE_GRACE_DAYS: ${BRONZE_GRACE_DAYS:-3}
+      RETENTION_MAX_DELETE_BYTES: ${RETENTION_MAX_DELETE_BYTES:-5368709120}
+      RETENTION_MAX_DELETE_DATES: ${RETENTION_MAX_DELETE_DATES:-1}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -176,6 +205,10 @@ services:
         condition: service_healthy
       realtime-analysis-service:
         condition: service_healthy
+      datanode:
+        condition: service_started
+      hdfs-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -255,6 +288,42 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  hdfs-init:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    restart: "no"
+    environment:
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      SERVICE_PRECONDITION: "namenode:9870 datanode:9864"
+      HDFS_QUOTA_ENABLED: ${HDFS_QUOTA_ENABLED:-true}
+      HDFS_TOTAL_QUOTA: ${HDFS_TOTAL_QUOTA:-80g}
+      HDFS_BRONZE_QUOTA: ${HDFS_BRONZE_QUOTA:-32g}
+      HDFS_QUARANTINE_QUOTA: ${HDFS_QUARANTINE_QUOTA:-8g}
+      HDFS_MANIFEST_QUOTA: ${HDFS_MANIFEST_QUOTA:-2g}
+      HDFS_SILVER_QUOTA: ${HDFS_SILVER_QUOTA:-24g}
+      HDFS_GOLD_QUOTA: ${HDFS_GOLD_QUOTA:-2g}
+    command: ["/bin/bash", "/opt/nilm/hdfs-init.sh"]
+    volumes:
+      - ${CONFIG_ROOT:-.}/hdfs-init.sh:/opt/nilm/hdfs-init.sh:ro
+    depends_on:
+      - namenode
+      - datanode
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run)($$|/)
+    ports:
+      - "${EC2_B_PRIVATE_IP:?EC2_B_PRIVATE_IP required}:9100:9100"
+    volumes:
+      - /:/host:ro,rslave
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   bronze-loader:
     image: ${BRONZE_LOADER_IMAGE:?BRONZE_LOADER_IMAGE required}
     restart: unless-stopped
@@ -270,11 +339,14 @@ services:
       MANIFEST_BASE: ${BRONZE_MANIFEST_BASE:-/nilm/manifests/job=bronze-loader}
       FLUSH_SECS: ${BRONZE_FLUSH_SECS:-300}
       MAX_BUFFER: ${BRONZE_MAX_BUFFER:-50000}
+      BUSINESS_TIMEZONE: ${ANALYSIS_TIMEZONE:-Asia/Seoul}
     depends_on:
       kafka-init:
         condition: service_completed_successfully
       datanode:
         condition: service_started
+      hdfs-init:
+        condition: service_completed_successfully
     logging:
       driver: json-file
       options:

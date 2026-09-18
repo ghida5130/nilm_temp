@@ -10,9 +10,10 @@ python3 infrastructure/scripts/release.py check --manifest /opt/nilm/release.jso
 cd /opt/nilm
 case "$phase" in
   b-base)
-    docker compose pull postgres kafka kafka-init namenode datanode
-    docker compose up -d --wait --wait-timeout 300 postgres kafka namenode datanode
+    docker compose pull postgres kafka kafka-init namenode datanode hdfs-init node-exporter
+    docker compose up -d --wait --wait-timeout 300 postgres kafka namenode datanode node-exporter
     docker compose run --rm --no-deps kafka-init
+    docker compose run --rm hdfs-init
     ;;
   a)
     docker compose pull redis mosquitto keycloak

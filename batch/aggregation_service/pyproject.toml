@@ -9,6 +9,7 @@ description = "Daily activity aggregation and routine baseline service"
 requires-python = ">=3.11"
 dependencies = [
     "realtime-analysis-service==0.1.0",
+    "hdfs>=2.7,<3",
 ]
 
 [project.optional-dependencies]

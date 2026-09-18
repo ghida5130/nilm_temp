@@ -239,6 +239,34 @@ def test_scheduler_publishes_each_due_date_once(
     assert publisher.publish.call_args.args[0].activity_date == date(2026, 9, 16)
 
 
+def test_scheduler_uses_persistent_run_registry_and_still_runs_completion_hook(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = DailyActivityIndexRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=4,
+        valid_coverage_ratio=0.75,
+    )
+    service = DailyActivityIndexService(repository, Mock(), ["H001"])
+    run_repository = Mock()
+    run_repository.has_succeeded.return_value = True
+    completion_hook = Mock()
+    scheduler = DailyActivityIndexScheduler(
+        service,
+        "Asia/Seoul",
+        publish_hour=0,
+        publish_minute=10,
+        poll_seconds=30,
+        run_repository=run_repository,
+        completion_hook=completion_hook,
+    )
+
+    assert scheduler.run_due(datetime(2026, 9, 17, 1, tzinfo=timezone.utc)) is False
+    completion_hook.assert_called_once_with(date(2026, 9, 16))
+    run_repository.run.assert_not_called()
+
+
 def test_baseline_is_updated_after_daily_activity_messages(
     session_factory: sessionmaker[Session],
 ) -> None:

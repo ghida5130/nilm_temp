@@ -24,6 +24,9 @@ docker compose --env-file "$staged_env" -f "infrastructure/ec2-$target/compose.y
 python3 infrastructure/scripts/release.py snapshot
 install -m 600 "$staged_env" /opt/nilm/.env
 install -m 644 "infrastructure/ec2-$target/compose.yaml" /opt/nilm/compose.yaml
+if [[ "$target" == "b" ]]; then
+  install -m 644 infrastructure/ec2-b/hdfs-init.sh /opt/nilm/hdfs-init.sh
+fi
 install -m 644 release.json /opt/nilm/release.json
 if [[ "$target" == a ]]; then
   install -d /opt/nilm/keycloak /opt/nilm/nginx /opt/nilm/mqtt

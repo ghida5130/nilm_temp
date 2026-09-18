@@ -88,6 +88,21 @@ class Settings(BaseSettings):
     consumer_lag_refresh_seconds: float = Field(default=5.0, gt=0, le=300)
     log_level: str = "INFO"
 
+    hdfs_url: str = "http://namenode:9870"
+    bronze_base: str = "/nilm/bronze/power"
+    bronze_manifest_base: str = "/nilm/manifests/job=bronze-loader"
+    retention_manifest_base: str = "/nilm/manifests/job=retention"
+    retention_enabled: bool = True
+    retention_apply: bool = False
+    retention_require_compaction: bool = True
+    bronze_retention_days: int = Field(default=14, ge=1, le=3650)
+    bronze_grace_days: int = Field(default=3, ge=0, le=365)
+    retention_max_delete_bytes: int = Field(
+        default=5 * 1024 * 1024 * 1024,
+        ge=1,
+    )
+    retention_max_delete_dates: int = Field(default=1, ge=1, le=31)
+
     @model_validator(mode="after")
     def baseline_sample_days_must_fit_window(self) -> "Settings":
         if (

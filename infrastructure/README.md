@@ -18,6 +18,13 @@ docker compose --env-file .env --profile frontend --profile tools up -d --build 
 - HDFS와 원본 적재기(`power.raw.v1` -> HDFS Bronze)는 운영에서 EC2-B Compose로 실행한다. 적재기 코드는 저장소 `collection/bronze-loader/`에서 빌드하며 같은 Compose의 `kafka:19092`와 `namenode`에 연결한다.
 - `hdfs/docker-compose.yml`은 로컬 실험용으로 유지한다. `nilm-net`에 접속하고 적재기를 로컬 빌드한다. 로컬 `compose.yaml`에는 포함하지 않는다.
 - NameNode UI 9870은 EC2-B 사설 IP에만 바인딩한다. `dfs.permissions`가 꺼져 있으므로 보안 그룹에서 접근 대상을 제한한다. Spark 등 HDFS RPC 클라이언트를 붙일 때 9000 공개 여부를 별도로 결정한다.
+- EC2-B 기동 시 `hdfs-init`이 `/nilm` 경로를 만들고 전체 80GiB, Bronze 32GiB 등
+  데이터셋별 HDFS space quota를 멱등 적용한다. `HDFS_QUOTA_ENABLED=false`로
+  초기화를 생략할 수 있다.
+- 집계 서비스의 HDFS 보존 작업은 기본 dry-run이다. 14일 보존과 3일 유예를 지난
+  UTC `ingest_date`만 검토하며, 일일 배치 성공·신규 Bronze manifest의 업무 날짜·
+  compaction `_SUCCESS`를 모두 확인한다. 실제 삭제는 운영 검토 후
+  `RETENTION_APPLY=true`로 명시적으로 활성화한다.
 - [전체 구조](../docs/배포설정/로컬_EC2_Compose_Jenkins_구조.md), [Jenkins 설정](../docs/배포설정/Jenkins_실행_및_검증.md)
 
 ## 최초 로컬 설정 (Windows PowerShell)

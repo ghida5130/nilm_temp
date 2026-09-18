@@ -26,7 +26,8 @@ import signal
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -42,6 +43,14 @@ QUARANTINE_BASE = os.getenv("QUARANTINE_BASE", "/nilm/quarantine/power")
 MANIFEST_BASE = os.getenv("MANIFEST_BASE", "/nilm/manifests/job=bronze-loader")
 FLUSH_SECS = int(os.getenv("FLUSH_SECS", "300"))
 MAX_BUFFER = int(os.getenv("MAX_BUFFER", "50000"))
+BUSINESS_TIMEZONE_NAME = os.getenv("BUSINESS_TIMEZONE", "Asia/Seoul")
+# Korea has no daylight-saving transition. The fixed offset also keeps local
+# contract tests portable on Windows hosts without the optional tzdata wheel.
+BUSINESS_TIMEZONE = (
+    timezone(timedelta(hours=9))
+    if BUSINESS_TIMEZONE_NAME == "Asia/Seoul"
+    else ZoneInfo(BUSINESS_TIMEZONE_NAME)
+)
 
 OK_SCHEMA = pa.schema([
     ("message_id", pa.string()),
@@ -136,6 +145,24 @@ def parse_measurement(raw: bytes) -> dict:
         "reactive_power": reactive_power,
         "power_factor": power_factor,
         "current": current,
+    }
+
+
+def measurement_manifest_summary(rows: list[dict]) -> dict:
+    """Return the event-time range needed for safe downstream retention."""
+    if not rows:
+        return {
+            "min_measured_at": None,
+            "max_measured_at": None,
+            "business_dates": [],
+        }
+    measured = [datetime.fromisoformat(row["measured_at"]) for row in rows]
+    return {
+        "min_measured_at": min(measured).astimezone(timezone.utc).isoformat(),
+        "max_measured_at": max(measured).astimezone(timezone.utc).isoformat(),
+        "business_dates": sorted(
+            {value.astimezone(BUSINESS_TIMEZONE).date().isoformat() for value in measured}
+        ),
     }
 
 
@@ -249,10 +276,14 @@ class BronzeLoader:
             files.append(self.write_parquet(path, buf.quarantine_rows, QUARANTINE_SCHEMA))
 
         # 구간의 입출력을 기록하는 manifest — 일일 마감 배치의 입력 스냅샷 근거
+        measurement_summary = measurement_manifest_summary(buf.ok_rows)
+        file_bytes = sum(self.hdfs.status(path)["length"] for path in files)
         manifest = {
             "topic": KAFKA_TOPIC, "partition": p,
             "start_offset": buf.first_offset, "end_offset": buf.last_offset,
             "ok_count": len(buf.ok_rows), "quarantine_count": len(buf.quarantine_rows),
+            **measurement_summary,
+            "file_bytes": file_bytes,
             "files": files, "flush_reason": reason, "committed_at": iso(int(time.time() * 1000)),
         }
         mpath = f"{MANIFEST_BASE}/date={ingest_date}/manifest-{p}-{span}.json"

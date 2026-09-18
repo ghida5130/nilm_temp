@@ -13,7 +13,7 @@ for module_name in ("confluent_kafka", "hdfs"):
     if importlib.util.find_spec(module_name) is None:
         sys.modules[module_name] = MagicMock()
 
-from loader import BronzeLoader, parse_measurement
+from loader import BronzeLoader, measurement_manifest_summary, parse_measurement
 
 
 def valid_payload(**overrides):
@@ -54,6 +54,27 @@ class MeasurementContractTest(unittest.TestCase):
     def test_rejects_out_of_range_power_factor(self):
         with self.assertRaises(ValueError):
             parse_measurement(valid_payload(power_factor=1.1))
+
+    def test_manifest_summary_tracks_utc_range_and_kst_dates(self):
+        rows = [
+            parse_measurement(valid_payload(measured_at="2026-09-17T14:59:59Z")),
+            parse_measurement(valid_payload(measured_at="2026-09-17T15:00:01Z")),
+        ]
+
+        summary = measurement_manifest_summary(rows)
+
+        self.assertEqual(
+            summary["business_dates"],
+            ["2026-09-17", "2026-09-18"],
+        )
+        self.assertEqual(
+            summary["min_measured_at"],
+            "2026-09-17T14:59:59+00:00",
+        )
+        self.assertEqual(
+            summary["max_measured_at"],
+            "2026-09-17T15:00:01+00:00",
+        )
 
 
 class IngestRoutingTest(unittest.TestCase):
