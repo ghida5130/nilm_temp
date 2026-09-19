@@ -62,6 +62,28 @@ IoT Device Service의 실제 회원가입·로그인·가구 등록 API를 호�
 - 같은 그룹의 저장된 offset이 있으면 earliest도 그다음부터 시작한다.
 - 위험 이벤트를 Kafka에서 다시 받아도 같은 ID의 알림은 추가 생성되지 않는다.
 
+## 외출 이벤트 발행
+
+외출 설정 API(`PUT /api/monitoring/my-dashboard/away-mode`)와 예약 발효
+스케줄러가 외출 여부를 뒤집을 때 `monitoring.household-presence.v1`으로
+이벤트를 발행한다. 토픽은 `KAFKA_OUTING_EVENT_TOPIC`으로 바꿀 수 있다.
+
+| 항목 | 값 |
+| --- | --- |
+| Key | `household_id` |
+| Value | `event_id`, `household_id`, `event_type`, `occurred_at` (UTF-8 JSON) |
+| event_type | `OUTING_STARTED`, `OUTING_ENDED` |
+
+- 예약만 걸어 둔 시점이나 외출 중 구간만 바꾼 재설정처럼 상태가 그대로면
+  같은 의미의 이벤트를 다시 보내지 않는다.
+- `occurred_at`은 발행 시각이 아니라 상태가 바뀐 시각이다. API로 바꾸면
+  요청을 처리한 시각, 스케줄러가 발효시키면 예약된 경계 시각을 싣는다.
+- DB 커밋 이후에 발행하므로 롤백된 외출이 AI로 나가지는 않는다. 반대로
+  발행에 실패한 변경은 로그만 남기고 유실된다. 외출 설정 API는 실패하지
+  않는다. 유실까지 막으려면 Transactional Outbox가 필요하다.
+- 브로커가 죽어 있을 때 API가 오래 붙잡히지 않도록 메타데이터 대기를
+  `KAFKA_PRODUCER_MAX_BLOCK_MS`(기본 3초)로 제한한다.
+
 ## 마이그레이션
 
 V2는 기존 구독 테이블 생성문을 유지했다. V3는 notifications,
