@@ -29,6 +29,7 @@ from engine.schedule import (
     ScenarioDefinition,
     SECONDS_PER_DAY,
     compile_schedule,
+    resolve_base_date,
 )
 from engine.schedule_executor import (
     DeterministicScheduleExecutor,
@@ -317,9 +318,11 @@ class E2EScheduleSessionManager:
         self,
         broker_config: dict | None = None,
         mqtt_client_factory: Callable[[str], AsyncContextManager] | None = None,
+        broadcast_callback: Callable[[dict[str, Any]], Any] | None = None,
     ):
         self.broker_config = broker_config or resolve_mqtt_config()
         self._client_factory = mqtt_client_factory or DefaultMqttClientFactory(self.broker_config)
+        self._broadcast_callback = broadcast_callback
         self._current_session: E2ESession | None = None
         self._session_lock = threading.Lock()
         self._is_shutting_down = False
@@ -424,7 +427,7 @@ class E2EScheduleSessionManager:
             defn = get_unified_scenario_definition(sc_id)
 
             total_days = len(defn.days)
-            base_date = reference_date - timedelta(days=total_days - 1)
+            base_date = resolve_base_date(reference_date, total_days)
             plan = compile_schedule(defn, base_date=base_date)
 
             task = HouseholdExecutionTask(household_id=h_id, scenario_id=sc_id, plan=plan)
@@ -584,6 +587,7 @@ class E2EScheduleSessionManager:
             run_id=session.run_id,
             config=executor_config,
             day_completed_callback=make_day_cb(task),
+            broadcast_callback=self._broadcast_callback,
         )
 
         # Gate 대기

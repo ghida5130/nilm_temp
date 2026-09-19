@@ -710,9 +710,9 @@ python visualize_waveform.py --random --seconds 600
 
 ---
 
-## 9. 일일 활동 시나리오 시뮬레이터 원천 MQTT 발행 검증 (`tools/verify_activity_normal_mqtt.py`)
+## 9. E2E 통합 시나리오(일일 활동·20일 기준선·28일 루틴 변화) 시뮬레이터 원천 MQTT 발행 검증 (`tools/verify_activity_normal_mqtt.py`)
 
-외부 서비스(Kafka, PostgreSQL, AI 추론)에 연결하지 않고, Mosquitto MQTT 브로커와 시뮬레이터 HTTP API만을 활용하여 H001 가구의 6개 일일 활동 시나리오(`ACTIVITY_NORMAL`, `ACTIVITY_LOW`, `ACTIVITY_NONE`, `ACTIVITY_INSUFFICIENT`, `ACTIVITY_SESSION_MERGE`, `ACTIVITY_DURATION_CAP`) 1일치 원천 데이터가 QoS 1로 계획 결측을 제외하고 결측 없이 정확히 발행되는지 독립적으로 검증하는 스트리밍 검증 도구입니다.
+외부 서비스(Kafka, PostgreSQL, AI 추론)에 연결하지 않고, Mosquitto MQTT 브로커와 시뮬레이터 HTTP API만을 활용하여 H001 가구의 통합 카탈로그 10개 시나리오(1일 활동 6종, 20일 기준선 1종, 28일 루틴 변화 3종) 전체 타임라인 원천 데이터가 QoS 1로 계획 결측을 제외하고 결측 없이 정확히 발행되는지 독립적으로 검증하는 스트리밍 검증 도구입니다.
 
 ### 9.1 모듈 실행 방법
 시뮬레이터 루트 디렉터리(`infrastructure/mqtt/simulator`)에서 모듈로 실행합니다:
@@ -725,6 +725,12 @@ python -m tools.verify_activity_normal_mqtt \
 # 특정 시나리오 및 기준 일자 지정 실행 예시 (결측 시나리오 검증)
 python -m tools.verify_activity_normal_mqtt \
   --scenario ACTIVITY_INSUFFICIENT \
+  --reference-date 2026-09-16 \
+  --api-url http://127.0.0.1:8085
+
+# 28일 루틴 변화 시나리오 실행 예시 (기준일자 2026-09-16은 마지막 날을 의미하며, 2026-08-20~2026-09-16 28일간 검증)
+python -m tools.verify_activity_normal_mqtt \
+  --scenario ROUTINE_CHANGED_LATER \
   --reference-date 2026-09-16 \
   --api-url http://127.0.0.1:8085
 ```
@@ -771,8 +777,8 @@ python -m tools.verify_activity_normal_mqtt `
 ### 9.2 지원 옵션 및 타임아웃 기본값
 | CLI 옵션 | 기본값 | 설명 |
 |---|---|---|
-| `--scenario` | `ACTIVITY_NORMAL` | 일일 활동 시나리오 ID (6종 허용: `ACTIVITY_NORMAL`, `ACTIVITY_LOW`, `ACTIVITY_NONE`, `ACTIVITY_INSUFFICIENT`, `ACTIVITY_SESSION_MERGE`, `ACTIVITY_DURATION_CAP`) |
-| `--reference-date` | `2026-09-16` | 시뮬레이션 기준 일자 (YYYY-MM-DD) |
+| `--scenario` | `ACTIVITY_NORMAL` | 검증 대상 시나리오 ID (통합 카탈로그 10종 허용)<br>• **단일 일자(1일, 86,400 슬롯)** 6종: `ACTIVITY_NORMAL`, `ACTIVITY_LOW`, `ACTIVITY_NONE`, `ACTIVITY_INSUFFICIENT`, `ACTIVITY_SESSION_MERGE`, `ACTIVITY_DURATION_CAP`<br>• **20일 기준선(1,728,000 슬롯)** 1종: `BASELINE_MICROWAVE_20D`<br>• **28일 루틴 변화(2,419,200 슬롯)** 3종: `ROUTINE_CHANGED_LATER`, `ROUTINE_CHANGED_EARLIER`, `ROUTINE_CHANGED_WITHIN_THRESHOLD` |
+| `--reference-date` | `2026-09-16` | 시뮬레이션 기준 일자 (YYYY-MM-DD). 단일 일자 시나리오에서는 해당 일자를, 다일(20일, 28일) 시나리오에서는 전체 일정의 마지막 날(종료일)을 의미하며 시작일은 `reference_date - (total_days - 1)`로 자동 역산됩니다. |
 | `--broker-host` | `localhost` / `MQTT_HOST` | MQTT 브로커 호스트명 |
 | `--broker-port` | `1883` (평문) / `8883` (TLS) | MQTT 브로커 포트 번호 (`resolve_mqtt_port` 규칙) |
 | `--broker-user` | `MQTT_USER` | MQTT 브로커 인증 계정 |
@@ -783,13 +789,24 @@ python -m tools.verify_activity_normal_mqtt `
 | `--subscribe-timeout`| `10.0`초 | `v1/power/sim/H001/main` SUBACK 수신 대기시간 |
 | `--http-timeout` | `15.0`초 | 시뮬레이터 API (`POST /runs`, `GET /runs/{id}`) 요청 제한시간 |
 | `--idle-timeout` | `30.0`초 | 타겟 신규 메시지 미수신 시 유휴 타임아웃 |
-| `--overall-timeout` | `600.0`초 | 전체 검증 최대 허용 시간 |
+| `--overall-timeout` | `600.0`초 | 전체 검증 최대 허용 시간 (다일 시나리오의 경우 슬롯 수에 비례하여 자동 상향됨) |
 | `--poll-interval` | `0.5`초 | 시뮬레이터 완료 상태 폴링 주기 |
 
+> **다일 시나리오 제한시간 자동 상향 및 예상 소요 시간**:
+> - 다일 시나리오 검증 시 전체 슬롯 수에 비례하여 `overall-timeout`이 자동으로 상향 계산됩니다:
+>   $$\text{effective\_overall\_timeout} = \max\left(\text{CLI overall\_timeout},\; \max\left(600.0,\; \frac{\text{total\_virtual\_slots}}{500.0} + 300.0\right)\right)$$
+> - **예상 소요 시간**:
+>   - 1일 활동 시나리오(86,400 슬롯): BURST 약 60~90초 (타임아웃 기본 600초 유지)
+>   - 20일 기준선 시나리오(1,728,000 슬롯): BURST 약 20분 (타임아웃 약 3,756초로 자동 상향)
+>   - 28일 루틴 시나리오(2,419,200 슬롯): BURST 약 30분 (타임아웃 약 5,138.4초로 자동 상향)
+
 ### 9.3 메모리 복잡도 및 비트맵 검증
-- **메모리 복잡도**: $O(\text{SECONDS\_PER\_DAY})$
-- **메모리 점유**: 1일(86,400초) 기준 `bytearray(86400)` 약 **86KB**
-- 86,400개의 JSON payload 전체 목록을 메모리에 저장하지 않고, 실시간으로 타임스탬프의 `second_of_day` (0~86,399)를 인덱스로 비트맵에 마킹합니다.
+- **메모리 복잡도**: $O(\text{total\_virtual\_slots})$
+- **메모리 점유**:
+  - 1일(86,400 슬롯): `bytearray(86,400)` 약 **86KB**
+  - 20일(1,728,000 슬롯): `bytearray(1,728,000)` 약 **1.7MB**
+  - 28일(2,419,200 슬롯): `bytearray(2,419,200)` 약 **2.4MB**
+- 수백만 개의 JSON payload 전체 목록을 메모리에 저장하지 않고, 실시간으로 타임스탬프의 전체 타임라인 상대 초 `relative_second`를 인덱스로 비트맵에 마킹합니다.
 - `run_id` 기반 실시간 기대 UUID5와 대조하여 `target_unique_messages`, `duplicate_deliveries`, `foreign_run_messages`를 엄격히 분리 집계합니다.
 
 ### 9.4 다운스트림 AI 팀 연동 명세 (Handoff Specification)
@@ -843,3 +860,29 @@ appliance_schedule_summary:
     absolute_cycle_range: [75601, 75720]
 expected_physical_on_seconds: 2160
 ```
+
+## 10. 결정적 시나리오(E2E) 웹 대시보드 제어 패널 (`waveform_viewer.html`)
+
+웹 인터페이스(`waveform_viewer.html`) 내에 결정적 시나리오 실행 및 모니터링을 위한 전용 제어 패널이 추가되었습니다.
+
+### 10.1 주요 기능 및 인터페이스 구성
+- **시나리오 및 가구 선택**: 백엔드 REST API(`GET /api/e2e/scenarios`)로부터 10종 시나리오 메타데이터(일수, 발행 슬롯 수)를 동적으로 로드하여 드롭다운 구성.
+- **실행 모드 제어**:
+  - `BURST`: 지연 없는 최대 속도 배치 발행 (`speed` 파라미터 제외)
+  - `REALTIME`: 1.0초 가상 시간 동기화
+  - `ACCELERATED`: 사용자 지정 배속(0 초과 양수) 적용
+- **기존 실행 연결 (`e2eBtnAttach`)**: 명령줄 검증 도구 등으로 이미 시작된 실행이 있을 때 `run_id`를 직접 입력하여 실시간 모니터링에 연결.
+- **409 충돌 안내**: 이미 실행 중인 E2E 세션이 있을 경우 명확한 안내 문구 노출.
+- **가구별 상태 기반 제어**: 개별 가구의 상태(`RUNNING`, `PAUSED`, `PAUSING`, `STOPPING` 등)에 따라 일시정지, 재개, 중지 버튼을 정밀 제어.
+- **정산 슬롯 기준 진행률 표기**: 진행률 분모를 `planned_virtual_slots`로 고정하여 결측 시나리오(`ACTIVITY_INSUFFICIENT`)에서도 100% 한도를 엄격히 준수하며, 발행 수(`published_samples / planned_publish_samples`)를 별도 열로 명확히 분리 표기.
+
+### 10.2 결정적 시나리오(E2E) 파형 실시간 스트리밍 및 결측 렌더링 계약
+- **실시간 파형 렌더링**: `REALTIME` 및 `ACCELERATED` 모드에서 실제 물리 계측값(`totalP`, `apparentS`, `totalQ`, `currentA`, `voltage`, `pf`, `devices`)을 `manager.broadcast_external()` 전송 전용 경로를 통해 SSE로 수신하여 대시보드 차트(`chartMain`, `chartSecondary`)에 표시합니다.
+- **BURST 모드 완전 제외**: `execution_mode == BURST`일 때는 화면 전송 콜백을 단 1회도 호출하지 않아 전속력 배치 발행 성능을 100% 보존합니다.
+- **초당 20회(20Hz) 전송 상한**: `ACCELERATED` 등 고배속 실행 시에도 화면 전송은 초당 최대 20회로 제한되며, 상한을 초과하는 틱은 화면 전송만 스킵하고 MQTT 발행 및 `published_samples`/`omitted_samples` 카운터는 전량 유지됩니다.
+- **레거시 상태 오염 방지 (`source="E2E"`)**:
+  - `manager.broadcast_external()`은 구독자 SSE 큐에만 데이터를 전달하고 레거시 호환용 `last_metrics`와 `last_metrics_by_house`를 절대 수정하지 않습니다.
+  - 웹 화면에서 `source === "E2E"`로 분기하여 레거시 상태 배지(`badgeStatus`), 안내 문구(`timelineNotice`), 레거시 가구 테이블 행을 일절 변경하지 않습니다.
+- **계획 결측 슬롯 렌더링 계약**:
+  - 결측 구간은 `measurementAvailable: false`, `sensorFault: false`, 계측치 `null`로 발행됩니다.
+  - 파형 차트에 `null`을 넣어 선이 자연스럽게 끊기도록 렌더링하며(0으로 채우지 않음), 전력 메트릭 카드는 "—"로 표시하여 이전 값으로 인한 오해를 방지합니다. 정상 틱 재개 시 차트는 다시 정상 연결됩니다.
