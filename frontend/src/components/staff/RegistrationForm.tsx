@@ -26,7 +26,7 @@ export default function RegistrationForm({ onDone, onCancel }: { onDone: () => v
       <label className="grid gap-2 font-semibold text-stone-700">상세 주소<input className={inputClass} name="addressDetail" maxLength={100} /></label>
       <label className="grid gap-2 font-semibold text-stone-700 md:col-span-2">담당자 메모<textarea className="rounded-xl border border-stone-300 p-4 outline-none focus:border-brand-500 focus:ring-3 focus:ring-brand-100" name="managerMemo" maxLength={1000} rows={3} /></label>
       {registration.isError && <p className="rounded-xl bg-red-50 p-4 text-red-700 md:col-span-2" role="alert">{getApiErrorMessage(registration.error)}</p>}
-      <button className="h-12 rounded-xl bg-brand-500 font-bold text-white hover:bg-brand-600 disabled:bg-stone-300" disabled={registration.isPending}>{registration.isPending ? '등록 중…' : '대상자 등록'}</button>
+      <button className="h-12 rounded-xl bg-brand-500 font-bold text-brand-900 hover:bg-brand-400 disabled:bg-stone-300" disabled={registration.isPending}>{registration.isPending ? '등록 중…' : '대상자 등록'}</button>
     </form>
   </section>
 }
