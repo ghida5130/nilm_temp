@@ -118,13 +118,13 @@ class ReleaseTests(unittest.TestCase):
             return {"OSType": "linux", "Architecture": "x86_64"}
         return [{"Os": "linux", "Architecture": "amd64", "RepoDigests": [args[-1].removeprefix("docker.io/")]}]
 
-    def test_b_pulls_analysis_bridge_and_loader_by_digest(self):
+    def test_b_pulls_analysis_bridge_and_loaders_by_digest(self):
         with patch.object(release, "docker_json", side_effect=self.docker_metadata), \
                 patch.object(release.subprocess, "run") as run:
             release.check_images(self.data, "b", pull=True)
-        self.assertEqual(run.call_count, 4)
+        self.assertEqual(run.call_count, 5)
         for service in ("realtime-analysis-service", "aggregation-service", "mqtt-kafka-bridge",
-                        "bronze-loader"):
+                        "bronze-loader", "session-lake-loader"):
             self.assertIn(self.data["images"][service]["reference"], str(run.call_args_list))
         self.assertNotIn(self.data["images"]["api-gateway"]["reference"], str(run.call_args_list))
 
@@ -134,7 +134,7 @@ class ReleaseTests(unittest.TestCase):
             release.check_images(self.data, "a", pull=True)
         self.assertEqual(run.call_count, 4)
         for service in ("realtime-analysis-service", "aggregation-service", "mqtt-kafka-bridge",
-                        "bronze-loader"):
+                        "bronze-loader", "session-lake-loader"):
             self.assertNotIn(self.data["images"][service]["reference"], str(run.call_args_list))
 
     def test_platform_and_digest_mismatch_block_deployment(self):

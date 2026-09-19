@@ -444,6 +444,64 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # appliance_usage_session outbox -> HDFS Bronze 적재기(단일 인스턴스).
+  # HDFS는 infrastructure/hdfs/docker-compose.yml(nilm-hdfs)의 namenode를 같은 nilm-net에서 사용한다.
+  # 마이그레이션(트리거 포함)은 realtime-analysis-service가 기동 시 적용하므로 그 뒤에 시작한다.
+  session-lake-loader:
+    build:
+      # aggregation-service와 저장소 루트 컨텍스트를 공유하지 않는다. 같은 컨텍스트를 두 서비스가
+      # 쓰면 Compose가 세션 키에 경로를 그대로 넣어 비ASCII 경로에서 gRPC 헤더 오류가 난다.
+      context: ../../collection/session-lake-loader
+      additional_contexts:
+        analysis: ../../ai/realtime-analysis-service
+      target: runtime
+    image: nilm-session-lake-loader:local
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 2m
+    environment:
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8000
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: analysis_db
+      DATABASE_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      HDFS_URL: ${SESSION_LAKE_HDFS_URL:-http://namenode:9870}
+      HDFS_USER: root
+      SESSION_BRONZE_BASE: ${SESSION_BRONZE_BASE:-/nilm/bronze/appliance-session}
+      SESSION_MANIFEST_BASE: ${SESSION_MANIFEST_BASE:-/nilm/manifests/job=session-lake-loader}
+      LOADER_POLL_SECONDS: ${SESSION_LAKE_POLL_SECONDS:-60}
+      LOADER_BATCH_MAX_EVENTS: ${SESSION_LAKE_BATCH_MAX_EVENTS:-5000}
+      LOADER_MAX_BATCHES_PER_CYCLE: ${SESSION_LAKE_MAX_BATCHES_PER_CYCLE:-20}
+      LOADER_ROWS_PER_FILE: ${SESSION_LAKE_ROWS_PER_FILE:-200000}
+      LOADER_RETRY_BACKOFF_SECONDS: ${SESSION_LAKE_RETRY_BACKOFF_SECONDS:-30}
+      LOADER_RETRY_MAX_BACKOFF_SECONDS: ${SESSION_LAKE_RETRY_MAX_BACKOFF_SECONDS:-900}
+      LOADER_MAX_ATTEMPTS: ${SESSION_LAKE_MAX_ATTEMPTS:-0}
+      LOG_LEVEL: ${SESSION_LAKE_LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${SESSION_LAKE_HTTP_PORT:-8002}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      realtime-analysis-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5).close()"
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 6
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres_data:
     name: nilm-local_postgres_data
