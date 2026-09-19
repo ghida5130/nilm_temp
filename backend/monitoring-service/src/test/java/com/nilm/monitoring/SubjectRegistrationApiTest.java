@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,10 @@ import org.springframework.test.web.servlet.MockMvc;
 class SubjectRegistrationApiTest {
 
     private static final String ENDPOINT = "/api/monitoring/subjects";
+
+    // 서비스는 Asia/Seoul 기준으로 미래 날짜를 판정하므로 테스트도 같은 기준을 쓴다.
+    // 시스템 기본 시간대(UTC 빌드 컨테이너)를 쓰면 한국 00~09시 빌드에서 실패한다.
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     @Autowired
     MockMvc mockMvc;
@@ -127,7 +132,7 @@ class SubjectRegistrationApiTest {
     @Test
     void futureBirthDateIsRejectedWithoutSaving() throws Exception {
         insertManager("manager-sub");
-        String tomorrow = LocalDate.now().plusDays(1).toString();
+        String tomorrow = LocalDate.now(SEOUL).plusDays(1).toString();
 
         mockMvc.perform(post(ENDPOINT)
                         .with(jwt().jwt(jwt -> jwt.subject("manager-sub")))
