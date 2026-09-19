@@ -17,6 +17,7 @@ from realtime_analysis.models import (
     HouseholdActivityDaily,
     HouseholdObservationDaily,
 )
+from realtime_analysis.outing_repository import OutingStateProvider
 from realtime_analysis.policy import SqlAlchemyPolicyRepository
 from realtime_analysis.schemas import AnalysisEvent, RoutineBaseline
 from realtime_analysis.state_tracker import DailyActivityTracker
@@ -272,12 +273,14 @@ class RealtimeAnomalyDetector:
         policy_repository: SqlAlchemyPolicyRepository,
         timezone_name: str,
         emission_repository: EventEmissionRepository,
+        outing_state_provider: OutingStateProvider,
         metrics: AnalysisMetrics = METRICS,
     ) -> None:
         self._repository = repository
         self._policies = policy_repository
         self._timezone = ZoneInfo(timezone_name)
         self._emissions = emission_repository
+        self._outing_states = outing_state_provider
         self._metrics = metrics
         self._last_evaluated_at: dict[str, datetime] = {}
 
@@ -500,12 +503,28 @@ class RealtimeAnomalyDetector:
         observed_at: datetime,
     ) -> list[PendingAnomaly]:
         policy = self._policies.get("PROLONGED_INACTIVITY")
-        if policy is None or self._repository.open_sessions(household_id):
+        if policy is None:
             return []
+        outing_state = self._outing_states.get_state(household_id)
+        if outing_state is not None and outing_state.is_outing:
+            return []
+        if self._repository.open_sessions(household_id):
+            return []
+
         last_activity_at = self._repository.last_completed_activity_at(
             household_id
         )
-        if last_activity_at is None:
+        last_returned_at = (
+            self._as_utc(outing_state.last_returned_at)
+            if outing_state is not None
+            and outing_state.last_returned_at is not None
+            else None
+        )
+        inactivity_started_at = self._latest_timestamp(
+            last_activity_at,
+            last_returned_at,
+        )
+        if inactivity_started_at is None:
             return []
         threshold_hours = float(policy.parameters.get("inactivity_hours", 6))
         sleep_window = policy.parameters.get("sleep_window", {})
@@ -520,7 +539,7 @@ class RealtimeAnomalyDetector:
             "sleep_window.end",
         )
         occurred_at = self._add_awake_duration(
-            last_activity_at,
+            inactivity_started_at,
             timedelta(hours=threshold_hours),
             sleep_start,
             sleep_end,
@@ -531,13 +550,23 @@ class RealtimeAnomalyDetector:
             event_id=event_id_for(
                 household_id,
                 "PROLONGED_INACTIVITY",
-                last_activity_at.isoformat(),
+                inactivity_started_at.isoformat(),
             ),
             household_id=household_id,
             event_type="PROLONGED_INACTIVITY",
             occurred_at=occurred_at,
             reason={
-                "last_activity_at": last_activity_at.isoformat(),
+                "last_activity_at": (
+                    last_activity_at.isoformat()
+                    if last_activity_at is not None
+                    else None
+                ),
+                "last_returned_at": (
+                    last_returned_at.isoformat()
+                    if last_returned_at is not None
+                    else None
+                ),
+                "inactivity_started_at": inactivity_started_at.isoformat(),
                 "threshold_hours": threshold_hours,
                 "sleep_window": {
                     "start": sleep_start.strftime("%H:%M"),
@@ -553,6 +582,20 @@ class RealtimeAnomalyDetector:
                 baseline_type="PROLONGED_INACTIVITY",
             )
         ]
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    @staticmethod
+    def _latest_timestamp(
+        first: datetime | None,
+        second: datetime | None,
+    ) -> datetime | None:
+        candidates = [value for value in (first, second) if value is not None]
+        return max(candidates) if candidates else None
 
     @staticmethod
     def _parse_policy_time(value: object, field_name: str) -> time:

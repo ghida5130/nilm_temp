@@ -83,6 +83,7 @@ def main() -> None:
         settings.analysis_policy_file
     )
     policy_repository = SqlAlchemyPolicyRepository(session_factory)
+    outing_state_repository = SqlAlchemyOutingStateRepository(session_factory)
     seeded_policies = policy_repository.seed_missing(
         bootstrap_policies.policies
     )
@@ -99,6 +100,7 @@ def main() -> None:
         policy_repository=policy_repository,
         timezone_name=settings.analysis_timezone,
         emission_repository=SqlAlchemyEventEmissionRepository(session_factory),
+        outing_state_provider=outing_state_repository,
     )
     bootstrap_baselines = BaselineRepository.from_json_file(
         settings.baseline_file
@@ -162,7 +164,7 @@ def main() -> None:
     )
     outing_consumer = OutingEventConsumer(
         settings=settings,
-        repository=SqlAlchemyOutingStateRepository(session_factory),
+        repository=outing_state_repository,
         dlq_publisher=DlqPublisher(settings),
     )
     outing_consumer_errors: SimpleQueue[BaseException] = SimpleQueue()

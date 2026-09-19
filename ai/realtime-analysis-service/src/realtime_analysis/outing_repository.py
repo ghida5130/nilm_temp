@@ -10,17 +10,20 @@ from realtime_analysis.models import HouseholdOutingState
 from realtime_analysis.schemas import OutingEvent
 
 
-class OutingStateRepository(Protocol):
-    """Storage contract used by the future outing event consumer."""
+class OutingStateProvider(Protocol):
+    """Read contract used by outing-aware pattern detection."""
+
+    def get_state(self, household_id: str) -> HouseholdOutingState | None: ...
+
+
+class OutingStateRepository(OutingStateProvider, Protocol):
+    """Read/write contract used by the outing event consumer."""
 
     def apply_event(
         self,
         event: OutingEvent,
         updated_at: datetime | None = None,
     ) -> bool: ...
-
-    def get_state(self, household_id: str) -> HouseholdOutingState | None: ...
-
 
 class SqlAlchemyOutingStateRepository:
     """Applies only the latest event to one state row per household."""
@@ -38,6 +41,7 @@ class SqlAlchemyOutingStateRepository:
         applied_at = updated_at or datetime.now(timezone.utc)
         if applied_at.tzinfo is None or applied_at.utcoffset() is None:
             raise ValueError("updated_at must include a timezone")
+        applied_at = _as_utc(applied_at)
 
         with self._session_factory.begin() as session:
             state = session.scalar(
@@ -67,15 +71,16 @@ class SqlAlchemyOutingStateRepository:
         updated_at: datetime,
     ) -> HouseholdOutingState:
         is_outing = event.event_type == "OUTING_STARTED"
+        occurred_at = _as_utc(event.occurred_at)
         return HouseholdOutingState(
             household_id=event.household_id,
             is_outing=is_outing,
-            outing_started_at=event.occurred_at if is_outing else None,
+            outing_started_at=occurred_at if is_outing else None,
             last_returned_at=(
-                event.occurred_at if event.event_type == "OUTING_ENDED" else None
+                occurred_at if event.event_type == "OUTING_ENDED" else None
             ),
             last_event_id=event.event_id,
-            last_event_at=event.occurred_at,
+            last_event_at=occurred_at,
             updated_at=updated_at,
         )
 
@@ -85,16 +90,17 @@ class SqlAlchemyOutingStateRepository:
         event: OutingEvent,
         updated_at: datetime,
     ) -> None:
+        occurred_at = _as_utc(event.occurred_at)
         if event.event_type == "OUTING_STARTED":
             state.is_outing = True
-            state.outing_started_at = event.occurred_at
+            state.outing_started_at = occurred_at
         else:
             state.is_outing = False
             state.outing_started_at = None
-            state.last_returned_at = event.occurred_at
+            state.last_returned_at = occurred_at
 
         state.last_event_id = event.event_id
-        state.last_event_at = event.occurred_at
+        state.last_event_at = occurred_at
         state.updated_at = updated_at
 
 
