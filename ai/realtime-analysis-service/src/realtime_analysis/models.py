@@ -150,6 +150,31 @@ class AnalysisEventEmission(Base):
     emitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class HouseholdOutingState(Base):
+    """Latest outing state received from monitoring."""
+
+    __tablename__ = "household_outing_state"
+    __table_args__ = (
+        CheckConstraint(
+            "(is_outing AND outing_started_at IS NOT NULL) OR "
+            "(NOT is_outing AND outing_started_at IS NULL)",
+            name="outing_started_at_matches_state",
+        ),
+    )
+
+    household_id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    is_outing: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    outing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_returned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_event_id: Mapped[UUID] = mapped_column(nullable=False)
+    last_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class HouseholdObservationDaily(Base):
     __tablename__ = "household_observation_daily"
     __table_args__ = (
