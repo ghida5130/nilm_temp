@@ -256,6 +256,27 @@ class DataQualityEvent(BaseModel):
         return value
 
 
+class OutingEvent(BaseModel):
+    """Household outing contract consumed from monitoring."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    event_id: UUID
+    household_id: str = Field(min_length=1, max_length=50)
+    event_type: Literal["OUTING_STARTED", "OUTING_ENDED"]
+    occurred_at: datetime
+
+    @field_validator("occurred_at")
+    @classmethod
+    def outing_time_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("occurred_at must include a timezone")
+        return value
+
+
 class DlqMessage(BaseModel):
     source_topic: str
     source_partition: int

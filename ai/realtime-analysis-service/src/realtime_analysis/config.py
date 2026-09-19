@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     kafka_analysis_snapshot_topic: str = "analysis.snapshot.v1"
     kafka_group_id: str = "realtime-analysis-service-v1"
     kafka_auto_offset_reset: str = "earliest"
+    kafka_outing_event_topic: str = "monitoring.household-presence.v1"
+    kafka_outing_group_id: str = "realtime-analysis-service-outing-v1"
+    kafka_outing_auto_offset_reset: str = "earliest"
 
     database_host: str = "localhost"
     database_port: int = Field(default=5432, ge=1, le=65535)
@@ -136,6 +139,16 @@ class Settings(BaseSettings):
             "bootstrap.servers": self.kafka_bootstrap_servers,
             "enable.idempotence": True,
             "message.timeout.ms": 20000,
+        }
+
+    def outing_consumer_config(self) -> dict[str, object]:
+        """Kafka options reserved for the monitoring outing event consumer."""
+
+        return {
+            "bootstrap.servers": self.kafka_bootstrap_servers,
+            "group.id": self.kafka_outing_group_id,
+            "auto.offset.reset": self.kafka_outing_auto_offset_reset,
+            "enable.auto.commit": False,
         }
 
 

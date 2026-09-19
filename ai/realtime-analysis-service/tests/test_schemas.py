@@ -8,6 +8,7 @@ from realtime_analysis.schemas import (
     ActivityIndexComponents,
     ActivityIndexMessage,
     DataQualityEvent,
+    OutingEvent,
     PowerMeasurement,
 )
 
@@ -101,3 +102,42 @@ def test_data_gap_contract_accepts_gap_evidence() -> None:
     )
 
     assert event.event_type == "DATA_GAP"
+
+
+@pytest.mark.parametrize("event_type", ["OUTING_STARTED", "OUTING_ENDED"])
+def test_outing_contract_accepts_supported_event_types(event_type: str) -> None:
+    event = OutingEvent.model_validate(
+        {
+            "event_id": "1bb4edcf-77ae-44d6-ad7c-b87a6e071f5a",
+            "household_id": "H001",
+            "event_type": event_type,
+            "occurred_at": "2026-09-19T15:00:00+09:00",
+        }
+    )
+
+    assert event.event_type == event_type
+    assert event.occurred_at.utcoffset() is not None
+
+
+def test_outing_contract_rejects_unknown_event_type() -> None:
+    with pytest.raises(ValidationError):
+        OutingEvent.model_validate(
+            {
+                "event_id": "1bb4edcf-77ae-44d6-ad7c-b87a6e071f5a",
+                "household_id": "H001",
+                "event_type": "OUTING_CANCELLED",
+                "occurred_at": "2026-09-19T15:00:00+09:00",
+            }
+        )
+
+
+def test_outing_contract_rejects_naive_occurred_at() -> None:
+    with pytest.raises(ValidationError):
+        OutingEvent.model_validate(
+            {
+                "event_id": "1bb4edcf-77ae-44d6-ad7c-b87a6e071f5a",
+                "household_id": "H001",
+                "event_type": "OUTING_STARTED",
+                "occurred_at": "2026-09-19T15:00:00",
+            }
+        )

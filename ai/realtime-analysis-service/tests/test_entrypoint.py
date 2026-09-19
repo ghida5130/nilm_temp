@@ -9,7 +9,15 @@ def test_default_topic_contracts() -> None:
     assert settings.kafka_analysis_activity_topic == "analysis.activity.v1"
     assert settings.kafka_analysis_data_quality_topic == "analysis.data-quality.v1"
     assert settings.kafka_analysis_snapshot_topic == "analysis.snapshot.v1"
+    assert settings.kafka_outing_event_topic == "monitoring.household-presence.v1"
+    assert settings.kafka_outing_group_id == "realtime-analysis-service-outing-v1"
     assert settings.consumer_config()["enable.auto.commit"] is False
+    assert settings.outing_consumer_config() == {
+        "bootstrap.servers": "localhost:9092",
+        "group.id": "realtime-analysis-service-outing-v1",
+        "auto.offset.reset": "earliest",
+        "enable.auto.commit": False,
+    }
     assert settings.http_host == "0.0.0.0"
     assert settings.http_port == 8000
     assert settings.activity_index_publish_hour == 0
