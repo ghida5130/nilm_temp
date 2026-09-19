@@ -33,10 +33,17 @@ from engine.scenario_catalog import (
     UnknownActivityScenarioError,
     get_activity_scenario_definition,
 )
+from engine.unified_catalog import (
+    UNIFIED_SCENARIO_IDS,
+    UnknownScenarioError,
+    get_unified_scenario_definition,
+    list_unified_scenario_ids,
+)
 from engine.schedule import (
     CompiledExecutionPlan,
     ScheduleError,
     compile_schedule,
+    resolve_base_date,
 )
 from engine.tls import (
     create_mqtt_tls_context,
@@ -243,9 +250,9 @@ def _is_timeout_exception(exc: BaseException) -> bool:
 @dataclass(frozen=True)
 class ExpectedSchedulePlan:
     """
-    단일 일자 시나리오의 컴파일된 실행 계획 및 기대 수치 (불변)
+    단일 또는 다일 시나리오의 컴파일된 실행 계획 및 기대 수치 (불변)
     - 리터럴 하드코딩 배제: total_planned_publish_samples, total_planned_omitted_samples, should_publish 활용
-    - schedule_bitmap: O(SECONDS_PER_DAY) 86KB 바이트맵 (1: 발행 대상, 0: 결측 대상)
+    - schedule_bitmap: O(total_virtual_slots) 바이트맵 (1: 발행 대상, 0: 결측 대상)
     """
     scenario_id: str
     reference_date: date
@@ -259,14 +266,30 @@ class ExpectedSchedulePlan:
     last_expected_measured_at: str | None
     schedule_bitmap: bytes
 
+    @property
+    def total_days(self) -> int:
+        return len(self.compiled_plan.day_plans)
+
+    @property
+    def total_virtual_slots(self) -> int:
+        return self.compiled_plan.total_virtual_slots
+
+    @property
+    def start_date(self) -> date:
+        return self.compiled_plan.start_date
+
+    @property
+    def end_date(self) -> date:
+        return self.compiled_plan.end_date
+
 
 def build_expected_schedule_plan(
     scenario_id: str = TARGET_SCENARIO,
     reference_date_str: str = TARGET_REFERENCE_DATE,
 ) -> ExpectedSchedulePlan:
     """
-    카탈로그 및 컴파일러를 통해 대상 시나리오의 1일 기대 발행/결측 계획을 동적으로 산출합니다.
-    - 리터럴 하드코딩 배제: total_planned_publish_samples, total_planned_omitted_samples, should_publish 활용
+    카탈로그 및 컴파일러를 통해 대상 시나리오의 기대 발행/결측 계획을 동적으로 산출합니다.
+    - 리터럴 하드코딩 배제: total_planned_publish_samples, total_planned_omitted_samples 활용
     - 유효하지 않은 시나리오, 컴파일 오류, 날짜 파싱 오류는 모두 CliConfigError(exit 2)로 감쌉니다.
     """
     try:
@@ -275,28 +298,42 @@ def build_expected_schedule_plan(
         raise CliConfigError(f"유효하지 않은 reference_date 형식입니다 (YYYY-MM-DD 권장): {reference_date_str}") from err
 
     try:
-        defn = get_activity_scenario_definition(scenario_id)
-        compiled = compile_schedule(defn, base_date=ref_date)
-    except (UnknownActivityScenarioError, ScheduleError, ValueError) as err:
+        defn = get_unified_scenario_definition(scenario_id)
+        base_date = resolve_base_date(ref_date, len(defn.days))
+        compiled = compile_schedule(defn, base_date=base_date)
+    except (UnknownScenarioError, UnknownActivityScenarioError, ScheduleError, ValueError) as err:
         raise CliConfigError(f"시나리오 계획 생성 실패 ({scenario_id}): {err}") from err
 
-    if len(compiled.day_plans) != 1 or compiled.total_virtual_slots != SECONDS_PER_DAY:
-        raise CliConfigError(
-            f"단일 일자 86,400초 시나리오만 지원됩니다: day_plans={len(compiled.day_plans)}, total_virtual_slots={compiled.total_virtual_slots}"
-        )
+    # [2] 실질적인 가드만 유지 (항진명제 제거)
+    if not compiled.day_plans:
+        raise CliConfigError(f"시나리오 계획에 실행 일자가 없습니다: {scenario_id}")
 
     first_cycle = compiled.first_cycle
-    bitmap_arr = bytearray(SECONDS_PER_DAY)
+    total_slots = compiled.total_virtual_slots
+    bitmap_arr = bytearray(total_slots)
+
+    # 비트맵 슬라이싱 일괄 초기화 (< 1ms 고속 처리)
+    for d, dp in enumerate(compiled.day_plans):
+        offset = d * SECONDS_PER_DAY
+        if dp.planned_omitted_samples == 0:
+            bitmap_arr[offset : offset + SECONDS_PER_DAY] = b"\x01" * SECONDS_PER_DAY
+        else:
+            bitmap_arr[offset : offset + SECONDS_PER_DAY] = b"\x01" * SECONDS_PER_DAY
+            for r in dp.omission_ranges:
+                bitmap_arr[offset + r.start_second : offset + r.end_second] = b"\x00" * (r.end_second - r.start_second)
+
     first_sec: int | None = None
     last_sec: int | None = None
 
-    for sec in range(SECONDS_PER_DAY):
-        if compiled.should_publish(first_cycle + sec):
-            bitmap_arr[sec] = 1
-            if first_sec is None:
-                first_sec = sec
-            last_sec = sec
+    if compiled.total_planned_publish_samples > 0:
+        idx1 = bitmap_arr.find(b"\x01")
+        if idx1 != -1:
+            first_sec = idx1
+        idx2 = bitmap_arr.rfind(b"\x01")
+        if idx2 != -1:
+            last_sec = idx2
 
+    # [1] 전체 타임라인 기준 인덱스로 virtual_time_at 계산
     first_ts = (
         compiled.virtual_time_at(first_cycle + first_sec).isoformat()
         if first_sec is not None
@@ -339,7 +376,7 @@ class StreamMessageValidator:
             if plan is not None
             else build_expected_schedule_plan(TARGET_SCENARIO, TARGET_REFERENCE_DATE)
         )
-        self.timeline_bitmap: bytearray = bytearray(SECONDS_PER_DAY)
+        self.timeline_bitmap: bytearray = bytearray(self.plan.total_virtual_slots)
         self.target_unique_messages: int = 0
         self.duplicate_deliveries: int = 0
         self.foreign_run_messages: int = 0
@@ -465,14 +502,19 @@ class StreamMessageValidator:
         if dt.microsecond != 0:
             return False, f"MEASURED_AT_HAS_MICROSECONDS: {dt.microsecond}", payload, None
 
-        if dt.date() != self.plan.reference_date:
-            return False, f"MEASURED_AT_DATE_MISMATCH: {dt.date()} != {self.plan.reference_date}", payload, None
+        if not (self.plan.start_date <= dt.date() <= self.plan.end_date):
+            return False, f"MEASURED_AT_DATE_MISMATCH: {dt.date()} not in [{self.plan.start_date}, {self.plan.end_date}]", payload, None
 
-        second_of_day = dt.hour * 3600 + dt.minute * 60 + dt.second
-        if not (0 <= second_of_day < SECONDS_PER_DAY):
-            return False, f"SECOND_OF_DAY_OUT_OF_RANGE: {second_of_day}", payload, None
+        start_dt = datetime(self.plan.start_date.year, self.plan.start_date.month, self.plan.start_date.day, 0, 0, 0, tzinfo=KST)
+        diff_sec = (dt - start_dt).total_seconds()
+        if not diff_sec.is_integer():
+            return False, f"MEASURED_AT_NOT_INTEGER_SECONDS: {diff_sec}", payload, None
 
-        return True, None, payload, second_of_day
+        relative_second = int(diff_sec)
+        if not (0 <= relative_second < self.plan.total_virtual_slots):
+            return False, f"RELATIVE_SECOND_OUT_OF_RANGE: {relative_second}", payload, None
+
+        return True, None, payload, relative_second
 
     def process_message(self, raw_data: bytes | str) -> str:
         """
@@ -483,16 +525,16 @@ class StreamMessageValidator:
         - "INVALID": 계약 위반 메시지 (invalid_payloads 증가)
         - "UNEXPECTED_OMISSION": 계획 결측 구간 침범 메시지 (unexpected_in_omission 증가)
         """
-        is_valid, reason, payload, second_of_day = self.validate_payload_contract(raw_data)
+        is_valid, reason, payload, relative_second = self.validate_payload_contract(raw_data)
         if not is_valid:
             self._record_invalid(reason or "UNKNOWN_VALIDATION_ERROR")
             return "INVALID"
 
         assert payload is not None
-        assert second_of_day is not None
+        assert relative_second is not None
 
-        # 8. 대상 실행 run_id 기반 실시간 기대 UUID5 계산
-        absolute_cycle = second_of_day + 1
+        # 8. 대상 실행 run_id 기반 실시간 기대 UUID5 계산 (절대 사이클 유도)
+        absolute_cycle = self.plan.compiled_plan.first_cycle + relative_second
         measured_at_str = payload["measured_at"]
         uuid5_name = f"SCHEDULE_PUBLISHER_V1::{self.run_id}::{TARGET_HOUSEHOLD}::{absolute_cycle}::{measured_at_str}"
         expected_uuid5 = str(uuid.uuid5(SCHEDULE_PUBLISHER_NAMESPACE, uuid5_name))
@@ -502,28 +544,29 @@ class StreamMessageValidator:
             return "FOREIGN"
 
         # 계획 결측 구간 침범 검사 (이중 집계 금지: unexpected_in_omission만 증가, invalid_payloads는 증가하지 않음)
-        if self.plan.schedule_bitmap[second_of_day] == 0:
+        if self.plan.schedule_bitmap[relative_second] == 0:
             self.unexpected_in_omission += 1
             if len(self.omission_violation_reasons) < 10:
                 self.omission_violation_reasons.append(
-                    f"UNEXPECTED_IN_OMISSION: second_of_day={second_of_day}, measured_at={measured_at_str}"
+                    f"UNEXPECTED_IN_OMISSION: relative_second={relative_second}, second_of_day={relative_second % SECONDS_PER_DAY}, measured_at={measured_at_str}"
                 )
             return "UNEXPECTED_OMISSION"
 
         # 9. 비트맵을 통한 중복/최초 수신 판정
-        if self.timeline_bitmap[second_of_day] == 1:
+        if self.timeline_bitmap[relative_second] == 1:
             self.duplicate_deliveries += 1
             return "DUPLICATE"
 
-        self.timeline_bitmap[second_of_day] = 1
+        self.timeline_bitmap[relative_second] = 1
         self.target_unique_messages += 1
 
-        if second_of_day == self.plan.first_publish_second:
+        # [1] 첫/마지막 발행 시각 기록을 상대 초(relative_second) 기준으로 판정
+        if relative_second == self.plan.first_publish_second:
             self.first_measured_at = measured_at_str
         elif self.first_measured_at is None and self.target_unique_messages == 1:
             self.first_measured_at = measured_at_str
 
-        if second_of_day == self.plan.last_publish_second:
+        if relative_second == self.plan.last_publish_second:
             self.last_measured_at = measured_at_str
         elif self.target_unique_messages == self.plan.expected_publish_samples:
             self.last_measured_at = measured_at_str
@@ -925,13 +968,13 @@ async def run_verification(
                     latest_api_snap.get("overall_status") == "COMPLETED"
                     and latest_api_snap.get("overall_state") == "COMPLETED"
                     and h001.get("state") == "COMPLETED"
-                    and h001.get("runner_virtual_slots") == SECONDS_PER_DAY
-                    and h001.get("settled_virtual_slots") == SECONDS_PER_DAY
+                    and h001.get("runner_virtual_slots") == expected_plan.total_virtual_slots
+                    and h001.get("settled_virtual_slots") == expected_plan.total_virtual_slots
                     and h001.get("published_samples") == expected_plan.expected_publish_samples
                     and h001.get("planned_publish_samples") == expected_plan.expected_publish_samples
                     and h001.get("omitted_samples") == expected_plan.expected_omitted_samples
-                    and h001.get("completed_days") == 1
-                    and h001.get("total_days") == 1
+                    and h001.get("completed_days") == expected_plan.total_days
+                    and h001.get("total_days") == expected_plan.total_days
                     and h001.get("last_error") is None
                 )
 
@@ -1069,9 +1112,13 @@ def parse_arguments(args: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--scenario",
         default=TARGET_SCENARIO,
-        help="검증 대상 활동 시나리오 ID (허용값: ACTIVITY_NORMAL, ACTIVITY_LOW, ACTIVITY_NONE, ACTIVITY_INSUFFICIENT, ACTIVITY_SESSION_MERGE, ACTIVITY_DURATION_CAP / 기본값: ACTIVITY_NORMAL)",
+        help="검증 대상 시나리오 ID (허용값: 통합 카탈로그 10종 - ACTIVITY_*, ROUTINE_CHANGED_*, BASELINE_MICROWAVE_20D / 기본값: ACTIVITY_NORMAL)",
     )
-    parser.add_argument("--reference-date", default=TARGET_REFERENCE_DATE, help="시뮬레이션 기준 일자 (기본값: 2026-09-16, YYYY-MM-DD)")
+    parser.add_argument(
+        "--reference-date",
+        default=TARGET_REFERENCE_DATE,
+        help="시뮬레이션 기준 일자 (단일 일자는 해당일, 다일 시나리오는 마지막 날을 의미 / 기본값: 2026-09-16, YYYY-MM-DD)",
+    )
     parser.add_argument("--broker-host", default=None, help="MQTT 브로커 주소 (기본값: MQTT_HOST 또는 localhost)")
     parser.add_argument("--broker-port", type=int, default=None, help="MQTT 브로커 포트 (기본값: resolve_mqtt_port)")
     parser.add_argument("--broker-user", default=None, help="MQTT 계정명 (기본값: MQTT_USER)")
@@ -1109,12 +1156,21 @@ def main(argv: list[str] | None = None) -> int:
         validate_positive_timeout(parsed_args.poll_interval, "poll-interval")
 
         # 3. 시나리오 및 기준일자 계획 동적 산출 (MQTT 연결 및 HTTP 시작 호출 전 조기 검증)
-        if parsed_args.scenario not in ACTIVITY_SCENARIO_IDS:
+        if parsed_args.scenario not in UNIFIED_SCENARIO_IDS:
             raise CliConfigError(
-                f"지원하지 않는 활동 시나리오 ID입니다: {parsed_args.scenario!r}. "
-                f"허용 목록: {list(ACTIVITY_SCENARIO_IDS)}"
+                f"지원하지 않는 시나리오 ID입니다: {parsed_args.scenario!r}. "
+                f"허용 목록: {list(UNIFIED_SCENARIO_IDS)}"
             )
         expected_plan = build_expected_schedule_plan(parsed_args.scenario, parsed_args.reference_date)
+
+        # 다일 시나리오 타임아웃 자동 상향 산출
+        plan_based_timeout = max(600.0, (expected_plan.total_virtual_slots / 500.0) + 300.0)
+        effective_overall_timeout = max(parsed_args.overall_timeout, plan_based_timeout)
+        if effective_overall_timeout > parsed_args.overall_timeout:
+            sys.stdout.write(
+                f"[안내] {expected_plan.scenario_id} ({expected_plan.total_days}일, {expected_plan.total_virtual_slots:,} 슬롯) "
+                f"시나리오에 맞추어 overall-timeout이 {parsed_args.overall_timeout}초에서 {effective_overall_timeout:.1f}초로 자동 상향되었습니다.\n"
+            )
 
         # 4. TLS 활성화 설정 해석
         tls_bool = None
@@ -1220,7 +1276,7 @@ def main(argv: list[str] | None = None) -> int:
                 subscribe_timeout=parsed_args.subscribe_timeout,
                 http_timeout=parsed_args.http_timeout,
                 idle_timeout=parsed_args.idle_timeout,
-                overall_timeout=parsed_args.overall_timeout,
+                overall_timeout=effective_overall_timeout,
                 poll_interval=parsed_args.poll_interval,
                 expected_plan=expected_plan,
             )

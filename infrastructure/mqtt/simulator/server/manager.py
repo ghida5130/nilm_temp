@@ -111,6 +111,18 @@ class SimulatorManager:
                 except queue.Full:
                     pass
 
+    def broadcast_external(self, data: dict):
+        """E2E 등 외부 세션의 화면 전송 전용 브로드캐스트.
+        기존과 동일한 락 안에서 구독자 큐에만 데이터를 넣고,
+        last_metrics 및 last_metrics_by_house는 절대 변경하지 않습니다.
+        """
+        with self.lock:
+            for q in list(self.subscribers):
+                try:
+                    q.put_nowait(data)
+                except queue.Full:
+                    pass
+
     def start(
         self,
         scenario: str = "peak",
