@@ -10,6 +10,10 @@ Kafka에 들어온 원본 메시지를 가공 없이 데이터 레이크에 적�
   파티션 단위 배치 플러시를 담당한다. 원본 payload 바이트를 함께 보존해 재처리·재해석이 가능하다.
 - `dlq-loader/`: `dlq.analysis`, `dlq.monitoring` HDFS 보관을 위한 [설계](dlq-loader/README.md).
   기존 Bronze quarantine과 저장 책임을 분리하고 원천 Kafka 위치로 연결한다. 현재 설계 단계다.
+- `session-lake-loader/`: `analysis_db.appliance_usage_session`의 기존 데이터(초기 전체 적재)와 이후
+  생성·변경·삭제(PostgreSQL 트리거 → `session_lake_outbox`)를 HDFS Bronze Parquet로 옮기는 적재기와,
+  레이크만으로 최신 상태를 복원해 DB와 비교하는 검증기. 배치 단위 안전 커밋(임시 업로드 -> 행 수·크기·체크섬
+  검증 -> rename -> manifest -> DB 전달 완료)과 장애 후 같은 배치 재개를 담당한다. [README](session-lake-loader/README.md)
 
 ## 실행
 
