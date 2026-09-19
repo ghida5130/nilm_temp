@@ -674,3 +674,144 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 - 완전히 데이터가 들어오지 않은 가구의 `SENSOR_GAP` 판정에는 별도 가구 목록 기반 마감
   스케줄러가 추가로 필요합니다.
 - HTTP API는 포함하지 않습니다.
+
+## 외출 연동 패턴 Kafka 검증
+
+외출 메시지를 저장하는 것만으로 패턴 감지가 실행되지는 않습니다. 패턴 감지는
+`power.raw.v1` 처리 시 실행되므로 각 확인 시각에 같은 가구의 정상 전력 입력이 필요합니다.
+
+### 준비
+
+```powershell
+docker exec nilm-kafka /opt/kafka/bin/kafka-topics.sh `
+  --bootstrap-server localhost:19092 `
+  --create --if-not-exists `
+  --topic monitoring.household-presence.v1 `
+  --partitions 24 `
+  --replication-factor 1
+
+docker compose up -d --build realtime-analysis-service
+docker compose --profile tools up -d kafka-ui
+```
+
+Kafka UI는 `http://localhost:8091`에서 열고, 외출 메시지의 key는 `household_id`와 같은
+값을 사용합니다. 적용된 Alembic revision은 `20260919_08`이어야 합니다.
+
+```powershell
+docker exec nilm-postgres psql -U nilm_admin -d analysis_db `
+  -c "SELECT version_num FROM alembic_version;"
+```
+
+### ROUTINE_MISSED 외출 구간 겹침
+
+결정적 입력:
+
+```text
+가구: H001
+전자레인지 expected_until: 08:10
+외출: 07:30~08:00
+전자레인지 사용: 없음
+```
+
+Kafka UI의 `monitoring.household-presence.v1`에 key `H001`로 차례대로 발행합니다.
+
+```json
+{
+  "event_id": "da898d82-3183-4d12-ae7c-0e3a9df9772c",
+  "household_id": "H001",
+  "event_type": "OUTING_STARTED",
+  "occurred_at": "2026-09-17T07:30:00+09:00"
+}
+```
+
+```json
+{
+  "event_id": "160a931f-f59d-403d-8157-fccdeeb88dbe",
+  "household_id": "H001",
+  "event_type": "OUTING_ENDED",
+  "occurred_at": "2026-09-17T08:00:00+09:00"
+}
+```
+
+DB에 닫힌 외출 구간이 만들어졌는지 확인합니다.
+
+```powershell
+docker exec nilm-postgres psql -U nilm_admin -d analysis_db -c `
+  "SELECT household_id, started_at, ended_at FROM household_outing_period WHERE household_id='H001' ORDER BY started_at;"
+```
+
+시뮬레이터 기준 날짜를 `2026-09-17`로 설정하고 H001에서 전자레인지를 사용하지 않는
+입력을 `08:10` 이후까지 발행합니다. `analysis.event.v1`에
+`H001 + MICROWAVE + ROUTINE_MISSED`가 없어야 성공입니다. 외출과 겹치지 않는 다른
+가전의 판단은 계속 수행됩니다.
+
+### PROLONGED_INACTIVITY 외출 보류와 귀가 후 재계산
+
+결정적 입력:
+
+```text
+2026-09-16 10:00 마지막 가전 사용 종료
+2026-09-16 17:00 OUTING_STARTED
+2026-09-16 21:00 원천 입력: 외출 중이므로 감지 보류
+2026-09-16 22:00 OUTING_ENDED
+2026-09-16 22:00~23:00 깨어 있는 미활동 1시간
+2026-09-16 23:00~2026-09-17 07:00 수면 제외
+2026-09-17 07:00~11:59 누적 5시간 59분: 이벤트 없음
+2026-09-17 12:00 누적 6시간: 이벤트 한 번 발행
+```
+
+외출 시작과 귀가 메시지는 다음과 같습니다.
+
+```json
+{
+  "event_id": "c88be83b-2ac8-47d1-b644-193874289a79",
+  "household_id": "H001",
+  "event_type": "OUTING_STARTED",
+  "occurred_at": "2026-09-16T17:00:00+09:00"
+}
+```
+
+```json
+{
+  "event_id": "3dd2e0c8-2832-4dcb-b71d-73007d834827",
+  "household_id": "H001",
+  "event_type": "OUTING_ENDED",
+  "occurred_at": "2026-09-16T22:00:00+09:00"
+}
+```
+
+각 메시지 발행 후 상태를 확인한 다음 시뮬레이터의 가상 시각을 진행합니다.
+
+```powershell
+docker exec nilm-postgres psql -U nilm_admin -d analysis_db -c `
+  "SELECT household_id, is_outing, outing_started_at, last_returned_at FROM household_outing_state WHERE household_id='H001';"
+```
+
+기대 이벤트의 핵심 값은 다음과 같습니다.
+
+```json
+{
+  "household_id": "H001",
+  "event_type": "PROLONGED_INACTIVITY",
+  "occurred_at": "2026-09-17T03:00:00+00:00",
+  "reason": {
+    "last_returned_at": "2026-09-16T13:00:00+00:00",
+    "inactivity_started_at": "2026-09-16T13:00:00+00:00",
+    "threshold_hours": 6.0,
+    "sleep_window": {"start": "23:00", "end": "07:00"}
+  }
+}
+```
+
+Consumer offset과 lag는 다음 명령으로 확인합니다.
+
+```powershell
+docker exec nilm-kafka /opt/kafka/bin/kafka-consumer-groups.sh `
+  --bootstrap-server localhost:19092 `
+  --describe `
+  --group realtime-analysis-service-outing-v1
+```
+
+정상 메시지 처리 후 해당 파티션의 lag가 0이어야 합니다. 잘못된 `event_type`이나 타임존
+없는 `occurred_at`을 보내면 상태는 바뀌지 않고 `dlq.analysis`에
+`VALIDATION_ERROR`가 생성되어야 합니다.
