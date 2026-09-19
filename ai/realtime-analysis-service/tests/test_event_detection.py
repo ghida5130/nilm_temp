@@ -56,9 +56,13 @@ def policies(session_factory: sessionmaker[Session]) -> SqlAlchemyPolicyReposito
             ),
             AnalysisPolicyDefinition(
                 policy_code="PROLONGED_INACTIVITY_DEFAULT",
-                algorithm_type="LAST_ACTIVITY_ELAPSED",
+                algorithm_type="AWAKE_INACTIVITY_ELAPSED",
                 parameters={
-                    "inactivity_hours": 12,
+                    "inactivity_hours": 6,
+                    "sleep_window": {
+                        "start": "23:00",
+                        "end": "07:00",
+                    },
                     "evaluation_interval_seconds": 60,
                 },
                 event_type="PROLONGED_INACTIVITY",
@@ -238,8 +242,8 @@ def test_routine_missed_uses_persisted_session_before_deadline(
 def test_prolonged_inactivity_uses_last_completed_activity(
     session_factory: sessionmaker[Session],
 ) -> None:
-    observed_at = datetime.fromisoformat("2026-09-17T09:00:00+09:00")
-    ended_at = observed_at - timedelta(hours=13)
+    ended_at = datetime.fromisoformat("2026-09-16T20:00:00+09:00")
+    observed_at = datetime.fromisoformat("2026-09-17T10:00:00+09:00")
     with session_factory.begin() as session:
         add_observation(session, observed_at.date())
         old_observation = add_observation(session, ended_at.date())
@@ -257,7 +261,54 @@ def test_prolonged_inactivity_uses_last_completed_activity(
     assert [item.event.event_type for item in events] == [
         "PROLONGED_INACTIVITY"
     ]
-    assert events[0].event.reason["threshold_hours"] == 12.0
+    assert events[0].event.occurred_at == observed_at.astimezone(timezone.utc)
+    assert events[0].event.reason["threshold_hours"] == 6.0
+    assert events[0].event.reason["sleep_window"] == {
+        "start": "23:00",
+        "end": "07:00",
+    }
+
+
+def test_prolonged_inactivity_does_not_count_sleep_window(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ended_at = datetime.fromisoformat("2026-09-16T20:00:00+09:00")
+    observed_at = datetime.fromisoformat("2026-09-17T09:59:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+        old_observation = add_observation(session, ended_at.date())
+        add_usage(
+            session,
+            old_observation,
+            "MICROWAVE",
+            ended_at - timedelta(minutes=5),
+            ended_at,
+        )
+
+    assert detector(session_factory).detect("H001", observed_at, []) == []
+
+
+def test_prolonged_inactivity_starts_counting_after_sleep_for_night_activity(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ended_at = datetime.fromisoformat("2026-09-17T01:00:00+09:00")
+    observed_at = datetime.fromisoformat("2026-09-17T13:00:00+09:00")
+    with session_factory.begin() as session:
+        observation = add_observation(session, observed_at.date())
+        add_usage(
+            session,
+            observation,
+            "MICROWAVE",
+            ended_at - timedelta(minutes=5),
+            ended_at,
+        )
+
+    events = detector(session_factory).detect("H001", observed_at, [])
+
+    assert [item.event.event_type for item in events] == [
+        "PROLONGED_INACTIVITY"
+    ]
+    assert events[0].event.occurred_at == observed_at.astimezone(timezone.utc)
 
 
 def test_prolonged_appliance_use_is_emitted_once_per_open_session(

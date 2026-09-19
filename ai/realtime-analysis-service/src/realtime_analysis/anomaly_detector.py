@@ -507,8 +507,24 @@ class RealtimeAnomalyDetector:
         )
         if last_activity_at is None:
             return []
-        threshold_hours = float(policy.parameters.get("inactivity_hours", 12))
-        occurred_at = last_activity_at + timedelta(hours=threshold_hours)
+        threshold_hours = float(policy.parameters.get("inactivity_hours", 6))
+        sleep_window = policy.parameters.get("sleep_window", {})
+        if not isinstance(sleep_window, dict):
+            raise ValueError("sleep_window must be an object")
+        sleep_start = self._parse_policy_time(
+            sleep_window.get("start", "23:00"),
+            "sleep_window.start",
+        )
+        sleep_end = self._parse_policy_time(
+            sleep_window.get("end", "07:00"),
+            "sleep_window.end",
+        )
+        occurred_at = self._add_awake_duration(
+            last_activity_at,
+            timedelta(hours=threshold_hours),
+            sleep_start,
+            sleep_end,
+        )
         if observed_at < occurred_at:
             return []
         event = AnalysisEvent(
@@ -523,6 +539,10 @@ class RealtimeAnomalyDetector:
             reason={
                 "last_activity_at": last_activity_at.isoformat(),
                 "threshold_hours": threshold_hours,
+                "sleep_window": {
+                    "start": sleep_start.strftime("%H:%M"),
+                    "end": sleep_end.strftime("%H:%M"),
+                },
             },
         )
         return [
@@ -533,6 +553,72 @@ class RealtimeAnomalyDetector:
                 baseline_type="PROLONGED_INACTIVITY",
             )
         ]
+
+    @staticmethod
+    def _parse_policy_time(value: object, field_name: str) -> time:
+        if not isinstance(value, str):
+            raise ValueError(f"{field_name} must be an HH:MM string")
+        try:
+            parsed = time.fromisoformat(value)
+        except ValueError as error:
+            raise ValueError(
+                f"{field_name} must be a valid HH:MM string"
+            ) from error
+        if parsed.tzinfo is not None:
+            raise ValueError(f"{field_name} must not contain a timezone")
+        return parsed
+
+    def _add_awake_duration(
+        self,
+        started_at: datetime,
+        duration: timedelta,
+        sleep_start: time,
+        sleep_end: time,
+    ) -> datetime:
+        """Add duration while excluding the recurring local sleep window."""
+
+        cursor = started_at.astimezone(timezone.utc)
+        remaining_seconds = duration.total_seconds()
+        if remaining_seconds <= 0:
+            return cursor
+        # Equal boundaries mean that no sleep exclusion is configured. Treating
+        # them as a 24-hour sleep window would make the loop impossible to end.
+        if sleep_start == sleep_end:
+            return cursor + duration
+
+        sleep_date = cursor.astimezone(self._timezone).date() - timedelta(days=1)
+        while remaining_seconds > 0:
+            sleep_started_local = datetime.combine(
+                sleep_date,
+                sleep_start,
+                self._timezone,
+            )
+            sleep_ended_date = sleep_date
+            if sleep_end <= sleep_start:
+                sleep_ended_date += timedelta(days=1)
+            sleep_ended_local = datetime.combine(
+                sleep_ended_date,
+                sleep_end,
+                self._timezone,
+            )
+            sleep_date += timedelta(days=1)
+
+            sleep_started_at = sleep_started_local.astimezone(timezone.utc)
+            sleep_ended_at = sleep_ended_local.astimezone(timezone.utc)
+            if sleep_ended_at <= cursor:
+                continue
+
+            if cursor < sleep_started_at:
+                awake_seconds = (sleep_started_at - cursor).total_seconds()
+                if remaining_seconds <= awake_seconds:
+                    return cursor + timedelta(seconds=remaining_seconds)
+                remaining_seconds -= awake_seconds
+                cursor = sleep_started_at
+
+            if cursor < sleep_ended_at:
+                cursor = sleep_ended_at
+
+        return cursor
 
     def _prolonged_appliance_use(
         self,

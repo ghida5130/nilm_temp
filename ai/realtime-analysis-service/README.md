@@ -207,13 +207,18 @@ Kafka Key: H001
 | 이벤트 | 분류 | 판단 기준 | `reason` 주요 필드 |
 | --- | --- | --- | --- |
 | `ROUTINE_MISSED` | 위험 | 기대 시각 전까지 해당 가전 사용 없음 | `appliance_type`, `expected_until`, `normal_days`, `window_days` |
-| `PROLONGED_INACTIVITY` | 위험 | 전체 가전의 마지막 사용 종료 후 기본 12시간 경과 | `last_activity_at`, `threshold_hours` |
+| `PROLONGED_INACTIVITY` | 위험 | 예상 수면 구간을 제외한 미활동 시간이 기본 6시간 경과 | `last_activity_at`, `threshold_hours`, `sleep_window` |
 | `PROLONGED_APPLIANCE_USE` | 위험 | 위험 가전의 열린 세션이 허용 시간 초과 | `appliance_type`, `started_at`, `allowed_duration_minutes` |
 | `ROUTINE_CHANGED` | 정보 | 최근 7일 첫 사용 중앙시각이 이전 21일보다 기본 120분 이상 이동 | `appliance_type`, `previous_time`, `recent_time`, `shift_minutes` |
 
 세 위험 이벤트는 측정 시각을 기준으로 가구별 기본 60초마다 평가합니다.
 `ROUTINE_CHANGED`는 전날 관측 마감 후 하루 한 번 평가하며 위험 점수에 직접 반영하지
 않습니다. 임계값은 `analysis_policy`의 `parameters`에서 읽습니다.
+
+`PROLONGED_INACTIVITY`는 기본 예상 수면 구간인 `23:00~07:00`과 겹치는 시간을
+미활동 누적에서 제외합니다. 예를 들어 마지막 사용이 21:00에 끝났다면 21:00~23:00의
+2시간과 다음 날 07:00~11:00의 4시간을 합쳐 11:00에 6시간 임계치에 도달합니다.
+수면 구간에 실제 사용이 감지되면 해당 세션의 종료 시각부터 다시 계산합니다.
 
 ```text
 최근 14일 중 12일 동안 08:10 이전에 확인된 활동이 오늘은 감지되지 않았습니다.
