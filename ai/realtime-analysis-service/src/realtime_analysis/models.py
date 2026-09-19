@@ -12,12 +12,14 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     Integer,
     JSON,
     Numeric,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -249,6 +251,7 @@ class ApplianceUsageSession(Base):
         ),
         CheckConstraint("max_probability BETWEEN 0 AND 1", name="max_probability"),
         CheckConstraint("decision_threshold BETWEEN 0 AND 1", name="decision_threshold"),
+        CheckConstraint("lake_version >= 1", name="lake_version_positive"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -262,4 +265,138 @@ class ApplianceUsageSession(Base):
     decision_threshold: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    # 레이크 전달용 내용 버전. PostgreSQL 트리거(마이그레이션 20260920_10)가
+    # INSERT 시 1로 고정하고 내용이 실제로 바뀐 UPDATE마다 1씩 올린다.
+    # 애플리케이션 코드는 이 값을 직접 쓰지 않는다.
+    lake_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+
+
+SESSION_LAKE_BATCH_KINDS = ("INITIAL", "INCREMENTAL")
+SESSION_LAKE_BATCH_STATUSES = ("ASSIGNED", "FAILED", "COMPLETED")
+SESSION_LAKE_OUTBOX_OPERATIONS = ("INSERT", "UPDATE", "DELETE")
+SESSION_LAKE_DELIVERY_STATUSES = ("PENDING", "ASSIGNED", "DELIVERED")
+
+
+def _sql_list(values: tuple[str, ...]) -> str:
+    return ", ".join(f"'{item}'" for item in values)
+
+
+class SessionLakeBatch(Base):
+    """HDFS 적재 배치 한 번의 대상·진행 상태·manifest 위치·오류 기록."""
+
+    __tablename__ = "session_lake_batch"
+    __table_args__ = (
+        CheckConstraint(
+            f"batch_kind IN ({_sql_list(SESSION_LAKE_BATCH_KINDS)})",
+            name="batch_kind",
+        ),
+        CheckConstraint(
+            f"status IN ({_sql_list(SESSION_LAKE_BATCH_STATUSES)})",
+            name="status",
+        ),
+        CheckConstraint("event_count >= 0", name="event_count_nonnegative"),
+        CheckConstraint("attempt_count >= 0", name="attempt_count_nonnegative"),
+        CheckConstraint("schema_version >= 1", name="schema_version_positive"),
+        Index("ix_session_lake_batch_status_created", "status", "created_at"),
+    )
+
+    batch_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    batch_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    # 배치 생성 시 확정하는 저장 날짜. 재시도해도 경로가 바뀌지 않는다.
+    ingest_date: Mapped[date] = mapped_column(Date, nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 대상 이벤트: outbox 행이 batch_id로 가리키며, 여기에는 범위와 개수를 남긴다.
+    event_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    first_event_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    last_event_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    file_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    manifest_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+        default=dict,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class SessionLakeOutbox(Base):
+    """appliance_usage_session 변경 한 건의 전체 내용과 레이크 전달 상태.
+
+    PostgreSQL 트리거가 세션 변경과 같은 트랜잭션에서 행을 넣는다. 원본 세션에
+    대한 FK는 두지 않아 세션이 삭제(CASCADE 포함)된 뒤에도 삭제 이벤트가 남는다.
+    """
+
+    __tablename__ = "session_lake_outbox"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "session_version",
+            name="uq_session_lake_outbox_session_version",
+        ),
+        CheckConstraint(
+            f"operation IN ({_sql_list(SESSION_LAKE_OUTBOX_OPERATIONS)})",
+            name="operation",
+        ),
+        CheckConstraint(
+            f"delivery_status IN ({_sql_list(SESSION_LAKE_DELIVERY_STATUSES)})",
+            name="delivery_status",
+        ),
+        CheckConstraint("session_version >= 1", name="session_version_positive"),
+        CheckConstraint(
+            "(delivery_status = 'PENDING') = (batch_id IS NULL)",
+            name="batch_assigned_matches_status",
+        ),
+        Index(
+            "ix_session_lake_outbox_undelivered",
+            "delivery_status",
+            "event_id",
+            postgresql_where=text("delivery_status <> 'DELIVERED'"),
+        ),
+        Index("ix_session_lake_outbox_batch_id", "batch_id"),
+    )
+
+    event_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        Identity(),
+        primary_key=True,
+    )
+    session_id: Mapped[UUID] = mapped_column(nullable=False)
+    session_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation: Mapped[str] = mapped_column(String(10), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    delivery_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'PENDING'")
+    )
+    batch_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("session_lake_batch.batch_id"),
+        nullable=True,
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
