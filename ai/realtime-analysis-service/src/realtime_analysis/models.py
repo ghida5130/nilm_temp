@@ -151,14 +151,13 @@ class AnalysisEventEmission(Base):
 
 
 class HouseholdOutingState(Base):
-    """Latest outing state received from monitoring."""
+    """Latest outing state and latest interval received from monitoring."""
 
     __tablename__ = "household_outing_state"
     __table_args__ = (
         CheckConstraint(
-            "(is_outing AND outing_started_at IS NOT NULL) OR "
-            "(NOT is_outing AND outing_started_at IS NULL)",
-            name="outing_started_at_matches_state",
+            "NOT is_outing OR outing_started_at IS NOT NULL",
+            name="outing_started_at_available_when_outing",
         ),
     )
 
@@ -172,39 +171,6 @@ class HouseholdOutingState(Base):
     )
     last_event_id: Mapped[UUID] = mapped_column(nullable=False)
     last_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-class HouseholdOutingPeriod(Base):
-    """A completed or currently open outing interval used for overlap checks."""
-
-    __tablename__ = "household_outing_period"
-    __table_args__ = (
-        UniqueConstraint("ended_event_id", name="uq_household_outing_period_ended_event"),
-        CheckConstraint(
-            "ended_at IS NULL OR ended_at >= started_at",
-            name="valid_time_range",
-        ),
-        Index(
-            "ix_household_outing_period_overlap",
-            "household_id",
-            "started_at",
-            "ended_at",
-        ),
-        Index(
-            "uq_household_outing_period_open_household",
-            "household_id",
-            unique=True,
-            postgresql_where=text("ended_at IS NULL"),
-            sqlite_where=text("ended_at IS NULL"),
-        ),
-    )
-
-    started_event_id: Mapped[UUID] = mapped_column(primary_key=True)
-    household_id: Mapped[str] = mapped_column(String(50), nullable=False)
-    ended_event_id: Mapped[UUID | None] = mapped_column(nullable=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

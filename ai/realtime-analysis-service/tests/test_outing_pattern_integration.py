@@ -37,7 +37,6 @@ def session_factory() -> sessionmaker[Session]:
         "analysis_policy",
         "analysis_event_emission",
         "household_outing_state",
-        "household_outing_period",
         "household_observation_daily",
         "household_activity_daily",
         "appliance_usage_session",
@@ -165,7 +164,7 @@ def add_completed_usage(
     )
 
 
-def test_kafka_outing_period_excludes_only_overlapping_routine(
+def test_kafka_latest_outing_excludes_only_overlapping_routine(
     session_factory: sessionmaker[Session],
 ) -> None:
     outing_repository = SqlAlchemyOutingStateRepository(session_factory)

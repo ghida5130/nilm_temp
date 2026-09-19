@@ -38,7 +38,6 @@ def session_factory() -> sessionmaker[Session]:
         "analysis_policy",
         "analysis_event_emission",
         "household_outing_state",
-        "household_outing_period",
         "household_observation_daily",
         "household_activity_daily",
         "appliance_usage_session",

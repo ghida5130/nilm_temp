@@ -673,6 +673,8 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 - 재시작하면 299개 버퍼와 당일 활동·발행 상태가 초기화됩니다.
 - 완전히 데이터가 들어오지 않은 가구의 `SENSOR_GAP` 판정에는 별도 가구 목록 기반 마감
   스케줄러가 추가로 필요합니다.
+- 외출 정보는 `household_outing_state` 한 행에 최근 외출 구간만 보관하므로, 완료된
+  과거 외출 여러 건을 조회하는 용도로는 사용하지 않습니다.
 - HTTP API는 포함하지 않습니다.
 
 ## 외출 연동 패턴 Kafka 검증
@@ -695,7 +697,7 @@ docker compose --profile tools up -d kafka-ui
 ```
 
 Kafka UI는 `http://localhost:8091`에서 열고, 외출 메시지의 key는 `household_id`와 같은
-값을 사용합니다. 적용된 Alembic revision은 `20260919_08`이어야 합니다.
+값을 사용합니다. 적용된 Alembic revision은 `20260919_09`이어야 합니다.
 
 ```powershell
 docker exec nilm-postgres psql -U nilm_admin -d analysis_db `
@@ -733,11 +735,11 @@ Kafka UI의 `monitoring.household-presence.v1`에 key `H001`로 차례대로 발
 }
 ```
 
-DB에 닫힌 외출 구간이 만들어졌는지 확인합니다.
+DB의 단일 상태 행에 최근 외출 시작·종료 시각이 남았는지 확인합니다.
 
 ```powershell
 docker exec nilm-postgres psql -U nilm_admin -d analysis_db -c `
-  "SELECT household_id, started_at, ended_at FROM household_outing_period WHERE household_id='H001' ORDER BY started_at;"
+  "SELECT household_id, is_outing, outing_started_at, last_returned_at FROM household_outing_state WHERE household_id='H001';"
 ```
 
 시뮬레이터 기준 날짜를 `2026-09-17`로 설정하고 H001에서 전자레인지를 사용하지 않는

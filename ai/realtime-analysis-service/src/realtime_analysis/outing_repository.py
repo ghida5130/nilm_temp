@@ -3,10 +3,10 @@
 from datetime import datetime, timezone
 from typing import Protocol
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from realtime_analysis.models import HouseholdOutingPeriod, HouseholdOutingState
+from realtime_analysis.models import HouseholdOutingState
 from realtime_analysis.schemas import OutingEvent
 
 
@@ -58,18 +58,12 @@ class SqlAlchemyOutingStateRepository:
             )
             if state is None:
                 session.add(self._initial_state(event, applied_at))
-                if event.event_type == "OUTING_STARTED":
-                    self._start_period(session, event, applied_at)
             elif (
                 event.event_id == state.last_event_id
                 or _as_utc(event.occurred_at) <= _as_utc(state.last_event_at)
             ):
                 return False
             else:
-                if event.event_type == "OUTING_STARTED" and not state.is_outing:
-                    self._start_period(session, event, applied_at)
-                elif event.event_type == "OUTING_ENDED" and state.is_outing:
-                    self._end_open_period(session, event, applied_at)
                 self._apply_event(state, event, applied_at)
 
         return True
@@ -93,58 +87,24 @@ class SqlAlchemyOutingStateRepository:
         if window_end < window_start:
             raise ValueError("ended_at must not be earlier than started_at")
 
-        with self._session_factory() as session:
-            period = session.scalar(
-                select(HouseholdOutingPeriod.started_event_id)
-                .where(
-                    HouseholdOutingPeriod.household_id == household_id,
-                    HouseholdOutingPeriod.started_at <= window_end,
-                    or_(
-                        HouseholdOutingPeriod.ended_at.is_(None),
-                        HouseholdOutingPeriod.ended_at > window_start,
-                    ),
-                )
-                .limit(1)
-            )
-            return period is not None
-
-    @staticmethod
-    def _start_period(
-        session: Session,
-        event: OutingEvent,
-        updated_at: datetime,
-    ) -> None:
-        occurred_at = _as_utc(event.occurred_at)
-        session.add(
-            HouseholdOutingPeriod(
-                started_event_id=event.event_id,
-                household_id=event.household_id,
-                ended_event_id=None,
-                started_at=occurred_at,
-                ended_at=None,
-                updated_at=updated_at,
+        state = self.get_state(household_id)
+        if state is None or state.outing_started_at is None:
+            return False
+        outing_start = _as_utc(state.outing_started_at)
+        outing_end = (
+            None
+            if state.is_outing
+            else (
+                _as_utc(state.last_returned_at)
+                if state.last_returned_at is not None
+                else None
             )
         )
-
-    @staticmethod
-    def _end_open_period(
-        session: Session,
-        event: OutingEvent,
-        updated_at: datetime,
-    ) -> None:
-        period = session.scalar(
-            select(HouseholdOutingPeriod)
-            .where(
-                HouseholdOutingPeriod.household_id == event.household_id,
-                HouseholdOutingPeriod.ended_at.is_(None),
-            )
-            .with_for_update()
+        if outing_end is None and not state.is_outing:
+            return False
+        return outing_start <= window_end and (
+            outing_end is None or outing_end > window_start
         )
-        if period is None:
-            return
-        period.ended_event_id = event.event_id
-        period.ended_at = _as_utc(event.occurred_at)
-        period.updated_at = updated_at
 
     @staticmethod
     def _initial_state(
@@ -173,12 +133,11 @@ class SqlAlchemyOutingStateRepository:
     ) -> None:
         occurred_at = _as_utc(event.occurred_at)
         if event.event_type == "OUTING_STARTED":
-            state.is_outing = True
-            if state.outing_started_at is None:
+            if not state.is_outing or state.outing_started_at is None:
                 state.outing_started_at = occurred_at
+            state.is_outing = True
         else:
             state.is_outing = False
-            state.outing_started_at = None
             state.last_returned_at = occurred_at
 
         state.last_event_id = event.event_id
