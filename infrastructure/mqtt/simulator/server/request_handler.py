@@ -581,7 +581,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_error_json(400, "BAD_REQUEST", "요청 본문은 JSON 객체여야 합니다.")
                 return
 
-            allowed_top_keys = {"reference_date", "execution", "households", "timezone"}
+            allowed_top_keys = {"reference_date", "start_time", "execution", "households", "timezone"}
             extra_keys = set(params.keys()) - allowed_top_keys
             if extra_keys:
                 self.send_error_json(400, "BAD_REQUEST", f"허용되지 않은 필드가 포함되어 있습니다: {sorted(extra_keys)}")
@@ -604,6 +604,32 @@ class RequestHandler(BaseHTTPRequestHandler):
             except ValueError:
                 self.send_error_json(400, "BAD_REQUEST", f"존재하지 않는 날짜입니다: '{ref_date_raw}'")
                 return
+
+            if "start_time" in params:
+                st_raw = params["start_time"]
+                if st_raw is not None:
+                    if not isinstance(st_raw, str):
+                        self.send_error_json(400, "BAD_REQUEST", "start_time 필드는 문자열이어야 합니다.")
+                        return
+                    clean_st = st_raw.strip()
+                    is_valid_time = False
+                    if re.match(r"^\d{2}:\d{2}(?::\d{2})?$", clean_st):
+                        parts = clean_st.split(":")
+                        h = int(parts[0])
+                        m = int(parts[1])
+                        s = int(parts[2]) if len(parts) == 3 else 0
+                        if 0 <= h <= 23 and 0 <= m <= 59 and 0 <= s <= 59:
+                            is_valid_time = True
+                    else:
+                        try:
+                            datetime.fromisoformat(clean_st)
+                            is_valid_time = True
+                        except ValueError:
+                            pass
+
+                    if not is_valid_time:
+                        self.send_error_json(400, "BAD_REQUEST", f"유효하지 않은 start_time 형식입니다: '{st_raw}'. HH:MM[:SS] 또는 ISO 형식이어야 합니다.")
+                        return
 
             if "timezone" in params:
                 tz_raw = params["timezone"]
