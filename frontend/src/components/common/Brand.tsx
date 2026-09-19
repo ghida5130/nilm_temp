@@ -1,6 +1,12 @@
 import { Link } from 'react-router-dom'
-import Icon from './Icon'
+import mainLogo from '../../assets/main-logo.webp'
+import mainTitle from '../../assets/main-title.webp'
 
 export default function Brand() {
-  return <Link className="inline-flex items-center gap-2 text-xl font-extrabold text-stone-800" to="/"><span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500 text-white"><Icon name="shield" /></span>On:마음</Link>
+  return <Link className="inline-flex items-center gap-2" to="/" aria-label="On:마음 홈">
+    <img className="h-9 w-9 shrink-0 object-contain" src={mainLogo} alt="" />
+    <span className="block h-8 w-20 overflow-hidden" aria-hidden="true">
+      <img className="h-8 max-w-none -translate-x-10" src={mainTitle} alt="" />
+    </span>
+  </Link>
 }
