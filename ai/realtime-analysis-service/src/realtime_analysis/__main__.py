@@ -1,8 +1,9 @@
 """실시간 분석 서비스의 실행 진입점."""
 
 import logging
+from queue import SimpleQueue
 import signal
-from threading import Event
+from threading import Event, Thread
 
 from confluent_kafka.admin import AdminClient
 
@@ -36,6 +37,8 @@ from realtime_analysis.handler import MeasurementHandler
 from realtime_analysis.health_server import ObservabilityServer
 from realtime_analysis.metrics import METRICS
 from realtime_analysis.model_manifest import ModelManifest
+from realtime_analysis.outing_consumer import OutingEventConsumer
+from realtime_analysis.outing_repository import SqlAlchemyOutingStateRepository
 from realtime_analysis.predictor import FakePredictor
 from realtime_analysis.preprocessing import StandardizingPredictor
 from realtime_analysis.policy import (
@@ -157,6 +160,26 @@ def main() -> None:
         dlq_publisher=DlqPublisher(settings),
         handler=handler,
     )
+    outing_consumer = OutingEventConsumer(
+        settings=settings,
+        repository=SqlAlchemyOutingStateRepository(session_factory),
+        dlq_publisher=DlqPublisher(settings),
+    )
+    outing_consumer_errors: SimpleQueue[BaseException] = SimpleQueue()
+
+    def run_outing_consumer() -> None:
+        try:
+            outing_consumer.run(stop_event)
+        except BaseException as error:
+            logger.exception("Outing event consumer failed")
+            outing_consumer_errors.put(error)
+            stop_event.set()
+
+    outing_consumer_thread = Thread(
+        target=run_outing_consumer,
+        name="outing-event-consumer",
+        daemon=True,
+    )
     kafka_admin = AdminClient(
         {"bootstrap.servers": settings.kafka_bootstrap_servers}
     )
@@ -170,6 +193,11 @@ def main() -> None:
             "kafka_data_quality": kafka_readiness_check(
                 kafka_admin,
                 settings.kafka_analysis_data_quality_topic,
+                settings.readiness_timeout_seconds,
+            ),
+            "kafka_outing": kafka_readiness_check(
+                kafka_admin,
+                settings.kafka_outing_event_topic,
                 settings.readiness_timeout_seconds,
             ),
             "database": database_readiness_check(session_factory),
@@ -195,13 +223,23 @@ def main() -> None:
         observability_server.start()
         baseline_cache_refresher.start()
         data_quality_watchdog.start(stop_event)
+        outing_consumer_thread.start()
 
         consumer.run(stop_event)
     finally:
         stop_event.set()
+        if outing_consumer_thread.ident is not None:
+            outing_consumer_thread.join(timeout=5)
+            if outing_consumer_thread.is_alive():
+                logger.error("Outing event consumer did not stop within timeout")
         data_quality_watchdog.stop()
         baseline_cache_refresher.stop()
         observability_server.stop()
+
+    if not outing_consumer_errors.empty():
+        raise RuntimeError("Outing event consumer stopped unexpectedly") from (
+            outing_consumer_errors.get()
+        )
 
 
 if __name__ == "__main__":
