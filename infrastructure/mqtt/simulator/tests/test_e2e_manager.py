@@ -1153,5 +1153,86 @@ class TestE2ESessionManager(unittest.TestCase):
             self.assertFalse(manager._loop_thread.is_alive())
 
 
+import queue
+from server.manager import SimulatorManager
+
+
+class TestSimulatorManagerBroadcastExternal(unittest.TestCase):
+    """broadcast_external 전송 전용 경로 및 레거시 last_metrics 비오염 검증 단위 테스트"""
+
+    def test_broadcast_external_delivers_to_subscriber_without_modifying_last_metrics(self):
+        """broadcast_external 호출 후 last_metrics 및 last_metrics_by_house 불변 및 구독자 큐 정상 수신 검증"""
+        manager = SimulatorManager(host="localhost", port=1883)
+        legacy_metrics = {"house": "H001", "totalP": 120.0, "source": "LEGACY"}
+        legacy_by_house = {"H001": {"house": "H001", "totalP": 120.0}}
+        manager.last_metrics = dict(legacy_metrics)
+        manager.last_metrics_by_house = dict(legacy_by_house)
+
+        q = queue.Queue()
+        manager.add_subscriber(q)
+
+        e2e_payload = {
+            "house": "H001",
+            "scenario": "ACTIVITY_NORMAL",
+            "totalP": 950.0,
+            "source": "E2E",
+            "run_id": "run-external-test-01",
+        }
+
+        manager.broadcast_external(e2e_payload)
+
+        # 1. last_metrics와 last_metrics_by_house가 변경되지 않았음을 단정
+        self.assertEqual(manager.last_metrics, legacy_metrics)
+        self.assertEqual(manager.last_metrics_by_house, legacy_by_house)
+
+        # 2. 구독자 큐에는 데이터가 정상 전달되었음을 단정
+        received = q.get_nowait()
+        self.assertEqual(received, e2e_payload)
+        self.assertEqual(received["source"], "E2E")
+        self.assertEqual(received["totalP"], 950.0)
+
+    def test_e2e_execution_with_broadcast_external_does_not_pollute_manager_status(self):
+        """E2E 실행 후 manager.get_status()의 last_metrics가 E2E 페이로드로 오염되지 않음을 단정"""
+        manager = SimulatorManager(host="localhost", port=1883)
+        self.assertIsNone(manager.last_metrics)
+        self.assertEqual(manager.get_status()["last_metrics"], None)
+
+        q = queue.Queue()
+        manager.add_subscriber(q)
+
+        e2e_manager = E2EScheduleSessionManager(
+            broker_config={"host": "localhost", "port": 1883},
+            mqtt_client_factory=FakeMqttFactory(),
+            broadcast_callback=manager.broadcast_external,
+        )
+
+        try:
+            start_res = e2e_manager.create_and_start_session({
+                "reference_date": "2026-09-17",
+                "execution": {"mode": "ACCELERATED", "speed": 1000.0},
+                "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
+            })
+            run_id = start_res["run_id"]
+
+            # 세션이 약간 진행되어 브로드캐스트가 발생할 때까지 잠시 대기
+            time.sleep(0.3)
+
+            # manager.get_status()의 last_metrics 확인: 절대 E2E 페이로드로 오염되지 않아야 함!
+            status = manager.get_status()
+            self.assertIsNone(
+                status["last_metrics"],
+                f"E2E 브로드캐스트로 인해 manager.get_status()['last_metrics']가 오염됨: {status['last_metrics']}",
+            )
+            self.assertIsNone(manager.last_metrics)
+
+            # 구독자 큐에는 실제로 브로드캐스트가 도달했는지 확인
+            self.assertGreater(q.qsize(), 0, "구독자 큐에 E2E 데이터가 도달했어야 합니다.")
+            sample = q.get_nowait()
+            self.assertEqual(sample["source"], "E2E")
+            self.assertEqual(sample["run_id"], run_id)
+        finally:
+            e2e_manager.shutdown(timeout_sec=2.0)
+
+
 if __name__ == "__main__":
     unittest.main()

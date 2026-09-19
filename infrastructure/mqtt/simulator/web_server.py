@@ -147,7 +147,10 @@ def main(args=None):
         tls_enabled=cfg["tls_enabled"],
         ca_file=cfg["ca_file"],
     )
-    e2e_manager = E2EScheduleSessionManager(broker_config=cfg)
+    e2e_manager = E2EScheduleSessionManager(
+        broker_config=cfg,
+        broadcast_callback=manager.broadcast_external,
+    )
     shared_start_lock = threading.Lock()
     handler_class = create_request_handler(
         manager,

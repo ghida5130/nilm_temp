@@ -138,6 +138,18 @@ def normalize_appliance_name(name: object) -> str:
     return canonical
 
 
+def resolve_base_date(reference_date: date, total_days: int) -> date:
+    """
+    reference_date를 전체 시나리오의 마지막 날(종료일)로 간주하고 시작일(base_date)을 역산하여 반환합니다.
+    total_days가 1 미만이면 ScheduleError가 발생합니다.
+    """
+    if type(total_days) is not int or isinstance(total_days, bool) or total_days < 1:
+        raise ScheduleError(f"total_days는 1 이상의 정수여야 합니다: {total_days!r}")
+    if not isinstance(reference_date, date):
+        raise ScheduleError(f"reference_date는 date 인스턴스여야 합니다: {reference_date!r}")
+    return reference_date - timedelta(days=total_days - 1)
+
+
 # ==========================================
 # 4. 선언적 입력 데이터 모델
 # ==========================================
