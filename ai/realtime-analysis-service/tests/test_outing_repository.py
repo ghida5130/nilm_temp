@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.database import Base
-from realtime_analysis.models import HouseholdOutingState
+from realtime_analysis.models import HouseholdOutingPeriod, HouseholdOutingState
 from realtime_analysis.outing_repository import SqlAlchemyOutingStateRepository
 from realtime_analysis.schemas import OutingEvent
 
@@ -21,6 +21,7 @@ END_EVENT_ID = UUID("2f051fe1-7a2a-58f4-b957-1d9b16dad024")
 @pytest.fixture
 def session_factory() -> sessionmaker[Session]:
     engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.tables["household_outing_period"].create(engine)
     Base.metadata.tables["household_outing_state"].create(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -58,6 +59,11 @@ def test_started_event_creates_current_state(
     assert _as_utc(state.outing_started_at) == STARTED_AT
     assert state.last_returned_at is None
     assert state.last_event_id == START_EVENT_ID
+    with session_factory() as session:
+        period = session.get(HouseholdOutingPeriod, START_EVENT_ID)
+        assert period is not None
+        assert _as_utc(period.started_at) == STARTED_AT
+        assert period.ended_at is None
 
 
 def test_ended_event_records_return_time(
@@ -81,6 +87,11 @@ def test_ended_event_records_return_time(
     assert state.outing_started_at is None
     assert _as_utc(state.last_returned_at) == ENDED_AT
     assert state.last_event_id == END_EVENT_ID
+    with session_factory() as session:
+        period = session.get(HouseholdOutingPeriod, START_EVENT_ID)
+        assert period is not None
+        assert period.ended_event_id == END_EVENT_ID
+        assert _as_utc(period.ended_at) == ENDED_AT
 
 
 def test_duplicate_event_is_ignored(
@@ -137,6 +148,31 @@ def test_state_is_independent_for_each_household(
 
     assert repository.get_state("H001").is_outing is True  # type: ignore[union-attr]
     assert repository.get_state("H002").is_outing is False  # type: ignore[union-attr]
+
+
+def test_completed_outing_period_is_found_only_for_overlapping_window(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = SqlAlchemyOutingStateRepository(session_factory)
+    repository.apply_event(
+        outing_event(START_EVENT_ID, "OUTING_STARTED", STARTED_AT),
+        UPDATED_AT,
+    )
+    repository.apply_event(
+        outing_event(END_EVENT_ID, "OUTING_ENDED", ENDED_AT),
+        UPDATED_AT + timedelta(hours=5),
+    )
+
+    assert repository.has_outing_overlap(
+        "H001",
+        STARTED_AT - timedelta(minutes=1),
+        STARTED_AT + timedelta(minutes=1),
+    ) is True
+    assert repository.has_outing_overlap(
+        "H001",
+        ENDED_AT,
+        ENDED_AT + timedelta(hours=1),
+    ) is False
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

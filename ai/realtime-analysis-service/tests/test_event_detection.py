@@ -38,6 +38,7 @@ def session_factory() -> sessionmaker[Session]:
         "analysis_policy",
         "analysis_event_emission",
         "household_outing_state",
+        "household_outing_period",
         "household_observation_daily",
         "household_activity_daily",
         "appliance_usage_session",
@@ -263,6 +264,50 @@ def test_routine_missed_uses_persisted_session_before_deadline(
         observed_at,
         [baseline()],
     ) == []
+
+
+def test_routine_missed_excludes_only_appliance_whose_window_overlaps_outing(
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_at = datetime.fromisoformat("2026-09-17T09:10:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+    apply_outing_event(
+        session_factory,
+        UUID("da898d82-3183-4d12-ae7c-0e3a9df9772c"),
+        "OUTING_STARTED",
+        datetime.fromisoformat("2026-09-17T08:30:00+09:00"),
+    )
+    apply_outing_event(
+        session_factory,
+        UUID("160a931f-f59d-403d-8157-fccdeeb88dbe"),
+        "OUTING_ENDED",
+        datetime.fromisoformat("2026-09-17T08:45:00+09:00"),
+    )
+    microwave = baseline()
+    kettle = RoutineBaseline(
+        id=UUID("786b1748-2e0a-4f22-aa72-146ee39e6148"),
+        household_id="H001",
+        appliance_type="KETTLE",
+        expected_until="09:00",
+        normal_days=12,
+        window_days=14,
+    )
+
+    events = detector(session_factory).detect(
+        "H001",
+        observed_at,
+        [microwave, kettle],
+    )
+
+    routine_missed = [
+        item.event
+        for item in events
+        if item.event.event_type == "ROUTINE_MISSED"
+    ]
+    assert [event.reason["appliance_type"] for event in routine_missed] == [
+        "MICROWAVE"
+    ]
 
 
 def test_prolonged_inactivity_uses_last_completed_activity(

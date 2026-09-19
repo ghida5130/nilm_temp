@@ -3,10 +3,10 @@
 from datetime import datetime, timezone
 from typing import Protocol
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from realtime_analysis.models import HouseholdOutingState
+from realtime_analysis.models import HouseholdOutingPeriod, HouseholdOutingState
 from realtime_analysis.schemas import OutingEvent
 
 
@@ -14,6 +14,13 @@ class OutingStateProvider(Protocol):
     """Read contract used by outing-aware pattern detection."""
 
     def get_state(self, household_id: str) -> HouseholdOutingState | None: ...
+
+    def has_outing_overlap(
+        self,
+        household_id: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> bool: ...
 
 
 class OutingStateRepository(OutingStateProvider, Protocol):
@@ -51,12 +58,18 @@ class SqlAlchemyOutingStateRepository:
             )
             if state is None:
                 session.add(self._initial_state(event, applied_at))
+                if event.event_type == "OUTING_STARTED":
+                    self._start_period(session, event, applied_at)
             elif (
                 event.event_id == state.last_event_id
                 or _as_utc(event.occurred_at) <= _as_utc(state.last_event_at)
             ):
                 return False
             else:
+                if event.event_type == "OUTING_STARTED" and not state.is_outing:
+                    self._start_period(session, event, applied_at)
+                elif event.event_type == "OUTING_ENDED" and state.is_outing:
+                    self._end_open_period(session, event, applied_at)
                 self._apply_event(state, event, applied_at)
 
         return True
@@ -64,6 +77,74 @@ class SqlAlchemyOutingStateRepository:
     def get_state(self, household_id: str) -> HouseholdOutingState | None:
         with self._session_factory() as session:
             return session.get(HouseholdOutingState, household_id)
+
+    def has_outing_overlap(
+        self,
+        household_id: str,
+        started_at: datetime,
+        ended_at: datetime,
+    ) -> bool:
+        if started_at.tzinfo is None or started_at.utcoffset() is None:
+            raise ValueError("started_at must include a timezone")
+        if ended_at.tzinfo is None or ended_at.utcoffset() is None:
+            raise ValueError("ended_at must include a timezone")
+        window_start = _as_utc(started_at)
+        window_end = _as_utc(ended_at)
+        if window_end < window_start:
+            raise ValueError("ended_at must not be earlier than started_at")
+
+        with self._session_factory() as session:
+            period = session.scalar(
+                select(HouseholdOutingPeriod.started_event_id)
+                .where(
+                    HouseholdOutingPeriod.household_id == household_id,
+                    HouseholdOutingPeriod.started_at <= window_end,
+                    or_(
+                        HouseholdOutingPeriod.ended_at.is_(None),
+                        HouseholdOutingPeriod.ended_at > window_start,
+                    ),
+                )
+                .limit(1)
+            )
+            return period is not None
+
+    @staticmethod
+    def _start_period(
+        session: Session,
+        event: OutingEvent,
+        updated_at: datetime,
+    ) -> None:
+        occurred_at = _as_utc(event.occurred_at)
+        session.add(
+            HouseholdOutingPeriod(
+                started_event_id=event.event_id,
+                household_id=event.household_id,
+                ended_event_id=None,
+                started_at=occurred_at,
+                ended_at=None,
+                updated_at=updated_at,
+            )
+        )
+
+    @staticmethod
+    def _end_open_period(
+        session: Session,
+        event: OutingEvent,
+        updated_at: datetime,
+    ) -> None:
+        period = session.scalar(
+            select(HouseholdOutingPeriod)
+            .where(
+                HouseholdOutingPeriod.household_id == event.household_id,
+                HouseholdOutingPeriod.ended_at.is_(None),
+            )
+            .with_for_update()
+        )
+        if period is None:
+            return
+        period.ended_event_id = event.event_id
+        period.ended_at = _as_utc(event.occurred_at)
+        period.updated_at = updated_at
 
     @staticmethod
     def _initial_state(
@@ -93,7 +174,8 @@ class SqlAlchemyOutingStateRepository:
         occurred_at = _as_utc(event.occurred_at)
         if event.event_type == "OUTING_STARTED":
             state.is_outing = True
-            state.outing_started_at = occurred_at
+            if state.outing_started_at is None:
+                state.outing_started_at = occurred_at
         else:
             state.is_outing = False
             state.outing_started_at = None

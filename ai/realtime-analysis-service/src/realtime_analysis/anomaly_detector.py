@@ -463,6 +463,12 @@ class RealtimeAnomalyDetector:
             )
             if strength < minimum_strength:
                 continue
+            if self._outing_states.has_outing_overlap(
+                household_id,
+                day_start.astimezone(timezone.utc),
+                deadline.astimezone(timezone.utc),
+            ):
+                continue
             if self._repository.was_used_before(
                 household_id,
                 baseline.appliance_type,
