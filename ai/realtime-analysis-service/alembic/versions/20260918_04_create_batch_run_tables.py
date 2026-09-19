@@ -1,7 +1,7 @@
 """Create persistent batch and retention execution history.
 
-Revision ID: 20260918_03
-Revises: 20260916_02
+Revision ID: 20260918_04
+Revises: 20260918_03
 Create Date: 2026-09-18
 """
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "20260918_03"
-down_revision: str | None = "20260916_02"
+revision: str = "20260918_04"
+down_revision: str | None = "20260918_03"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
