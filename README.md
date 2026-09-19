@@ -47,6 +47,22 @@ python infrastructure/mqtt/simulator/web_server.py
 python infrastructure/mqtt/simulator/simulator.py --scenario normal_routine
 ```
 
+### 운영 Prometheus / Grafana 확인
+1. SSH 터널 접속 (창은 닫지 말 것)
+```bash
+ssh -i <경로>\J15D201T.pem -L 13001:127.0.0.1:13001 -L 19090:127.0.0.1:19090 ubuntu@<EC2-A 퍼블릭 IP>
+```
+
+2. 내 PC 브라우저에서 접속
+
+- Prometheus: http://localhost:19090
+- Grafana: http://localhost:13001 (admin / 배포 담당자에게 문의)
+> - 포트 충돌(`Address already in use`) 시 **`-L`의 앞 숫자만** 변경하고(예: `-L 28090:127.0.0.1:19090`)
+    >   브라우저도 그 번호로 접속. 뒤 숫자는 EC2-A 포트이므로 그대로 둘 것.
+> - `컨테이너 자원` 대시보드는 운영에서 cAdvisor를 사용하지 않아 비어 있는 것이 정상.
+> - SSH 창을 닫으면 터널도 끊김.
+
+
 ## `.env`를 바꿨을 때
 
 ```powershell
