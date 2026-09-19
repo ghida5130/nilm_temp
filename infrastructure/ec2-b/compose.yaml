@@ -71,6 +71,7 @@ services:
       KAFKA_ANALYSIS_SNAPSHOT_TOPIC: ${KAFKA_ANALYSIS_SNAPSHOT_TOPIC:-analysis.snapshot.v1}
       KAFKA_ANALYSIS_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
+      KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
       KAFKA_PARTITIONS: ${KAFKA_PARTITIONS:-24}
       KAFKA_RAW_RETENTION_MS: ${KAFKA_RAW_RETENTION_MS:-604800000}
       KAFKA_RAW_RETENTION_BYTES: ${KAFKA_RAW_RETENTION_BYTES:-2147483648}
@@ -100,7 +101,9 @@ services:
         configure_topic "$$KAFKA_ANALYSIS_SNAPSHOT_TOPIC" "$$KAFKA_ANALYSIS_RETENTION_MS" "$$KAFKA_ANALYSIS_RETENTION_BYTES" "$$KAFKA_ANALYSIS_SEGMENT_BYTES"
         configure_topic "$$KAFKA_ANALYSIS_DLQ_TOPIC" "$$KAFKA_DLQ_RETENTION_MS" "$$KAFKA_DLQ_RETENTION_BYTES" "$$KAFKA_DLQ_SEGMENT_BYTES"
         configure_topic "$$KAFKA_MONITORING_DLQ_TOPIC" "$$KAFKA_DLQ_RETENTION_MS" "$$KAFKA_DLQ_RETENTION_BYTES" "$$KAFKA_DLQ_SEGMENT_BYTES"
+        configure_topic "$$KAFKA_OUTING_EVENT_TOPIC" "$$KAFKA_ANALYSIS_RETENTION_MS" "$$KAFKA_ANALYSIS_RETENTION_BYTES" "$$KAFKA_ANALYSIS_SEGMENT_BYTES"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_RAW_TOPIC"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_OUTING_EVENT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_ACTIVITY_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_DATA_QUALITY_TOPIC"
@@ -121,6 +124,7 @@ services:
       KAFKA_ANALYSIS_ACTIVITY_TOPIC: ${KAFKA_ANALYSIS_ACTIVITY_TOPIC:-analysis.activity.v1}
       KAFKA_ANALYSIS_DATA_QUALITY_TOPIC: ${KAFKA_ANALYSIS_DATA_QUALITY_TOPIC:-analysis.data-quality.v1}
       KAFKA_ANALYSIS_SNAPSHOT_TOPIC: ${KAFKA_ANALYSIS_SNAPSHOT_TOPIC:-analysis.snapshot.v1}
+      KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
       KAFKA_GROUP_ID: ${ANALYSIS_KAFKA_GROUP_ID:-realtime-analysis-service-v1}
       KAFKA_AUTO_OFFSET_RESET: ${ANALYSIS_KAFKA_AUTO_OFFSET_RESET:-latest}
       DATABASE_HOST: postgres

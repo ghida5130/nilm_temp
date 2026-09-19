@@ -74,11 +74,13 @@ services:
       KAFKA_ANALYSIS_SNAPSHOT_TOPIC: ${KAFKA_ANALYSIS_SNAPSHOT_TOPIC:-analysis.snapshot.v1}
       KAFKA_ANALYSIS_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
+      KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
       KAFKA_PARTITIONS: ${KAFKA_PARTITIONS:-24}
     entrypoint: ["/bin/bash", "-ec"]
     command:
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_RAW_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_OUTING_EVENT_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_SNAPSHOT_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_DLQ_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
@@ -207,6 +209,7 @@ services:
       KAFKA_ANALYSIS_SNAPSHOT_TOPIC: ${KAFKA_ANALYSIS_SNAPSHOT_TOPIC:-analysis.snapshot.v1}
       KAFKA_ANALYSIS_ACTIVITY_TOPIC: ${KAFKA_ANALYSIS_ACTIVITY_TOPIC:-analysis.activity.v1}
       KAFKA_ANALYSIS_DATA_QUALITY_TOPIC: ${KAFKA_ANALYSIS_DATA_QUALITY_TOPIC:-analysis.data-quality.v1}
+      KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
       KAFKA_GROUP_ID: ${ANALYSIS_KAFKA_GROUP_ID:-realtime-analysis-service-v1}
       KAFKA_AUTO_OFFSET_RESET: ${ANALYSIS_KAFKA_AUTO_OFFSET_RESET:-earliest}
       DATABASE_HOST: postgres
@@ -344,6 +347,10 @@ services:
       PUSH_TEST_AUTH_SUB: "${PUSH_TEST_AUTH_SUB:-test-subject-3}"
       TEST_SUBJECT_ENABLED: "${TEST_SUBJECT_ENABLED:-true}"
       TEST_SUBJECT_HOUSEHOLD_ID: "${TEST_SUBJECT_HOUSEHOLD_ID:-H001}"
+      # 기동 시 테스트 담당자 계정을 iot-device-service 가입 API로 만든다(ec2-a와 동일).
+      TEST_DATA_ENABLED: "${TEST_DATA_ENABLED:-true}"
+      TEST_ACCOUNT_PASSWORD: "${TEST_ACCOUNT_PASSWORD:-NilmTest1234!}"
+      IOT_DEVICE_SERVICE_URL: http://iot-device-service:8081
       RISK_WARNING_THRESHOLD: "${RISK_WARNING_THRESHOLD:-70}"
       RISK_DANGER_THRESHOLD: "${RISK_DANGER_THRESHOLD:-90}"
     ports:
@@ -355,6 +362,8 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      iot-device-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8082/actuator/health/readiness >/dev/null"]
       interval: 10s
