@@ -28,6 +28,8 @@ class LoaderSettings(BaseSettings):
     hdfs_user: str = "root"
     session_bronze_base: str = "/nilm/bronze/appliance-session"
     session_manifest_base: str = "/nilm/manifests/job=session-lake-loader"
+    receipt_bronze_base: str = "/nilm/bronze/analysis-processing-receipt"
+    receipt_manifest_base: str = "/nilm/manifests/job=analysis-receipt-lake-loader"
     # 비어 있지 않으면 HDFS 대신 로컬 디렉터리를 레이크로 사용한다(개발·테스트용).
     lake_local_root: str = ""
 

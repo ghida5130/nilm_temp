@@ -28,6 +28,7 @@ from realtime_analysis.readiness import ReadinessProbe, database_readiness_check
 from session_lake_loader.config import LoaderSettings, get_settings
 from session_lake_loader.loader import SessionLakeLoader
 from session_lake_loader.metrics import LoaderMetrics
+from session_lake_loader.receipt_lake import AnalysisReceiptLakeLoader
 from session_lake_loader.repository import (
     LoaderAlreadyRunning,
     SessionLakeRepository,
@@ -146,6 +147,28 @@ def command_incremental(args: argparse.Namespace, settings: LoaderSettings) -> i
     return 0 if all(r.status == "COMPLETED" for r in results) else 1
 
 
+def command_receipt_incremental(args: argparse.Namespace, settings: LoaderSettings) -> int:
+    session_factory = build_session_factory(settings)
+    loader = AnalysisReceiptLakeLoader(
+        session_factory,
+        build_storage(settings),
+        bronze_base=settings.receipt_bronze_base,
+        manifest_base=settings.receipt_manifest_base,
+    )
+    result = loader.run_once(settings.loader_batch_max_events)
+    payload = {"result": result.__dict__ if result is not None else None}
+    _emit(
+        payload,
+        args.json,
+        [
+            "처리할 분석 증거가 없습니다."
+            if result is None
+            else f"{result.batch_id} {result.status} rows={result.row_count}"
+        ],
+    )
+    return 0
+
+
 def command_initial_load(args: argparse.Namespace, settings: LoaderSettings) -> int:
     _, repository, _, loader = build_components(settings)
     try:
@@ -174,6 +197,12 @@ def command_verify(args: argparse.Namespace, settings: LoaderSettings) -> int:
 def command_run(args: argparse.Namespace, settings: LoaderSettings) -> int:
     metrics = LoaderMetrics()
     session_factory, repository, storage, loader = build_components(settings, metrics)
+    receipt_loader = AnalysisReceiptLakeLoader(
+        session_factory,
+        storage,
+        bronze_base=settings.receipt_bronze_base,
+        manifest_base=settings.receipt_manifest_base,
+    )
     stop_event = Event()
 
     def request_shutdown(signum: int, frame: object) -> None:
@@ -205,6 +234,7 @@ def command_run(args: argparse.Namespace, settings: LoaderSettings) -> int:
                         batch_max_events=settings.loader_batch_max_events,
                         max_batches=settings.loader_max_batches_per_cycle,
                     )
+                    receipt_loader.run_once(settings.loader_batch_max_events)
                     status = repository.status_summary()
                     stalled = sum(1 for b in status.failed_batches if loader.is_stalled(b))
                     metrics.observe_status(status, stalled=stalled)
@@ -231,6 +261,12 @@ def build_parser() -> argparse.ArgumentParser:
     incremental = subparsers.add_parser("incremental", help="증분 적재 1회")
     incremental.add_argument("--json", action="store_true")
     incremental.set_defaults(handler=command_incremental)
+
+    receipt_incremental = subparsers.add_parser(
+        "receipt-incremental", help="분석 처리 증거 증분 적재 1회"
+    )
+    receipt_incremental.add_argument("--json", action="store_true")
+    receipt_incremental.set_defaults(handler=command_receipt_incremental)
 
     initial = subparsers.add_parser("initial-load", help="초기 전체 적재")
     initial.add_argument("--allow-repeat", action="store_true",

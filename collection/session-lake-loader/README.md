@@ -4,6 +4,12 @@
 HDFS Bronze Parquet로 누락 없이 옮기고, 레이크 데이터만으로 DB의 최신 상태를 복원할 수
 있는지 검증한다. 기존 DB 기반 집계(`aggregation_service`)는 그대로 유지한다.
 
+일반 `run` 명령은 세션 변경분과 입력별 분석 처리 증거 outbox를 모두 처리한다.
+분석 증거만 수동 실행하려면 `session-lake-loader receipt-incremental --json`을 사용한다.
+증거는 `/nilm/bronze/analysis-processing-receipt`, manifest는
+`/nilm/manifests/job=analysis-receipt-lake-loader`에 기록된다. 후속 일배치는 receipt가
+참조한 `(session_id, session_version)`을 확정된 세션 파일과 대조한다.
+
 ```text
 appliance_usage_session ──(PostgreSQL 트리거, 같은 트랜잭션)──▶ session_lake_outbox
                                                                      │ 미전달 이벤트
