@@ -75,6 +75,7 @@ services:
       KAFKA_ANALYSIS_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
       KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
+      KAFKA_HOUSEHOLD_PROFILE_TOPIC: ${KAFKA_HOUSEHOLD_PROFILE_TOPIC:-gold.household-profile.v1}
       KAFKA_PARTITIONS: ${KAFKA_PARTITIONS:-24}
     entrypoint: ["/bin/bash", "-ec"]
     command:
@@ -87,6 +88,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_MONITORING_DLQ_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_ACTIVITY_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_ANALYSIS_DATA_QUALITY_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic "$$KAFKA_HOUSEHOLD_PROFILE_TOPIC" --partitions "$$KAFKA_PARTITIONS" --replication-factor 1
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_RAW_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_SNAPSHOT_TOPIC"
@@ -94,6 +96,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_MONITORING_DLQ_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_ACTIVITY_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_DATA_QUALITY_TOPIC"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_HOUSEHOLD_PROFILE_TOPIC"
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.4
@@ -338,7 +341,10 @@ services:
       KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
       KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
+      KAFKA_HOUSEHOLD_PROFILE_TOPIC: ${KAFKA_HOUSEHOLD_PROFILE_TOPIC:-gold.household-profile.v1}
       MONITORING_KAFKA_GROUP_ID: ${MONITORING_KAFKA_GROUP_ID:-monitoring-service-analysis-event-v1}
+      MONITORING_KAFKA_HOUSEHOLD_PROFILE_GROUP_ID: ${MONITORING_KAFKA_HOUSEHOLD_PROFILE_GROUP_ID:-monitoring-service-household-profile-v1}
+      PROFILE_MAX_AGE_DAYS: "${PROFILE_MAX_AGE_DAYS:-3}"
       KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET:-earliest}
       KAFKA_CONSUMER_ENABLED: "${KAFKA_CONSUMER_ENABLED:-true}"
       WEB_PUSH_ENABLED: "${WEB_PUSH_ENABLED:-false}"

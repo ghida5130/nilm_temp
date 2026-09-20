@@ -72,6 +72,7 @@ services:
       KAFKA_ANALYSIS_DLQ_TOPIC: ${KAFKA_ANALYSIS_DLQ_TOPIC:-dlq.analysis}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
       KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
+      KAFKA_HOUSEHOLD_PROFILE_TOPIC: ${KAFKA_HOUSEHOLD_PROFILE_TOPIC:-gold.household-profile.v1}
       KAFKA_PARTITIONS: ${KAFKA_PARTITIONS:-24}
       KAFKA_RAW_RETENTION_MS: ${KAFKA_RAW_RETENTION_MS:-604800000}
       KAFKA_RAW_RETENTION_BYTES: ${KAFKA_RAW_RETENTION_BYTES:-2147483648}
@@ -102,6 +103,7 @@ services:
         configure_topic "$$KAFKA_ANALYSIS_DLQ_TOPIC" "$$KAFKA_DLQ_RETENTION_MS" "$$KAFKA_DLQ_RETENTION_BYTES" "$$KAFKA_DLQ_SEGMENT_BYTES"
         configure_topic "$$KAFKA_MONITORING_DLQ_TOPIC" "$$KAFKA_DLQ_RETENTION_MS" "$$KAFKA_DLQ_RETENTION_BYTES" "$$KAFKA_DLQ_SEGMENT_BYTES"
         configure_topic "$$KAFKA_OUTING_EVENT_TOPIC" "$$KAFKA_ANALYSIS_RETENTION_MS" "$$KAFKA_ANALYSIS_RETENTION_BYTES" "$$KAFKA_ANALYSIS_SEGMENT_BYTES"
+        configure_topic "$$KAFKA_HOUSEHOLD_PROFILE_TOPIC" "$$KAFKA_ANALYSIS_RETENTION_MS" "$$KAFKA_ANALYSIS_RETENTION_BYTES" "$$KAFKA_ANALYSIS_SEGMENT_BYTES"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_RAW_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_OUTING_EVENT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_EVENT_TOPIC"
@@ -110,6 +112,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_SNAPSHOT_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_ANALYSIS_DLQ_TOPIC"
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_MONITORING_DLQ_TOPIC"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --describe --topic "$$KAFKA_HOUSEHOLD_PROFILE_TOPIC"
 
   realtime-analysis-service:
     image: ${REALTIME_ANALYSIS_IMAGE:?REALTIME_ANALYSIS_IMAGE required}
