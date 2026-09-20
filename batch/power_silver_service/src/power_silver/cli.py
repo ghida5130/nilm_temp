@@ -25,6 +25,7 @@ from realtime_analysis.models import LakeBatchRun
 from sqlalchemy import select
 
 from power_silver.commit import LockNotAcquired, SilverCommitRepository
+from power_silver.analysis_job import run_analysis_daily
 from power_silver.config import get_settings
 from power_silver.constants import DATASETS, JOB_NAME, RUN_SKIPPED, RUN_SUCCEEDED
 from power_silver.job import config_version_of, run_daily
@@ -77,6 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     recover.add_argument("--date")
 
+    usage = commands.add_parser(
+        "usage-daily", help="분석 커버리지와 일별 가전 사용 요약을 만든다"
+    )
+    usage.add_argument("--date", help="대상 업무 날짜(YYYY-MM-DD). 기본값은 어제")
+
     return parser
 
 
@@ -114,6 +120,30 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print(f"recovered {published} run(s) for {target_date}")
         return 0
+
+    if arguments.command == "usage-daily":
+        target_date = (
+            date.fromisoformat(arguments.date)
+            if arguments.date
+            else default_target_date(settings)
+        )
+        spark = build_session(settings)
+        try:
+            manifest = run_analysis_daily(
+                settings,
+                target_date,
+                storage=storage,
+                session_factory=session_factory,
+                spark=spark,
+            )
+            logger.info(
+                "analysis-usage-daily %s succeeded: run_id=%s",
+                target_date,
+                manifest["run_id"],
+            )
+            return 0
+        finally:
+            spark.stop()
 
     targets = load_targets(settings.observation_targets_file)
     if arguments.command == "backfill":

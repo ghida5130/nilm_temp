@@ -41,6 +41,16 @@ class SilverSettings(BaseSettings):
     quarantine_base: str = "/nilm/quarantine/power_silver"
     manifest_base: str = "/nilm/manifests/job=power-silver-daily"
     staging_base: str = "/nilm/silver/.staging/job=power-silver-daily"
+    session_manifest_base: str = "/nilm/manifests/job=session-lake-loader"
+    receipt_manifest_base: str = "/nilm/manifests/job=analysis-receipt-lake-loader"
+    analysis_manifest_base: str = "/nilm/manifests/job=analysis-usage-daily"
+    analysis_staging_base: str = "/nilm/silver/.staging/job=analysis-usage-daily"
+    gold_base: str = "/nilm/gold"
+    analysis_rule_version: str = "analysis-coverage-v1"
+    analysis_run_id: str = Field(default="realtime-v1", min_length=1, max_length=100)
+    quality_policy_version: str = "baseline-quality-v1"
+    analysis_minimum_coverage_ratio: float = Field(default=0.95, ge=0, le=1)
+    analysis_maximum_gap_seconds: int = Field(default=120, ge=0)
 
     # 업무 날짜 기준. 한국은 서머타임이 없어 고정 오프셋이 tz 데이터베이스보다 안전하다.
     business_utc_offset_seconds: int = Field(default=9 * 3600, gt=-86400, lt=86400)

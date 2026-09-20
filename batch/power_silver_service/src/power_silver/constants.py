@@ -10,6 +10,9 @@ JOB_NAME = "power-silver-daily"
 
 DATASET_POWER_CLEAN = "power_clean"
 DATASET_OBSERVATION = "household_observation_daily"
+DATASET_ANALYSIS_COVERAGE = "analysis_coverage"
+DATASET_SESSION_SLICES = "appliance_session_daily_slices"
+DATASET_APPLIANCE_USAGE_DAILY = "appliance_usage_daily"
 DATASETS = (DATASET_POWER_CLEAN, DATASET_OBSERVATION)
 
 # 작업 상태. WAITING_INPUT은 입력이 준비되지 않아 결과를 확정하지 않은 실행이다.

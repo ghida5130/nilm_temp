@@ -4,6 +4,12 @@ Bronze에 쌓인 전력 원본을 읽어 **정제 전력(`power_clean`)** 과 **
 (`household_observation_daily`)** 을 만드는 Spark 일일 배치다. 기존 수집기
 (`collection/bronze-loader`)와 DB 기반 집계(`batch/aggregation_service`)는 그대로 둔다.
 
+전력 Silver 확정 후 `power-silver usage-daily --date YYYY-MM-DD`를 실행하면 확정된
+receipt·세션 manifest를 결합해 Silver `analysis_coverage`,
+`appliance_session_daily_slices`, Gold `appliance_usage_daily`, DB
+`analysis_daily_completion` revision을 생성한다. `NOT_USED`는 관측·분석·전달·세션
+품질이 모두 적격일 때만 만들며, 나머지 미확인 상태는 `UNKNOWN`으로 보존한다.
+
 ```text
 Kafka ──▶ bronze-loader ──▶ HDFS Bronze 전력 원본 + 적재 manifest
                                      │
