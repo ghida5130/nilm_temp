@@ -22,6 +22,9 @@ create analysis.event.v1 8
 # 모니터링 DLQ
 create dlq.monitoring 1
 
+# 담당자 가입 (생산: iot-device / 소비: 모니터링)
+create device.manager-registered.v1 1
+
 # 위험 정책 변경 요청/결과 (모니터링 <-> 분석)
 create risk-policy.change.request.v1 1
 create risk-policy.change.result.v1 1

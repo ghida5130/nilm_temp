@@ -89,6 +89,8 @@ services:
       POSTGRES_URL: jdbc:postgresql://${POSTGRES_HOST:?POSTGRES_HOST required}:5432/device_db
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS required}
+      KAFKA_MANAGER_REGISTERED_TOPIC: ${KAFKA_MANAGER_REGISTERED_TOPIC:-device.manager-registered.v1}
     depends_on:
       keycloak:
         condition: service_healthy
@@ -123,6 +125,7 @@ services:
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
       KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
       KAFKA_HOUSEHOLD_PROFILE_TOPIC: ${KAFKA_HOUSEHOLD_PROFILE_TOPIC:-gold.household-profile.v1}
+      KAFKA_MANAGER_REGISTERED_TOPIC: ${KAFKA_MANAGER_REGISTERED_TOPIC:-device.manager-registered.v1}
       MONITORING_KAFKA_GROUP_ID: ${MONITORING_KAFKA_GROUP_ID:-monitoring-service-analysis-event-v1}
       MONITORING_KAFKA_HOUSEHOLD_PROFILE_GROUP_ID: ${MONITORING_KAFKA_HOUSEHOLD_PROFILE_GROUP_ID:-monitoring-service-household-profile-v1}
       PROFILE_MAX_AGE_DAYS: "${PROFILE_MAX_AGE_DAYS:-3}"
