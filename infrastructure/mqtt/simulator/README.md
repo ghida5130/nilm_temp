@@ -886,3 +886,39 @@ expected_physical_on_seconds: 2160
 - **계획 결측 슬롯 렌더링 계약**:
   - 결측 구간은 `measurementAvailable: false`, `sensorFault: false`, 계측치 `null`로 발행됩니다.
   - 파형 차트에 `null`을 넣어 선이 자연스럽게 끊기도록 렌더링하며(0으로 채우지 않음), 전력 메트릭 카드는 "—"로 표시하여 이전 값으로 인한 오해를 방지합니다. 정상 틱 재개 시 차트는 다시 정상 연결됩니다.
+
+---
+
+## DATA_GAP 감지: 실제 수신 중단과 측정 시각 공백
+
+분석 서비스(`realtime-analysis-service`)는 두 가지 경로로 전력 데이터 공백(DATA_GAP)을 감지합니다.
+
+### 1. 수신 중단 감지 (watchdog, `source: "watchdog"`)
+
+| 항목 | 내용 |
+|------|------|
+| 감지 주체 | `DataQualityWatchdog` 스레드 (주기적 `detect_gaps()` 호출) |
+| 기준 시각 | 마지막 Kafka 메시지의 **실제 수신 시각** (`received_at`) |
+| 감지 조건 | 현재 실시간 시각 − 마지막 수신 시각 ≥ 임계값 (기본 120초) |
+| 발생 시점 | 메시지가 전혀 오지 않아도 watchdog 폴링 주기마다 검사 |
+| 용도 | 시뮬레이터가 멈추거나 네트워크가 단절된 경우 |
+
+### 2. 측정 시각 공백 감지 (`source: "measured_at"`)
+
+| 항목 | 내용 |
+|------|------|
+| 감지 주체 | `DataQualityMonitor.observe()` (Kafka 메시지 수신 시 호출) |
+| 기준 시각 | 연속된 두 유효 **측정 시각** (`measured_at`)의 차이 |
+| 감지 조건 | (`새 measured_at` − `직전 measured_at` − 1초) ≥ 임계값 |
+| 발생 시점 | 고장 후 **첫 복구 샘플이 도착했을 때** GAP을 발견 |
+| 용도 | 배속 실행 시 실제 수신 간격은 짧지만 가상 시각에 공백이 있는 경우 |
+
+### 배속 실행 시 이벤트 발생 시점
+
+`sensor_fault` 시나리오를 10×배속으로 실행하면:
+
+1. **고장 구간 중**: MQTT 메시지 0건 발행. 실제 12초만 대기하므로 watchdog(120초 임계값)은 감지 불가.
+2. **복구 첫 샘플 도착 시**: `observe()`가 `measured_at` 간격(121초)에서 예상 간격(1초)을 뺀 120초가 임계값 이상임을 발견 → `DATA_GAP(source="measured_at")` 발행.
+3. **복구 확인 완료 시**: 설정된 `recovery_confirmation_samples` 충족 후 → `DATA_RECOVERED(source="measured_at")` 발행.
+
+> **참고**: CLI `sensor_fault`는 `--date`·`--start-time` 미지정 시 루프 시작 전 UTC 시각을 한 번 고정하여 배속과 무관하게 `measured_at`이 가상 1초씩 증가합니다. 웹 시뮬레이터는 기존과 동일하게 `base_dt + cycle` 방식을 사용합니다.
