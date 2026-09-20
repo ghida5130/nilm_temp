@@ -11,4 +11,6 @@ public interface ManagerRepository
     Optional<Manager> findByAuthSub(String authSub); // JWT sub와 담당자 auth_sub 연결
 
     boolean existsByEmailIgnoreCaseAndIdNot(String email, Long id);
+
+    boolean existsByEmailIgnoreCase(String email);
 }

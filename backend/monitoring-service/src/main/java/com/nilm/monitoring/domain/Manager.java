@@ -36,10 +36,16 @@ public class Manager {
     }
 
     public Manager(String authSub, String name, String organization, String phone) {
+        this(authSub, name, organization, phone, null);
+    }
+
+    public Manager(
+            String authSub, String name, String organization, String phone, String email) {
         this.authSub = authSub;
         this.name = name;
         this.organization = organization;
         this.phone = phone;
+        this.email = email;
     }
 
     public void changeSoundSetting(boolean enabled) {
