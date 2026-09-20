@@ -19,6 +19,11 @@ docker build --target test --build-context analysis=ai/realtime-analysis-service
   batch/power_silver_service
 docker build --target runtime --build-context analysis=ai/realtime-analysis-service \
   -t "$IMAGE_REPOSITORY:power-silver-$RELEASE_ID" batch/power_silver_service
+docker build --target test --build-context analysis=ai/realtime-analysis-service \
+  --build-context silver=batch/power_silver_service batch/gold_profile_service
+docker build --target runtime --build-context analysis=ai/realtime-analysis-service \
+  --build-context silver=batch/power_silver_service \
+  -t "$IMAGE_REPOSITORY:gold-profile-$RELEASE_ID" batch/gold_profile_service
 frontend_args=()
 if [[ -n "${FRONTEND_ENV:-}" ]]; then
   frontend_hash=$(sha256sum "$FRONTEND_ENV" | cut -d ' ' -f 1)

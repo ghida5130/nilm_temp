@@ -97,7 +97,7 @@ class ReleaseTests(unittest.TestCase):
                 release.update_env(env, self.data)
                 config = json.loads(subprocess.check_output([
                     "docker", "compose", "--env-file", str(env), "-f", str(directory / "compose.yaml"),
-                    # 일회성 배치(power-silver)는 profile 뒤에 있어 기본 출력에서 빠진다.
+                    # 일회성 배치는 profile 뒤에 있어 기본 출력에서 빠진다.
                     "--profile", "*", "config", "--format", "json"], text=True))
                 self.assertEqual(config["name"], "nilm-" + target)
                 for service in services:
@@ -123,9 +123,9 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(release, "docker_json", side_effect=self.docker_metadata), \
                 patch.object(release.subprocess, "run") as run:
             release.check_images(self.data, "b", pull=True)
-        self.assertEqual(run.call_count, 6)
+        self.assertEqual(run.call_count, 7)
         for service in ("realtime-analysis-service", "aggregation-service", "mqtt-kafka-bridge",
-                        "bronze-loader", "session-lake-loader", "power-silver"):
+                        "bronze-loader", "session-lake-loader", "power-silver", "gold-profile"):
             self.assertIn(self.data["images"][service]["reference"], str(run.call_args_list))
         self.assertNotIn(self.data["images"]["api-gateway"]["reference"], str(run.call_args_list))
 
@@ -135,7 +135,7 @@ class ReleaseTests(unittest.TestCase):
             release.check_images(self.data, "a", pull=True)
         self.assertEqual(run.call_count, 4)
         for service in ("realtime-analysis-service", "aggregation-service", "mqtt-kafka-bridge",
-                        "bronze-loader", "session-lake-loader", "power-silver"):
+                        "bronze-loader", "session-lake-loader", "power-silver", "gold-profile"):
             self.assertNotIn(self.data["images"][service]["reference"], str(run.call_args_list))
 
     def test_platform_and_digest_mismatch_block_deployment(self):
