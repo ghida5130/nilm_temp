@@ -10,7 +10,9 @@ import com.nilm.monitoring.service.ApplianceActivityService;
 import com.nilm.monitoring.service.NotificationReady;
 import com.nilm.monitoring.service.RiskAssessmentService;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,10 +37,15 @@ class RiskAssessmentFlowTest {
     private static final OffsetDateTime BASE = OffsetDateTime.parse("2026-09-21T12:10:00+09:00");
 
     /**
-     * 기준 시각이 속한 시간대 구간. 배치 표기를 따라 구간의 끝 시각만 적는다.
-     * KST 12:10은 12:00~12:30 구간이므로 "12:30"이다.
+     * 비교 기준 시각의 구간. 프로필 통계는 구간 끝 시각에서 잰 값이라
+     * 12:10에는 아직 오지 않은 "12:30"이 아니라 직전 경계인 "12:00"과 비교한다.
+     * 12:30을 지나는 평가도 있어 두 구간을 같은 값으로 함께 심는다.
      */
-    private static final String BUCKET = "12:30";
+    private static final String BUCKET = "12:00";
+
+    private static final String NEXT_BUCKET = "12:30";
+
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     /** 무활동 중앙값 1000초에서 z=5가 되는 경과시간. 점수 75 = 주의 등급이다. */
     private static final long WARNING_INACTIVITY_SECONDS = 5500;
@@ -57,6 +64,7 @@ class RiskAssessmentFlowTest {
         jdbc.update("delete from notifications");
         jdbc.update("delete from risk_assessments");
         jdbc.update("delete from analysis_events");
+        jdbc.update("delete from appliance_usage_episodes");
         jdbc.update("delete from appliance_states");
         jdbc.update("delete from household_daily_appliance_usage");
         jdbc.update("delete from household_observations");
@@ -96,18 +104,23 @@ class RiskAssessmentFlowTest {
         Long profileId = jdbc.queryForObject(
                 "select id from household_profiles", Long.class);
 
-        jdbc.update("""
-                insert into household_profile_statistics(profile_id, metric_name, weekday_group,
-                        time_bucket, sample_count, eligible_day_count, p50, p90, mad, unit,
-                        quality_status)
-                values (?, 'INACTIVITY_ELAPSED', 'ALL', ?, 20, 20, 1000, 4000, 0, 'seconds',
-                        'READY')
-                """, profileId, BUCKET);
+        for (String bucket : new String[]{BUCKET, NEXT_BUCKET}) {
+            jdbc.update("""
+                    insert into household_profile_statistics(profile_id, metric_name,
+                            weekday_group, time_bucket, sample_count, eligible_day_count,
+                            p50, p90, mad, unit, quality_status)
+                    values (?, 'INACTIVITY_ELAPSED', 'ALL', ?, 20, 20, 1000, 4000, 0, 'seconds',
+                            'READY')
+                    """, profileId, bucket);
+        }
     }
 
     /**
      * 평가가 볼 현재 상태를 기준 시각에 맞춘다.
      * 경과시간을 고정해야 매 평가에서 같은 점수가 나온다.
+     *
+     * <p>무활동 경과는 지금이 아니라 비교 기준 시각에서 잰다. 마지막 활동도 그 시각에서
+     * 거꾸로 세어 심어야 평가마다 같은 경과시간이 나온다.
      */
     private void observe(OffsetDateTime now) {
         jdbc.update("delete from household_observations");
@@ -116,7 +129,16 @@ class RiskAssessmentFlowTest {
                 values ('house-risk', ?, ?)
                 """, now, now);
         jdbc.update("update subjects set last_activity_at = ?",
-                now.minusSeconds(WARNING_INACTIVITY_SECONDS));
+                evaluationPoint(now).minusSeconds(WARNING_INACTIVITY_SECONDS));
+    }
+
+    /** 지금 이하의 가장 최근 30분 경계. 평가가 현재 값을 재는 시각이다. */
+    private OffsetDateTime evaluationPoint(OffsetDateTime now) {
+        ZonedDateTime local = now.atZoneSameInstant(KST);
+        int index = local.toLocalTime().toSecondOfDay() / 60 / 30;
+        return local.toLocalDate().atStartOfDay(KST)
+                .plusMinutes(index * 30L)
+                .toOffsetDateTime();
     }
 
     private void evaluateAt(OffsetDateTime now) {
@@ -225,7 +247,11 @@ class RiskAssessmentFlowTest {
         assertThat(jdbc.queryForObject(
                 "select indicators from risk_assessments", String.class))
                 .contains("\"code\":\"I\"")
-                .contains("NO_BASELINE");
+                .contains("\"bucket\":\"12:00\"")
+                // 이 경로는 아직 옛 입력 계약을 쓴다. 유효 사용 정의를 확인할 수 없어
+                // 루틴 미사용과 활동 감소는 계산하지 않고 제외 사유를 남긴다.
+                // 통합 단계에서 CurrentStateProvider로 바꾸면 세 지표가 모두 산다.
+                .contains("USAGE_UNVERIFIED");
     }
 
     @Test

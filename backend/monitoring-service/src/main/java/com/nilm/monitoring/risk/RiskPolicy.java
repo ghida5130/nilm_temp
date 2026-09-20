@@ -23,6 +23,7 @@ import java.time.Duration;
  * @param realertInterval 같은 등급이 이어질 때 알림을 다시 보내기까지의 최소 간격
  * @param minSampleCount 비교 통계 한 줄을 믿기 위한 최소 표본 수
  * @param minEligibleDays 신뢰도 1.0에 도달하는 유효 관측일 수
+ * @param minObservationCoverage 하루치 단정을 세우기 위한 최소 관측 커버리지 비율
  */
 public record RiskPolicy(
         String policyVersion,
@@ -39,7 +40,8 @@ public record RiskPolicy(
         Duration observationMaxAge,
         Duration realertInterval,
         int minSampleCount,
-        int minEligibleDays
+        int minEligibleDays,
+        double minObservationCoverage
 ) {
 
     public RiskPolicy {
@@ -51,6 +53,9 @@ public record RiskPolicy(
         }
         if (minEligibleDays <= 0) {
             throw new IllegalStateException("신뢰도 기준 관측일 수는 1 이상이어야 합니다.");
+        }
+        if (minObservationCoverage <= 0 || minObservationCoverage > 1) {
+            throw new IllegalStateException("최소 관측 커버리지는 0 초과 1 이하여야 합니다.");
         }
     }
 }

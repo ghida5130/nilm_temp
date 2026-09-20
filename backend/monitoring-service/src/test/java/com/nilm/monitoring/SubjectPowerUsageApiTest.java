@@ -40,6 +40,7 @@ class SubjectPowerUsageApiTest {
         jdbc.update("delete from hourly_power_usage");
         jdbc.update("delete from notifications");
         jdbc.update("delete from analysis_events");
+        jdbc.update("delete from appliance_usage_episodes");
         jdbc.update("delete from appliance_states");
         jdbc.update("delete from household_observations");
         jdbc.update("delete from subjects");

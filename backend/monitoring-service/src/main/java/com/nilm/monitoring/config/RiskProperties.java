@@ -67,6 +67,19 @@ public class RiskProperties {
     /** 신뢰도 1.0에 도달하는 유효 관측일 수. */
     private int minEligibleDays = 14;
 
+    /**
+     * 하루치 단정("오늘 한 번도 쓰지 않았다")을 세우기 위한 최소 관측 커버리지 비율.
+     * Gold가 기준선 표본으로 받아들이는 관측일의 커버리지 하한(0.95)과 같은 값으로 둔다.
+     * 비교 대상이 완전히 관측된 날들의 분포이기 때문이다.
+     */
+    private double minObservationCoverage = 0.95;
+
+    /**
+     * 스냅샷 사이가 이보다 벌어지면 그 구간은 보지 못한 구간이다.
+     * 분석 서비스의 데이터 공백 기준(app.power-usage.gap-threshold)과 같은 값으로 둔다.
+     */
+    private Duration observationGapThreshold = Duration.ofSeconds(120);
+
     /** 같은 결과가 이어질 때 평가 이력을 남기는 간격. */
     private Duration assessmentLogInterval = Duration.ofMinutes(30);
 
@@ -94,7 +107,8 @@ public class RiskProperties {
                 observationMaxAge,
                 realertInterval,
                 minSampleCount,
-                minEligibleDays
+                minEligibleDays,
+                minObservationCoverage
         );
     }
 

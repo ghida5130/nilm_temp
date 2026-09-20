@@ -39,6 +39,7 @@ class PowerUsageAccumulationTest {
         jdbc.update("delete from household_observations");
         jdbc.update("delete from notifications");
         jdbc.update("delete from risk_assessments");
+        jdbc.update("delete from appliance_usage_episodes");
         jdbc.update("delete from appliance_states");
         jdbc.update("delete from subjects");
         jdbc.update("""
