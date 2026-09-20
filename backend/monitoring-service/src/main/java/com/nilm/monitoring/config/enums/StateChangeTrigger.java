@@ -22,5 +22,8 @@ public enum StateChangeTrigger {
     AWAY_MODE,
 
     /** 가전 ON→OFF 전환으로 마지막 활동이 갱신됨 */
-    ACTIVITY
+    ACTIVITY,
+
+    /** Gold 배치가 만든 생활 프로필의 최신 버전이 반영됨 */
+    PROFILE_UPDATED
 }

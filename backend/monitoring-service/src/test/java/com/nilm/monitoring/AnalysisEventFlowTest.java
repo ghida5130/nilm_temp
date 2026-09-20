@@ -50,8 +50,9 @@ class AnalysisEventFlowTest {
 
     @Test
     void registersKafkaListenerAndStartsWithoutVapidKeys() {
-        // analysis.event.v1(이상 징후)과 analysis.snapshot.v1(가전 ON/OFF) 두 개를 구독한다.
-        assertThat(listeners.getListenerContainers()).hasSize(2);
+        // analysis.event.v1(이상 징후), analysis.snapshot.v1(가전 ON/OFF),
+        // gold.household-profile.v1(생활 프로필) 세 개를 구독한다.
+        assertThat(listeners.getListenerContainers()).hasSize(3);
         assertThat(context.getBeansOfType(WebPushSender.class)).isEmpty();
         assertThat(listeners.getListenerContainers()).allMatch(c -> !c.isRunning());
     }
