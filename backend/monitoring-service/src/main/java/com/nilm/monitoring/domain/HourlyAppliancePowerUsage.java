@@ -54,4 +54,10 @@ public class HourlyAppliancePowerUsage {
         this.energyWh = energyWh;
         this.updatedAt = updatedAt;
     }
+
+    /** 배분된 전력량을 이 구간에 더한다. 기준은 {@link HourlyPowerUsage#add}와 같다. */
+    public void add(BigDecimal amount, OffsetDateTime now) {
+        this.energyWh = this.energyWh.add(amount);
+        this.updatedAt = now;
+    }
 }

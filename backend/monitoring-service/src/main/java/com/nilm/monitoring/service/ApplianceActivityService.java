@@ -46,6 +46,7 @@ public class ApplianceActivityService {
     private final HouseholdObservationRepository observations;
     private final HouseholdDailyApplianceUsageRepository dailyUsage;
     private final RiskAssessmentService assessments;
+    private final PowerUsageAccumulator powerUsage;
     private final ApplicationEventPublisher publisher;
 
     @Transactional
@@ -67,6 +68,10 @@ public class ApplianceActivityService {
         // 평가가 조용한 시간을 관측 두절로 오해하지 않는다.
         // 가구 행 락을 잡지 않는다. 상시로 들어오는 흐름이 이벤트 처리와 부딪히면 안 된다.
         recordObservation(message, now);
+
+        // 전환이 없어도 전력은 계속 쓰인다. 아래 조기 반환보다 앞에서 적산해야
+        // 조용한 시간대의 그래프가 비지 않는다.
+        powerUsage.accumulate(message, now);
 
         List<ApplianceState> stored =
                 applianceStates.findByHouseholdId(message.householdId());
