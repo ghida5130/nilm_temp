@@ -19,7 +19,7 @@ def fixture():
     repository = "docker.io/leejeongmin24/on-maum"
     data = dict(schema=1, repository=repository, git_sha=sha, release_id=sha + "-b4", images={})
     for index, service in enumerate(release.SERVICES, 1):
-        digest = "sha256:" + str(index) * 64
+        digest = "sha256:" + f"{index:064x}"
         data["images"][service] = dict(tag=f'{repository}:{service}-{data["release_id"]}',
                                         digest=digest, reference=f"{repository}@{digest}")
     return data
@@ -97,7 +97,8 @@ class ReleaseTests(unittest.TestCase):
                 release.update_env(env, self.data)
                 config = json.loads(subprocess.check_output([
                     "docker", "compose", "--env-file", str(env), "-f", str(directory / "compose.yaml"),
-                    "config", "--format", "json"], text=True))
+                    # 일회성 배치(power-silver)는 profile 뒤에 있어 기본 출력에서 빠진다.
+                    "--profile", "*", "config", "--format", "json"], text=True))
                 self.assertEqual(config["name"], "nilm-" + target)
                 for service in services:
                     self.assertEqual(config["services"][service]["image"], self.data["images"][service]["reference"])
@@ -118,13 +119,13 @@ class ReleaseTests(unittest.TestCase):
             return {"OSType": "linux", "Architecture": "x86_64"}
         return [{"Os": "linux", "Architecture": "amd64", "RepoDigests": [args[-1].removeprefix("docker.io/")]}]
 
-    def test_b_pulls_analysis_bridge_and_loaders_by_digest(self):
+    def test_b_pulls_analysis_batch_bridge_and_loaders_by_digest(self):
         with patch.object(release, "docker_json", side_effect=self.docker_metadata), \
                 patch.object(release.subprocess, "run") as run:
             release.check_images(self.data, "b", pull=True)
-        self.assertEqual(run.call_count, 5)
+        self.assertEqual(run.call_count, 6)
         for service in ("realtime-analysis-service", "aggregation-service", "mqtt-kafka-bridge",
-                        "bronze-loader", "session-lake-loader"):
+                        "bronze-loader", "session-lake-loader", "power-silver"):
             self.assertIn(self.data["images"][service]["reference"], str(run.call_args_list))
         self.assertNotIn(self.data["images"]["api-gateway"]["reference"], str(run.call_args_list))
 
@@ -134,7 +135,7 @@ class ReleaseTests(unittest.TestCase):
             release.check_images(self.data, "a", pull=True)
         self.assertEqual(run.call_count, 4)
         for service in ("realtime-analysis-service", "aggregation-service", "mqtt-kafka-bridge",
-                        "bronze-loader", "session-lake-loader"):
+                        "bronze-loader", "session-lake-loader", "power-silver"):
             self.assertNotIn(self.data["images"][service]["reference"], str(run.call_args_list))
 
     def test_platform_and_digest_mismatch_block_deployment(self):

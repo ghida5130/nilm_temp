@@ -15,6 +15,10 @@ docker build --target test --build-context analysis=ai/realtime-analysis-service
   collection/session-lake-loader
 docker build --target runtime --build-context analysis=ai/realtime-analysis-service \
   -t "$IMAGE_REPOSITORY:session-lake-loader-$RELEASE_ID" collection/session-lake-loader
+docker build --target test --build-context analysis=ai/realtime-analysis-service \
+  batch/power_silver_service
+docker build --target runtime --build-context analysis=ai/realtime-analysis-service \
+  -t "$IMAGE_REPOSITORY:power-silver-$RELEASE_ID" batch/power_silver_service
 frontend_args=()
 if [[ -n "${FRONTEND_ENV:-}" ]]; then
   frontend_hash=$(sha256sum "$FRONTEND_ENV" | cut -d ' ' -f 1)

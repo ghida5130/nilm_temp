@@ -19,6 +19,7 @@ SERVICES = {
     "mqtt-kafka-bridge": "MQTT_KAFKA_BRIDGE_IMAGE",
     "bronze-loader": "BRONZE_LOADER_IMAGE",
     "session-lake-loader": "SESSION_LAKE_LOADER_IMAGE",
+    "power-silver": "POWER_SILVER_IMAGE",
 }
 TARGETS = {
     "a": (
@@ -33,6 +34,7 @@ TARGETS = {
         "mqtt-kafka-bridge",
         "bronze-loader",
         "session-lake-loader",
+        "power-silver",
     ),
 }
 REPOSITORY = re.compile(r"docker\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*/[a-z0-9]+(?:[._-][a-z0-9]+)*")

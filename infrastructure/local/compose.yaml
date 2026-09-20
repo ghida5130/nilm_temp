@@ -512,6 +512,54 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Bronze 전력 원본 -> Silver 정제 전력·가구 관측일 (Spark 일일 배치).
+  # 상시 서비스가 아니라 하루에 한 번 도는 작업이라 profiles로 빼 두고 필요할 때 실행한다:
+  #   docker compose run --rm power-silver power-silver run --date 2026-09-19
+  power-silver:
+    build:
+      # session-lake-loader와 같은 이유로 저장소 루트 컨텍스트를 쓰지 않는다.
+      context: ../../batch/power_silver_service
+      additional_contexts:
+        analysis: ../../ai/realtime-analysis-service
+      target: runtime
+    image: nilm-power-silver:local
+    profiles:
+      - batch
+    restart: "no"
+    init: true
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: analysis_db
+      DATABASE_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      HDFS_URL: ${POWER_SILVER_HDFS_URL:-http://namenode:9870}
+      HDFS_USER: root
+      LAKE_FS_URI: ${POWER_SILVER_LAKE_FS_URI:-hdfs://namenode:9000}
+      BRONZE_BASE: ${BRONZE_BASE:-/nilm/bronze/power}
+      BRONZE_MANIFEST_BASE: ${BRONZE_MANIFEST_BASE:-/nilm/manifests/job=bronze-loader}
+      SILVER_BASE: ${SILVER_BASE:-/nilm/silver}
+      QUARANTINE_BASE: ${POWER_SILVER_QUARANTINE_BASE:-/nilm/quarantine/power_silver}
+      MANIFEST_BASE: ${POWER_SILVER_MANIFEST_BASE:-/nilm/manifests/job=power-silver-daily}
+      BUSINESS_UTC_OFFSET_SECONDS: ${BUSINESS_UTC_OFFSET_SECONDS:-32400}
+      RULE_VERSION: ${POWER_SILVER_RULE_VERSION:-power-silver-v1}
+      VALID_COVERAGE_RATIO: ${ANALYSIS_OBSERVATION_VALID_COVERAGE_RATIO:-0.95}
+      INPUT_READY_GRACE_SECONDS: ${POWER_SILVER_INPUT_READY_GRACE_SECONDS:-1800}
+      INPUT_WAIT_DEADLINE_SECONDS: ${POWER_SILVER_INPUT_WAIT_DEADLINE_SECONDS:-21600}
+      SPARK_MASTER: ${POWER_SILVER_SPARK_MASTER:-}
+      SPARK_SHUFFLE_PARTITIONS: ${POWER_SILVER_SPARK_SHUFFLE_PARTITIONS:-0}
+      LOG_LEVEL: ${POWER_SILVER_LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      realtime-analysis-service:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres_data:
     name: nilm-local_postgres_data
