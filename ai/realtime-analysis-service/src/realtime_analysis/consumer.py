@@ -58,6 +58,7 @@ class AnalysisConsumer:
             [self._input_topic],
             on_assign=self._on_assign,
             on_revoke=self._on_revoke,
+            on_lost=self._on_lost,
         )
         logger.info("Kafka consumer started: topic=%s", self._input_topic)
         next_lag_refresh = time.monotonic()
@@ -117,8 +118,8 @@ class AnalysisConsumer:
                         str(error),
                     )
                 self._metrics.record_dlq("INVALID_JSON")
-                with stage("offset_commit"):
-                    self._commit(message)
+                with stage("offset_store"):
+                    self._store_offset(message)
                 timer.mark("dlq")
                 return
             except ValidationError as error:
@@ -130,8 +131,8 @@ class AnalysisConsumer:
                         str(error),
                     )
                 self._metrics.record_dlq("VALIDATION_ERROR")
-                with stage("offset_commit"):
-                    self._commit(message)
+                with stage("offset_store"):
+                    self._store_offset(message)
                 timer.mark("dlq")
                 return
 
@@ -148,8 +149,8 @@ class AnalysisConsumer:
                     offset=offset,
                 ),
             )
-            with stage("offset_commit"):
-                self._commit(message)
+            with stage("offset_store"):
+                self._store_offset(message)
             timer.mark("processed")
 
     @staticmethod
@@ -159,8 +160,29 @@ class AnalysisConsumer:
             raise json.JSONDecodeError("Kafka message value is null", "", 0)
         return json.loads(raw_value.decode("utf-8"))
 
-    def _commit(self, message: Message) -> None:
-        self._consumer.commit(message=message, asynchronous=False)
+    def _store_offset(self, message: Message) -> bool:
+        """Mark a processed offset for the rebalance-aware auto committer."""
+
+        try:
+            self._consumer.store_offsets(message=message)
+            return True
+        except KafkaException as error:
+            kafka_error = error.args[0] if error.args else None
+            if (
+                isinstance(kafka_error, KafkaError)
+                and kafka_error.code() == KafkaError._STATE
+            ):
+                self._metrics.record_error("offset_store", kafka_error.name())
+                logger.warning(
+                    "Offset store skipped after partition loss: "
+                    "topic=%s partition=%s offset=%s error=%s",
+                    self._message_string(message, "topic"),
+                    self._message_int(message, "partition"),
+                    self._message_int(message, "offset"),
+                    kafka_error.name(),
+                )
+                return False
+            raise
 
     def _on_assign(
         self,
@@ -187,6 +209,37 @@ class AnalysisConsumer:
     ) -> None:
         """Reset only households owned by partitions being revoked."""
 
+        reset_count = self._discard_partition_state(partitions)
+        self._metrics.record_consumer_rebalance("revoke")
+        self._metrics.set_assigned_partitions(len(self._assigned_partitions))
+        self._metrics.record_household_state_resets(reset_count)
+        logger.info(
+            "Kafka partitions revoked: partitions=%s reset_households=%s",
+            self._partition_labels(partitions),
+            reset_count,
+        )
+
+    def _on_lost(
+        self,
+        _consumer: Consumer,
+        partitions: list[TopicPartition],
+    ) -> None:
+        """Reset state for partitions lost before a normal revoke completed."""
+
+        reset_count = self._discard_partition_state(partitions)
+        self._metrics.record_consumer_rebalance("lost")
+        self._metrics.set_assigned_partitions(len(self._assigned_partitions))
+        self._metrics.record_household_state_resets(reset_count)
+        logger.warning(
+            "Kafka partitions lost: partitions=%s reset_households=%s",
+            self._partition_labels(partitions),
+            reset_count,
+        )
+
+    def _discard_partition_state(
+        self,
+        partitions: list[TopicPartition],
+    ) -> int:
         revoked_households: set[str] = set()
         for partition in partitions:
             key = (partition.topic, partition.partition)
@@ -199,14 +252,7 @@ class AnalysisConsumer:
             )
         for household_id in sorted(revoked_households):
             self._handler.reset_household(household_id)
-        self._metrics.record_consumer_rebalance("revoke")
-        self._metrics.set_assigned_partitions(len(self._assigned_partitions))
-        self._metrics.record_household_state_resets(len(revoked_households))
-        logger.info(
-            "Kafka partitions revoked: partitions=%s reset_households=%s",
-            self._partition_labels(partitions),
-            len(revoked_households),
-        )
+        return len(revoked_households)
 
     def _remember_household(
         self,

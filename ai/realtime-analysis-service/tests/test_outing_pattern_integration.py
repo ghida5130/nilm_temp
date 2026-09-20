@@ -220,7 +220,8 @@ def test_kafka_latest_outing_excludes_only_overlapping_routine(
     assert [event.reason["appliance_type"] for event in routine_events] == [
         "MICROWAVE"
     ]
-    assert kafka_consumer.commit.call_count == 2
+    assert kafka_consumer.store_offsets.call_count == 2
+    kafka_consumer.commit.assert_not_called()
     dlq.publish.assert_not_called()
 
 
@@ -275,5 +276,6 @@ def test_kafka_outing_state_suspends_and_restarts_awake_inactivity(
         "start": "23:00",
         "end": "07:00",
     }
-    assert kafka_consumer.commit.call_count == 2
+    assert kafka_consumer.store_offsets.call_count == 2
+    kafka_consumer.commit.assert_not_called()
     dlq.publish.assert_not_called()

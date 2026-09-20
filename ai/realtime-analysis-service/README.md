@@ -634,7 +634,7 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 `time.perf_counter_ns()`로 측정합니다.
 
 ```json
-{"event":"pipeline_timing","status":"processed","message_id":"8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6","household_id":"H001","kafka":{"topic":"power.raw.v1","partition":3,"offset":42},"processing_total_ns":1842000,"stage_durations_ns":{"activity_db":310000,"buffer_append":12000,"deserialize_validate":82000,"inference":1500000,"offset_commit":73000,"preprocess":21000,"snapshot_publish_ack":260000,"state_decision_transition":31000},"stage_counts":{"activity_db":1,"buffer_append":1,"deserialize_validate":1,"inference":1,"offset_commit":1,"preprocess":1,"snapshot_publish_ack":1,"state_decision_transition":1},"sensor_to_log_ns":2185000,"clock_skew_detected":false}
+{"event":"pipeline_timing","status":"processed","message_id":"8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6","household_id":"H001","kafka":{"topic":"power.raw.v1","partition":3,"offset":42},"processing_total_ns":1842000,"stage_durations_ns":{"activity_db":310000,"buffer_append":12000,"deserialize_validate":82000,"inference":1500000,"offset_store":73000,"preprocess":21000,"snapshot_publish_ack":260000,"state_decision_transition":31000},"stage_counts":{"activity_db":1,"buffer_append":1,"deserialize_validate":1,"inference":1,"offset_store":1,"preprocess":1,"snapshot_publish_ack":1,"state_decision_transition":1},"sensor_to_log_ns":2185000,"clock_skew_detected":false}
 ```
 
 주요 구간 이름은 다음과 같습니다.
@@ -652,7 +652,7 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 | `snapshot_publish_ack` | Snapshot Produce부터 Broker ACK까지 |
 | `anomaly_detection` | 기준선 조회와 이상 후보 판정 |
 | `event_publish_ack` | 이상 Event Produce부터 Broker ACK까지 |
-| `offset_commit` | 입력 Offset 동기 Commit |
+| `offset_store` | 처리 완료 Offset를 로컬 저장(안정 상태에서 자동 Commit) |
 | `dlq_publish_ack` | 잘못된 입력의 DLQ Broker ACK |
 
 같은 구간이 메시지 한 건에서 여러 번 실행되면 `stage_durations_ns`에는 합계,

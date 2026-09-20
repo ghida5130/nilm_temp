@@ -153,7 +153,8 @@ class Settings(BaseSettings):
             "bootstrap.servers": self.kafka_bootstrap_servers,
             "group.id": self.kafka_group_id,
             "auto.offset.reset": self.kafka_auto_offset_reset,
-            "enable.auto.commit": False,
+            "enable.auto.commit": True,
+            "enable.auto.offset.store": False,
             "partition.assignment.strategy": (
                 self.kafka_partition_assignment_strategy
             ),
@@ -176,7 +177,8 @@ class Settings(BaseSettings):
             "bootstrap.servers": self.kafka_bootstrap_servers,
             "group.id": self.kafka_outing_group_id,
             "auto.offset.reset": self.kafka_outing_auto_offset_reset,
-            "enable.auto.commit": False,
+            "enable.auto.commit": True,
+            "enable.auto.offset.store": False,
             "partition.assignment.strategy": (
                 self.kafka_partition_assignment_strategy
             ),

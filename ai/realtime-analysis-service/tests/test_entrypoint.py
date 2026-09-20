@@ -17,14 +17,16 @@ def test_default_topic_contracts() -> None:
         "bootstrap.servers": "localhost:9092",
         "group.id": "realtime-analysis-service-v1",
         "auto.offset.reset": "earliest",
-        "enable.auto.commit": False,
+        "enable.auto.commit": True,
+        "enable.auto.offset.store": False,
         "partition.assignment.strategy": "cooperative-sticky",
     }
     assert settings.outing_consumer_config() == {
         "bootstrap.servers": "localhost:9092",
         "group.id": "realtime-analysis-service-outing-v1",
         "auto.offset.reset": "earliest",
-        "enable.auto.commit": False,
+        "enable.auto.commit": True,
+        "enable.auto.offset.store": False,
         "partition.assignment.strategy": "cooperative-sticky",
     }
     assert settings.http_host == "0.0.0.0"

@@ -71,7 +71,7 @@ PATTERNS = (*REALTIME_PATTERNS, "ROUTINE_CHANGED")
 PATTERN_RESULTS = ("detected", "not_detected", "error")
 DAILY_JOBS = ("activity_index", "routine_changed", "baseline_update")
 DAILY_JOB_STATUSES = ("success", "error")
-REBALANCE_EVENTS = ("assign", "revoke")
+REBALANCE_EVENTS = ("assign", "revoke", "lost")
 
 
 class AnalysisMetrics:
