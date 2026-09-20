@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from realtime_analysis.config import Settings
 from realtime_analysis.dlq import DlqPublisher
-from realtime_analysis.metrics import METRICS
+from realtime_analysis.metrics import AnalysisMetrics, METRICS
 from realtime_analysis.pipeline_timing import pipeline_timing, stage
 from realtime_analysis.schemas import PowerMeasurement, ProcessingSource
 
@@ -42,13 +42,16 @@ class AnalysisConsumer:
         dlq_publisher: DlqPublisher,
         handler: MeasurementHandler,
         consumer: Consumer | None = None,
+        metrics: AnalysisMetrics = METRICS,
     ) -> None:
         self._input_topic = settings.kafka_input_topic
         self._dlq_publisher = dlq_publisher
         self._handler = handler
         self._consumer = consumer or Consumer(settings.consumer_config())
+        self._metrics = metrics
         self._lag_refresh_seconds = settings.consumer_lag_refresh_seconds
         self._households_by_partition: dict[PartitionKey, set[str]] = {}
+        self._assigned_partitions: set[PartitionKey] = set()
 
     def run(self, stop_event: Event) -> None:
         self._consumer.subscribe(
@@ -113,7 +116,7 @@ class AnalysisConsumer:
                         "INVALID_JSON",
                         str(error),
                     )
-                METRICS.record_dlq("INVALID_JSON")
+                self._metrics.record_dlq("INVALID_JSON")
                 with stage("offset_commit"):
                     self._commit(message)
                 timer.mark("dlq")
@@ -126,7 +129,7 @@ class AnalysisConsumer:
                         "VALIDATION_ERROR",
                         str(error),
                     )
-                METRICS.record_dlq("VALIDATION_ERROR")
+                self._metrics.record_dlq("VALIDATION_ERROR")
                 with stage("offset_commit"):
                     self._commit(message)
                 timer.mark("dlq")
@@ -167,10 +170,11 @@ class AnalysisConsumer:
         """Register newly assigned partitions without touching retained state."""
 
         for partition in partitions:
-            self._households_by_partition.setdefault(
-                (partition.topic, partition.partition),
-                set(),
-            )
+            key = (partition.topic, partition.partition)
+            self._assigned_partitions.add(key)
+            self._households_by_partition.setdefault(key, set())
+        self._metrics.record_consumer_rebalance("assign")
+        self._metrics.set_assigned_partitions(len(self._assigned_partitions))
         logger.info(
             "Kafka partitions assigned: partitions=%s",
             self._partition_labels(partitions),
@@ -185,14 +189,19 @@ class AnalysisConsumer:
 
         revoked_households: set[str] = set()
         for partition in partitions:
+            key = (partition.topic, partition.partition)
+            self._assigned_partitions.discard(key)
             revoked_households.update(
                 self._households_by_partition.pop(
-                    (partition.topic, partition.partition),
+                    key,
                     set(),
                 )
             )
         for household_id in sorted(revoked_households):
             self._handler.reset_household(household_id)
+        self._metrics.record_consumer_rebalance("revoke")
+        self._metrics.set_assigned_partitions(len(self._assigned_partitions))
+        self._metrics.record_household_state_resets(len(revoked_households))
         logger.info(
             "Kafka partitions revoked: partitions=%s reset_households=%s",
             self._partition_labels(partitions),
@@ -234,9 +243,9 @@ class AnalysisConsumer:
                     cached=True,
                 )
                 lags[(position.topic, position.partition)] = high - position.offset
-            METRICS.replace_consumer_lag(lags)
+            self._metrics.replace_consumer_lag(lags)
         except Exception as error:
-            METRICS.record_error("consumer_lag", type(error).__name__)
+            self._metrics.record_error("consumer_lag", type(error).__name__)
             logger.warning("Kafka consumer lag refresh failed", exc_info=True)
 
     @staticmethod

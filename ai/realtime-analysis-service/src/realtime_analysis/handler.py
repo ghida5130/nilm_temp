@@ -67,6 +67,7 @@ class MeasurementHandler:
         self._model_version = model_version
         self._pipeline_version = pipeline_version
         self._state_epochs: dict[str, UUID] = {}
+        self._warming_households: set[str] = set()
 
     def reset_household(self, household_id: str) -> None:
         """Discard volatile state whose Kafka partition ownership was lost."""
@@ -77,6 +78,8 @@ class MeasurementHandler:
             self._data_quality_monitor.reset(household_id)
         self._detector.reset(household_id)
         self._state_epochs.pop(household_id, None)
+        self._warming_households.discard(household_id)
+        self._metrics.set_warmup_households(len(self._warming_households))
         logger.info("Volatile household state reset: household=%s", household_id)
 
     def __call__(
@@ -108,6 +111,7 @@ class MeasurementHandler:
             )
         with stage("buffer_append"):
             self._buffer.append(measurement)  # 입력값을 가구별 버퍼에 넣음
+        self._update_warmup_state(measurement.household_id)
         # 복구 확인 중에는 원본 관측만 누적하고 추론과 위험 이벤트 판단을 보류한다.
         if not quality_is_healthy:
             self._record_outcome(
@@ -233,6 +237,13 @@ class MeasurementHandler:
                 self._event_publisher.publish(anomaly.event)
             self._metrics.record_pattern_event(anomaly.event.event_type)
             self._detector.mark_emitted(anomaly)
+
+    def _update_warmup_state(self, household_id: str) -> None:
+        if self._buffer.is_ready(household_id):
+            self._warming_households.discard(household_id)
+        else:
+            self._warming_households.add(household_id)
+        self._metrics.set_warmup_households(len(self._warming_households))
 
     def _receipt(
         self,

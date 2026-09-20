@@ -323,3 +323,38 @@ def test_partition_revoke_reset_requires_target_household_to_refill_buffer() -> 
     assert buffer.is_ready("H001") is False
     buffer.append(measurement(0))
     assert buffer.is_ready("H001") is True
+
+
+def test_warmup_metric_tracks_each_household_until_its_window_is_ready() -> None:
+    registry = CollectorRegistry()
+    metrics = AnalysisMetrics(registry)
+    detector = Mock()
+    detector.detect.return_value = []
+    handler = MeasurementHandler(
+        buffer=HouseholdBuffer(window_size=3),
+        predictor=FakePredictor(),
+        state_decider=ApplianceStateDecider(
+            {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
+        ),
+        state_transition_detector=ApplianceStateTransitionDetector(3, 3, 0.05),
+        activity_repository=Mock(),
+        baseline_repository=BaselineRepository([]),
+        tracker=DailyActivityTracker(),
+        detector=detector,
+        event_publisher=RecordingPublisher(),  # type: ignore[arg-type]
+        snapshot_publisher=RecordingSnapshotPublisher(),  # type: ignore[arg-type]
+        timezone_name="Asia/Seoul",
+        metrics=metrics,
+    )
+    h002 = measurement(0).model_copy(update={"household_id": "H002"})
+
+    handler(measurement(0))
+    handler(h002)
+    assert registry.get_sample_value("nilm_analysis_warmup_households") == 2
+
+    handler(measurement(1))
+    handler(measurement(2))
+    assert registry.get_sample_value("nilm_analysis_warmup_households") == 1
+
+    handler.reset_household("H002")
+    assert registry.get_sample_value("nilm_analysis_warmup_households") == 0

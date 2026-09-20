@@ -203,6 +203,11 @@ services:
     # fixed host port would prevent this service from being scaled.
     expose:
       - "8000"
+    networks:
+      default:
+        aliases:
+          # Prometheus DNS service discovery expands this alias to every replica.
+          - realtime-analysis-service-local
     environment:
       HTTP_HOST: 0.0.0.0
       HTTP_PORT: 8000

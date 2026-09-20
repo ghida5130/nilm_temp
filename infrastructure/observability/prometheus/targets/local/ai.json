@@ -1,10 +1,10 @@
 [
   {
     "targets": [
-      "realtime-analysis-service:8000"
+      "aggregation-service:8000"
     ],
     "labels": {
-      "service": "realtime-analysis-service",
+      "service": "aggregation-service",
       "environment": "local"
     }
   }

@@ -4,9 +4,11 @@ from unittest.mock import Mock, call
 
 import pytest
 from confluent_kafka import TopicPartition
+from prometheus_client import CollectorRegistry
 
 from realtime_analysis.config import Settings
 from realtime_analysis.consumer import AnalysisConsumer
+from realtime_analysis.metrics import AnalysisMetrics
 
 
 def payload() -> dict[str, object]:
@@ -31,12 +33,18 @@ def kafka_message(value: object, *, partition: int = 0) -> Mock:
     return message
 
 
-def service(consumer: Mock, dlq: Mock, handler: Mock) -> AnalysisConsumer:
+def service(
+    consumer: Mock,
+    dlq: Mock,
+    handler: Mock,
+    metrics: AnalysisMetrics | None = None,
+) -> AnalysisConsumer:
     return AnalysisConsumer(
         settings=Settings(_env_file=None),
         dlq_publisher=dlq,
         handler=handler,
         consumer=consumer,
+        **({"metrics": metrics} if metrics is not None else {}),
     )
 
 
@@ -99,7 +107,9 @@ def test_run_registers_rebalance_callbacks() -> None:
 def test_revoke_resets_only_households_from_revoked_partitions() -> None:
     consumer = Mock()
     handler = Mock()
-    analysis_consumer = service(consumer, Mock(), handler)
+    registry = CollectorRegistry()
+    metrics = AnalysisMetrics(registry)
+    analysis_consumer = service(consumer, Mock(), handler, metrics)
     stop_event = Event()
     stop_event.set()
     analysis_consumer.run(stop_event)
@@ -109,6 +119,13 @@ def test_revoke_resets_only_households_from_revoked_partitions() -> None:
     partition_one = TopicPartition("power.raw.v1", 1)
 
     on_assign(consumer, [partition_zero, partition_one])
+    assert registry.get_sample_value(
+        "nilm_analysis_consumer_rebalances_total",
+        {"event": "assign"},
+    ) == 1
+    assert registry.get_sample_value(
+        "nilm_analysis_consumer_assigned_partitions"
+    ) == 2
     analysis_consumer.process_message(kafka_message(payload(), partition=0))
     second_payload = payload()
     second_payload["household_id"] = "H002"
@@ -119,6 +136,16 @@ def test_revoke_resets_only_households_from_revoked_partitions() -> None:
     on_revoke(consumer, [partition_zero])
 
     assert handler.reset_household.call_args_list == [call("H001")]
+    assert registry.get_sample_value(
+        "nilm_analysis_consumer_rebalances_total",
+        {"event": "revoke"},
+    ) == 1
+    assert registry.get_sample_value(
+        "nilm_analysis_consumer_assigned_partitions"
+    ) == 1
+    assert registry.get_sample_value(
+        "nilm_analysis_household_state_resets_total"
+    ) == 1
 
     on_revoke(consumer, [partition_one])
 
@@ -126,3 +153,9 @@ def test_revoke_resets_only_households_from_revoked_partitions() -> None:
         call("H001"),
         call("H002"),
     ]
+    assert registry.get_sample_value(
+        "nilm_analysis_consumer_assigned_partitions"
+    ) == 0
+    assert registry.get_sample_value(
+        "nilm_analysis_household_state_resets_total"
+    ) == 2
