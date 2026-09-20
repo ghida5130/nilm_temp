@@ -20,7 +20,7 @@ def _publish_input_day(spark, storage, session_factory, target_date, *, used):
     repository = SilverCommitRepository(session_factory, job_name="analysis-usage-daily")
     handle = repository.start(
         target_date, input_snapshot_id=f"power-{target_date}",
-        rule_version="analysis-v1", config_version="analysis-config-v1",
+        rule_version="analysis-v1", config_version="receipts=test;sessions=snapshot-1",
     )
     run_id = str(handle.run_id)
     usage_path = f"/nilm/gold/appliance_usage_daily/usage_date={target_date}/run_id={run_id}"
@@ -49,7 +49,7 @@ def _publish_input_day(spark, storage, session_factory, target_date, *, used):
     manifest = {
         "job": "analysis-usage-daily", "run_id": run_id, "attempt": handle.attempt,
         "target_date": target_date.isoformat(), "input_snapshot_id": f"power-{target_date}",
-        "rule_version": "analysis-v1", "config_version": "analysis-config-v1",
+        "rule_version": "analysis-v1", "config_version": "receipts=test;sessions=snapshot-1",
         "manifest_path": f"/input-manifest/{run_id}.json",
         "outputs": {
             DATASET_APPLIANCE_USAGE_DAILY: {"path": usage_path, "row_count": 1},

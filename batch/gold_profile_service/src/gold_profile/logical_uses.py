@@ -26,8 +26,33 @@ def build_logical_uses(
     window_start_at=None,
     window_end_at=None,
 ) -> DataFrame:
+    content = [
+        "household_id", "appliance_type", "original_started_at",
+        "original_ended_at", "end_imputed",
+    ]
+    conflicts = (
+        slices.groupBy("session_id", "session_version")
+        .agg(F.countDistinct(F.to_json(F.struct(*content))).alias("variants"))
+        .filter(F.col("variants") > 1)
+        .limit(1)
+        .collect()
+    )
+    if conflicts:
+        row = conflicts[0]
+        raise ValueError(
+            f"conflicting session slice: {row['session_id']} "
+            f"v{row['session_version']}"
+        )
+
+    # A session can occur in more than one daily output (cross-midnight), and an
+    # older daily output can still contain the pre-correction version.  Once the
+    # caller has proved that every date was prepared from one session-state
+    # snapshot, the largest producer revision is the only current state.
+    latest = Window.partitionBy("session_id").orderBy(F.col("session_version").desc())
     sessions = (
-        slices.filter(~F.col("end_imputed"))
+        slices.dropDuplicates(["session_id", "session_version", *content])
+        .withColumn("_latest", F.row_number().over(latest))
+        .filter((F.col("_latest") == 1) & ~F.col("end_imputed"))
         .select(
             "session_id", "session_version", "household_id", "appliance_type",
             F.col("original_started_at").alias("started_at"),

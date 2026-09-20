@@ -31,6 +31,7 @@ from gold_profile.statistical_profile import build_statistical_profiles
 from gold_profile.validation import (
     validate_baselines, validate_logical_uses, validate_statistics,
 )
+from gold_profile.session_snapshot import require_one_session_snapshot
 
 
 JOB_NAME = "gold-profile"
@@ -171,6 +172,15 @@ def _run_locked(
     final = _paths(settings, as_of_date, run_id, staging=False)
     all_refs = [*snapshot.usage_refs, *snapshot.slice_refs]
     try:
+        # A tombstone has no slice row.  Therefore row-level max(version) is safe
+        # only after all selected dates prove they were rebuilt from one global
+        # session state.  Incomplete profiles remain buildable but are rejected
+        # by the consumer and never become operational.
+        require_one_session_snapshot(
+            snapshot.slice_refs,
+            snapshot.expected_dates if not snapshot.incomplete
+            else tuple(ref.target_date for ref in snapshot.slice_refs),
+        )
         daily_usage = _read_paths(spark, storage, snapshot.usage_refs, USAGE_SCHEMA).cache()
         slices = _read_paths(spark, storage, snapshot.slice_refs, SLICE_SCHEMA).cache()
         business_zone = timezone(timedelta(seconds=settings.business_utc_offset_seconds))
