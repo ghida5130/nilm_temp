@@ -112,16 +112,22 @@ class _StandbyEnvironmentState:
 
 @dataclass
 class _ApplianceRuntimeState:
-    """단일 가전의 런타임 상태 머신 객체"""
-    state: str = "OFF"  # "OFF", "STARTING", "RUNNING", "RESTING"
+    """
+    단일 가전의 런타임 상태 머신 객체.
+
+    일정 기반 실행에서는 선언된 ON 구간이 곧 '사람이 가전을 사용한 구간'이므로
+    서모스탯/인버터 듀티 사이클(휴지 구간)을 적용하지 않고 연속 가동으로 유지한다.
+    따라서 RESTING 상태와 duty 잔여 카운터가 없다.
+    (확률 기반 레거시 시뮬레이터의 듀티 사이클은 engine/power_model.py에 그대로 남아 있다.)
+    """
+    state: str = "OFF"  # "OFF", "STARTING", "RUNNING"
     nominal_w: float = 0.0
     nominal_pf: float = 0.0
     inrush_remaining: int = 0
-    duty_remaining: int = 0
 
     @property
     def is_active(self) -> bool:
-        return self.state in ("STARTING", "RUNNING", "RESTING")
+        return self.state in ("STARTING", "RUNNING")
 
 
 def derive_household_seed(
@@ -298,14 +304,11 @@ class DeterministicScheduleRunner:
                 app_state.nominal_w = 0.0
                 app_state.nominal_pf = 0.0
                 app_state.inrush_remaining = 0
-                app_state.duty_remaining = 0
             elif t.transition_type == TransitionType.ON:
                 app_state.state = "STARTING"
                 app_state.nominal_w = self._rng.uniform(*profile["nominal_w"])
                 app_state.nominal_pf = self._rng.uniform(*profile["pf_nominal"])
                 app_state.inrush_remaining = profile["inrush_sec"]
-                if profile["type"] == "duty_cycle":
-                    app_state.duty_remaining = self._rng.randint(*profile["duty_on_sec"])
 
         # 2. 전압 AR-1 드리프트
         noise_v = self._rng.gauss(0, 0.12)
@@ -356,23 +359,14 @@ class DeterministicScheduleRunner:
                 if app_state.inrush_remaining <= 0:
                     app_state.state = "RUNNING"
             elif app_state.state == "RUNNING":
+                # 듀티 사이클 가전(induction, iron)도 선언된 ON 구간 동안에는
+                # 휴지 없이 연속 가동한다. 프로파일별 노이즈 특성만 구분한다.
                 if profile["type"] == "single_block":
                     p_raw = app_state.nominal_w + self._rng.gauss(0, 1.2)
                     pf_raw = app_state.nominal_pf + self._rng.gauss(0, 0.003)
                 else:  # duty_cycle
                     p_raw = app_state.nominal_w + self._rng.gauss(0, 1.5)
                     pf_raw = app_state.nominal_pf
-                    app_state.duty_remaining -= 1
-                    if app_state.duty_remaining <= 0:
-                        app_state.state = "RESTING"
-                        app_state.duty_remaining = self._rng.randint(*profile["duty_off_sec"])
-            elif app_state.state == "RESTING":
-                p_raw = profile["standby_w"][1] + self._rng.uniform(5.0, 15.0)
-                pf_raw = 0.92
-                app_state.duty_remaining -= 1
-                if app_state.duty_remaining <= 0:
-                    app_state.state = "RUNNING"
-                    app_state.duty_remaining = self._rng.randint(*profile["duty_on_sec"])
             else:  # OFF
                 low, high = profile["standby_w"]
                 p_raw = self._rng.uniform(low, high) if high > 0 else 0.0

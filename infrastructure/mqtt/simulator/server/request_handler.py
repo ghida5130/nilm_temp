@@ -655,18 +655,18 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
 
             if mode_str == "ACCELERATED":
-                if "speed" not in exec_raw or exec_raw["speed"] is None:
-                    self.send_error_json(400, "BAD_REQUEST", "ACCELERATED 모드에서는 speed 필드가 필수입니다.")
-                    return
-                speed = exec_raw["speed"]
-                if (
-                    type(speed) not in (int, float)
-                    or isinstance(speed, bool)
-                    or not math.isfinite(speed)
-                    or speed <= 0
-                ):
-                    self.send_error_json(400, "BAD_REQUEST", f"speed는 0보다 큰 유한한 숫자여야 합니다: {speed}")
-                    return
+                # speed 생략 시 가구 수 기반 안전 배속을 매니저가 자동 산출한다.
+                # (DEFAULT_SAFE_AGGREGATE_RATE / 가구 수)
+                if "speed" in exec_raw and exec_raw["speed"] is not None:
+                    speed = exec_raw["speed"]
+                    if (
+                        type(speed) not in (int, float)
+                        or isinstance(speed, bool)
+                        or not math.isfinite(speed)
+                        or speed <= 0
+                    ):
+                        self.send_error_json(400, "BAD_REQUEST", f"speed는 0보다 큰 유한한 숫자여야 합니다: {speed}")
+                        return
             else:
                 if "speed" in exec_raw and exec_raw["speed"] is not None:
                     self.send_error_json(400, "BAD_REQUEST", f"{mode_str} 모드에서는 speed 필드를 지정할 수 없습니다.")
