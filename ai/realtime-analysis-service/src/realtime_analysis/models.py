@@ -274,6 +274,159 @@ class ApplianceUsageSession(Base):
     )
 
 
+ANALYSIS_RECEIPT_OUTCOMES = (
+    "SUCCEEDED",
+    "SKIPPED_WARMUP",
+    "SKIPPED_QUALITY_GATE",
+    "FAILED_INFERENCE",
+    "FAILED_PERSISTENCE",
+)
+
+
+class AnalysisProcessingReceipt(Base):
+    """Durable, idempotent evidence for one validated input and analysis run."""
+
+    __tablename__ = "analysis_processing_receipt"
+    __table_args__ = (
+        UniqueConstraint(
+            "message_id", "analysis_run_id", "attempt",
+            name="uq_analysis_receipt_message_run_attempt"
+        ),
+        CheckConstraint(
+            "outcome IN ('SUCCEEDED', 'SKIPPED_WARMUP', "
+            "'SKIPPED_QUALITY_GATE', 'FAILED_INFERENCE', 'FAILED_PERSISTENCE')",
+            name="outcome",
+        ),
+        CheckConstraint(
+            "(source_partition IS NULL) = (source_offset IS NULL)",
+            name="source_position_complete",
+        ),
+        Index("ix_analysis_receipt_household_measured", "household_id", "measured_at"),
+    )
+
+    receipt_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    message_id: Mapped[UUID] = mapped_column(nullable=False)
+    household_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_topic: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_partition: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_offset: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    analysis_run_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    pipeline_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    state_epoch: Mapped[UUID] = mapped_column(nullable=False)
+    outcome: Mapped[str] = mapped_column(String(40), nullable=False)
+    appliance_types: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list
+    )
+    session_change_refs: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list
+    )
+    error_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
+class AnalysisReceiptLakeOutbox(Base):
+    """Receipt payload captured atomically for Bronze delivery."""
+
+    __tablename__ = "analysis_receipt_lake_outbox"
+    __table_args__ = (
+        CheckConstraint(
+            "delivery_status IN ('PENDING', 'ASSIGNED', 'DELIVERED')",
+            name="delivery_status",
+        ),
+        CheckConstraint(
+            "(delivery_status = 'PENDING') = (batch_id IS NULL)",
+            name="batch_assigned_matches_status",
+        ),
+        Index("ix_analysis_receipt_outbox_delivery", "delivery_status", "event_id"),
+    )
+
+    event_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), Identity(), primary_key=True
+    )
+    receipt_id: Mapped[UUID] = mapped_column(
+        ForeignKey("analysis_processing_receipt.receipt_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
+    )
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    delivery_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'PENDING'")
+    )
+    batch_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("analysis_receipt_lake_batch.batch_id"), nullable=True
+    )
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class AnalysisReceiptLakeBatch(Base):
+    __tablename__ = "analysis_receipt_lake_batch"
+    __table_args__ = (
+        CheckConstraint("status IN ('ASSIGNED', 'FAILED', 'COMPLETED')", name="status"),
+        CheckConstraint("event_count >= 0", name="event_count_nonnegative"),
+    )
+
+    batch_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    ingest_date: Mapped[date] = mapped_column(Date, nullable=False)
+    event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    manifest_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class AnalysisDailyCompletion(Base):
+    """Revisioned declaration for a fixed daily input and analysis evidence set."""
+
+    __tablename__ = "analysis_daily_completion"
+    __table_args__ = (
+        UniqueConstraint(
+            "household_id", "appliance_type", "target_date", "revision",
+            name="uq_analysis_daily_completion_scope_revision",
+        ),
+        CheckConstraint("revision >= 1", name="revision_positive"),
+        CheckConstraint("coverage_ratio BETWEEN 0 AND 1", name="coverage_ratio"),
+        CheckConstraint("max_unanalyzed_seconds >= 0", name="max_unanalyzed_seconds_nonnegative"),
+        CheckConstraint("analysis_status IN ('COMPLETE', 'INCOMPLETE', 'ERROR', 'UNKNOWN')", name="analysis_status"),
+        CheckConstraint("delivery_status IN ('COMPLETE', 'PENDING')", name="delivery_status"),
+        Index("ix_analysis_daily_completion_scope", "target_date", "household_id"),
+    )
+
+    completion_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    household_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    appliance_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    analysis_run_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    analysis_evidence_snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    session_manifest_set_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    analysis_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    delivery_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    coverage_ratio: Mapped[Decimal] = mapped_column(Numeric(7, 6), nullable=False)
+    max_unanalyzed_seconds: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    quality_policy_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    baseline_eligible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 SESSION_LAKE_BATCH_KINDS = ("INITIAL", "INCREMENTAL")
 SESSION_LAKE_BATCH_STATUSES = ("ASSIGNED", "FAILED", "COMPLETED")
 SESSION_LAKE_OUTBOX_OPERATIONS = ("INSERT", "UPDATE", "DELETE")

@@ -2,7 +2,7 @@ from realtime_analysis.database import Base
 from realtime_analysis import models  # noqa: F401
 
 
-def test_analysis_schema_contains_thirteen_tables() -> None:
+def test_analysis_schema_contains_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "model_artifact",
         "routine_baseline",
@@ -17,6 +17,10 @@ def test_analysis_schema_contains_thirteen_tables() -> None:
         "lake_batch_run",
         "lake_dataset_version",
         "lake_dataset_dependency",
+        "analysis_processing_receipt",
+        "analysis_receipt_lake_outbox",
+        "analysis_receipt_lake_batch",
+        "analysis_daily_completion",
     }
 
 
