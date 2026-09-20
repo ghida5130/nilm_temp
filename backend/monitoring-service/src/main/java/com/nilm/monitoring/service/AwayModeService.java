@@ -31,6 +31,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class AwayModeService {
 
     private final SubjectRepository subjects;
+    private final RiskAssessmentService assessments;
     private final ApplicationEventPublisher publisher;
 
     @Transactional
@@ -75,6 +76,13 @@ public class AwayModeService {
 
         // 요청을 처리한 지금이 곧 상태가 바뀐 시각이다.
         publishPresenceChange(subject, wasAway, now);
+
+        if (isAway(subject) != wasAway) {
+            // 외출 여부가 뒤집히면 부재 기반 지표의 평가 자격이 통째로 바뀐다.
+            // 다음 타이머를 기다리지 않고 같은 트랜잭션에서 바로 다시 평가한다.
+            assessments.evaluate(
+                    subject.getHouseholdId(), now, StateChangeTrigger.AWAY_MODE);
+        }
     }
 
     /**
@@ -97,6 +105,10 @@ public class AwayModeService {
 
                 // 발효는 늦어도 상태가 바뀐 시각은 예약된 경계다.
                 publishPresenceChange(subject, wasAway, scheduledBoundary(subject, now));
+
+                // 외출이 끝난 가구는 다시 평가 대상이 된다.
+                assessments.evaluate(
+                        subject.getHouseholdId(), now, StateChangeTrigger.AWAY_MODE);
             }
         }
         return changed;

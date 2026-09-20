@@ -45,18 +45,34 @@ public class ApplianceState {
         this.changedAt = changedAt;
     }
 
+    /** 스냅샷 한 건이 만든 상태 전환의 방향. */
+    public enum Transition {
+
+        /** 직전과 같은 상태라 아무 일도 없었다. */
+        NONE,
+
+        /** OFF에서 ON으로. 당일 사용 사실을 남긴다. */
+        TURNED_ON,
+
+        /** ON에서 OFF로. 마지막 활동 시각이 된다. */
+        TURNED_OFF
+    }
+
     /**
      * 상태가 실제로 바뀐 경우에만 갱신한다.
      *
-     * @return ON에서 OFF로 넘어갔으면 true
+     * <p>ON 전환도 알려준다. 당일 첫 사용 시각과 사용 횟수는 루틴 미사용·활동 감소
+     * 지표의 현재 값이라, OFF 전환만 보던 때와 달리 양쪽이 모두 필요하다.
+     *
+     * @return 이번 스냅샷이 만든 전환 방향
      */
-    public boolean changeTo(boolean nextOn, OffsetDateTime observedAt) {
+    public Transition changeTo(boolean nextOn, OffsetDateTime observedAt) {
         if (this.on == nextOn) {
-            return false;
+            return Transition.NONE;
         }
-        boolean turnedOff = this.on && !nextOn;
+        Transition transition = nextOn ? Transition.TURNED_ON : Transition.TURNED_OFF;
         this.on = nextOn;
         this.changedAt = observedAt;
-        return turnedOff;
+        return transition;
     }
 }

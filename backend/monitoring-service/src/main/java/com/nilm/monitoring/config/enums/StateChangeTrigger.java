@@ -25,5 +25,8 @@ public enum StateChangeTrigger {
     ACTIVITY,
 
     /** Gold 배치가 만든 생활 프로필의 최신 버전이 반영됨 */
-    PROFILE_UPDATED
+    PROFILE_UPDATED,
+
+    /** 모니터링이 스스로 계산한 위험 평가가 반영됨 */
+    ASSESSMENT
 }

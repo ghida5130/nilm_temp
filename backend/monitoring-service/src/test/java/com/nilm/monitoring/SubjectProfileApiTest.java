@@ -117,7 +117,7 @@ class SubjectProfileApiTest {
                                 30600, 33000, 27000, 33000, "INSUFFICIENT_HISTORY", false)
                 ),
                 List.of(new HouseholdProfileMessage.Statistic(
-                        "CUMULATIVE_ACTIVITY_START_COUNT", null, "ALL", "09:00-09:30",
+                        "CUMULATIVE_ACTIVITY_START_COUNT", null, "ALL", "09:30",
                         20L, 20L, 1.0, 3.0, 0.5, "count", "READY"))
         );
     }

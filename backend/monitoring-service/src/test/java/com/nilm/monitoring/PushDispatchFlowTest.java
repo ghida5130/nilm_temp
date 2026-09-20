@@ -35,6 +35,7 @@ class PushDispatchFlowTest {
     @BeforeEach
     void setup() {
         jdbc.update("delete from notifications");
+        jdbc.update("delete from risk_assessments");
         jdbc.update("delete from analysis_events");
         jdbc.update("delete from subjects");
         jdbc.update("delete from push_subscriptions");
@@ -48,9 +49,11 @@ class PushDispatchFlowTest {
                 """);
     }
 
+    /** 즉시 알림 경로를 타는 유형. 계약대로 score는 싣지 않는다. */
     AnalysisEventMessage message() {
-        return new AnalysisEventMessage(UUID.randomUUID(), "house-push", 95,
-                OffsetDateTime.now(), Map.of("normal_days", 24), null, null);
+        return new AnalysisEventMessage(UUID.randomUUID(), "house-push", null,
+                OffsetDateTime.now(), Map.of("allowed_duration_minutes", 60),
+                "PROLONGED_APPLIANCE_USE", "KETTLE");
     }
 
     @Test

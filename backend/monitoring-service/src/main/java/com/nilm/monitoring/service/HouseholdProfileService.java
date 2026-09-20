@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -58,6 +59,15 @@ public class HouseholdProfileService {
     private final HouseholdRoutineBaselineRepository baselines;
     private final HouseholdProfileStatisticRepository statistics;
     private final SubjectAccessGuard accessGuard;
+
+    /**
+     * 새 프로필이 들어오면 곧바로 다시 평가한다.
+     *
+     * <p>평가 쪽이 이 서비스의 {@link #resolveActive(String, OffsetDateTime)}를 쓰므로
+     * 서로를 가리키는 모양이 된다. 생성 시점에 묶지 않고 필요할 때 꺼내 고리를 끊는다.
+     */
+    private final ObjectProvider<RiskAssessmentService> assessments;
+
     private final ApplicationEventPublisher publisher;
 
     /**
@@ -143,6 +153,10 @@ public class HouseholdProfileService {
                 new SubjectStateChanged(subject.getId(), StateChangeTrigger.PROFILE_UPDATED));
         log.info("최신 프로필 반영: householdId={}, profileVersion={}, asOfDate={}",
                 message.householdId(), message.profileVersion(), message.asOfDate());
+
+        // 비교 기준이 통째로 바뀌었다. 다음 타이머를 기다리지 않고 바로 다시 평가한다.
+        assessments.getObject().evaluate(
+                message.householdId(), now, StateChangeTrigger.PROFILE_UPDATED);
     }
 
     /**

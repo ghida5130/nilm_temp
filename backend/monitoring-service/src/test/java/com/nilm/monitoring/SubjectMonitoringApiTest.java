@@ -66,16 +66,16 @@ class SubjectMonitoringApiTest {
 
         jdbc.update("""
                 insert into notifications(
-                    event_id, auth_sub, response_deadline, user_response,
+                    event_id, subject_id, auth_sub, response_deadline, user_response,
                     send_status, response_status, responded_at
-                ) values (?, 'subject-a', ?, true, 'SENT', 'ANSWERED', ?)
-                """, oldEventId, updatedAt.plusSeconds(30), updatedAt);
+                ) values (?, ?, 'subject-a', ?, true, 'SENT', 'ANSWERED', ?)
+                """, oldEventId, subjectId, updatedAt.plusSeconds(30), updatedAt);
         jdbc.update("""
                 insert into notifications(
-                    event_id, auth_sub, response_deadline, user_response,
+                    event_id, subject_id, auth_sub, response_deadline, user_response,
                     send_status, response_status, responded_at
-                ) values (?, 'subject-a', ?, true, 'SENT', 'ANSWERED', ?)
-                """, latestEventId, updatedAt.plusSeconds(30), updatedAt);
+                ) values (?, ?, 'subject-a', ?, true, 'SENT', 'ANSWERED', ?)
+                """, latestEventId, subjectId, updatedAt.plusSeconds(30), updatedAt);
         long alertId = jdbc.queryForObject(
                 "select max(id) from notifications", Long.class);
 

@@ -1,6 +1,7 @@
 package com.nilm.monitoring.api;
 
 import com.nilm.monitoring.service.SubjectStatusStreamService;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,6 +22,15 @@ public class MonitoringStreamController {
 
     private final SubjectStatusStreamService streamService;
 
+    @Operation(
+            summary = "담당자 대시보드 실시간 스트림",
+            description = """
+                    subject-status 이벤트로 바뀐 대상자 1명의 현재 상태를 내려준다.
+                    trigger가 갱신 이유를 알려 주며, ASSESSMENT는 모니터링 자체 평가가 반영된 경우다.
+                    riskLevel은 자체 평가 등급과 이벤트 등급 중 높은 쪽이고 riskSource로 출처를 구분한다.
+                    같은 평가 결과가 반복되는 동안에는 이벤트를 보내지 않는다.
+                    """
+    )
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@AuthenticationPrincipal Jwt jwt) {
         String authSub = jwt == null ? null : jwt.getSubject();

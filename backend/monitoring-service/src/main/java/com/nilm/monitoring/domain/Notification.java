@@ -43,6 +43,20 @@ public class Notification {
     @Column(name = "event_id")
     private UUID eventId;
 
+    /**
+     * 모니터링 자체 평가가 만든 알림이 가리키는 평가 이력.
+     * 분석 이벤트에서 나온 알림이면 비어 있다.
+     */
+    @Column(name = "assessment_id")
+    private UUID assessmentId;
+
+    /**
+     * 이 알림이 누구에 대한 것인지.
+     * 자체 평가 알림은 분석 이벤트에 걸리지 않아 event_id로 대상자를 찾을 수 없다.
+     */
+    @Column(name = "subject_id")
+    private Long subjectId;
+
     @Column(name = "auth_sub", nullable = false)
     private String authSub;
 
@@ -75,11 +89,17 @@ public class Notification {
     }
 
     public Notification(UUID eventId, String authSub) {
+        this(eventId, null, null, authSub);
+    }
+
+    public Notification(UUID eventId, UUID assessmentId, Long subjectId, String authSub) {
         if (authSub == null || authSub.isBlank()) {
             throw new IllegalArgumentException("알림 수신자 ID가 필요합니다.");
         }
 
         this.eventId = eventId;
+        this.assessmentId = assessmentId;
+        this.subjectId = subjectId;
         this.authSub = authSub;
     }
 

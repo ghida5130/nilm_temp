@@ -6,6 +6,7 @@ import com.nilm.monitoring.dto.SubjectMonitoringResponse;
 import com.nilm.monitoring.service.AwayModeService;
 import com.nilm.monitoring.service.MyDashboardService;
 import com.nilm.monitoring.service.SubjectMonitoringService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,16 @@ public class MonitoringDashboardController {
     private final MyDashboardService myDashboardService;
     private final AwayModeService awayModeService;
 
+    @Operation(
+            summary = "담당자 대시보드 목록",
+            description = """
+                    배정된 대상자의 현재 상태를 한 번에 내려준다.
+                    riskLevel은 자체 평가 등급과 이벤트 등급 중 높은 쪽이고,
+                    riskSource가 어느 쪽인지 알려 준다.
+                    assessmentStatus가 VALID가 아니면 마지막으로 성립한 평가 값을 그대로 보여준다.
+                    riskTrend는 분석 이벤트 점수와 자체 평가 점수의 일별 최댓값이다.
+                    """
+    )
     @GetMapping("/dashboard")
     public ResponseEntity<SubjectMonitoringResponse> dashboard(
             @AuthenticationPrincipal Jwt jwt

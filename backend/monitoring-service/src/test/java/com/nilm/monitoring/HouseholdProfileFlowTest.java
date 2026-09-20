@@ -95,7 +95,7 @@ class HouseholdProfileFlowTest {
                         baseline("MICROWAVE", "OVERALL", null)
                 ),
                 List.of(
-                        statistic("CUMULATIVE_ACTIVITY_START_COUNT", null, "09:00-09:30"),
+                        statistic("CUMULATIVE_ACTIVITY_START_COUNT", null, "09:30"),
                         statistic("LOGICAL_USE_ACTIVE_DURATION", "KETTLE", null)
                 )
         );
@@ -160,7 +160,8 @@ class HouseholdProfileFlowTest {
         assertThat(activeVersion()).isEqualTo("v1");
         assertThat(count("household_routine_baselines")).isEqualTo(3);
         assertThat(count("household_profile_statistics")).isEqualTo(2);
-        assertThat(stateVersion()).isEqualTo(2L);
+        // 프로필 반영에서 한 번, 뒤이어 도는 첫 위험 평가에서 한 번 올라간다.
+        assertThat(stateVersion()).isEqualTo(3L);
         assertThat(profileUpdatedEvents()).isEqualTo(1);
     }
 
@@ -175,7 +176,8 @@ class HouseholdProfileFlowTest {
         assertThat(count("household_profiles")).isEqualTo(1);
         assertThat(count("household_routine_baselines")).isEqualTo(3);
         assertThat(count("household_profile_statistics")).isEqualTo(2);
-        assertThat(stateVersion()).isEqualTo(2L);
+        // 같은 버전을 다시 받으면 반영도 평가도 일어나지 않는다.
+        assertThat(stateVersion()).isEqualTo(3L);
         assertThat(profileUpdatedEvents()).isZero();
     }
 
@@ -202,7 +204,8 @@ class HouseholdProfileFlowTest {
 
         assertThat(statusOf("v1")).isEqualTo("SUPERSEDED");
         assertThat(activeVersion()).isEqualTo("v2");
-        assertThat(stateVersion()).isEqualTo(2L);
+        // 구버전은 이력으로만 남고 평가를 다시 돌리지 않는다.
+        assertThat(stateVersion()).isEqualTo(3L);
         assertThat(profileUpdatedEvents()).isZero();
     }
 
@@ -291,7 +294,7 @@ class HouseholdProfileFlowTest {
         assertThat(value.stale()).isFalse();
         assertThat(value.baselines()).hasSize(3);
         assertThat(value.statistic(
-                "CUMULATIVE_ACTIVITY_START_COUNT", null, "ALL", "09:00-09:30"))
+                "CUMULATIVE_ACTIVITY_START_COUNT", null, "ALL", "09:30"))
                 .get()
                 .extracting(ResolvedProfile.Statistic::p90)
                 .isEqualTo(3.0);
