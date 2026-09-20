@@ -111,6 +111,17 @@ class DayExecutionResult:
     omitted_samples: int          # 계획된 OMITTED 확정 수
     status: str = "COMPLETED"     # "COMPLETED" 고정
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "household_id": self.household_id,
+            "run_id": self.run_id,
+            "activity_date": self.activity_date,
+            "published_samples": self.published_samples,
+            "omitted_samples": self.omitted_samples,
+            "status": self.status,
+        }
+
 
 DayCompletedCallback = Callable[[DayExecutionResult], Awaitable[None]]
 
