@@ -4,6 +4,8 @@ import com.nilm.monitoring.dto.SubjectCreateRequest;
 import com.nilm.monitoring.dto.SubjectEventsResponse;
 import com.nilm.monitoring.dto.SubjectMonitoringResponse;
 import com.nilm.monitoring.dto.SubjectPowerUsageResponse;
+import com.nilm.monitoring.dto.SubjectProfileResponse;
+import com.nilm.monitoring.service.HouseholdProfileService;
 import com.nilm.monitoring.service.SubjectEventService;
 import com.nilm.monitoring.service.SubjectPowerUsageService;
 import com.nilm.monitoring.service.SubjectRegistrationService;
@@ -34,6 +36,7 @@ public class SubjectController {
     private final SubjectMonitoringService monitoringService;
     private final SubjectPowerUsageService powerUsageService;
     private final SubjectEventService eventService;
+    private final HouseholdProfileService householdProfileService;
 
     @GetMapping("/search")
     public ResponseEntity<SubjectMonitoringResponse> getSubjects(
@@ -82,6 +85,21 @@ public class SubjectController {
                 .status(HttpStatus.OK)
                 .body(eventService.getEvents(
                         authSub, subjectId, from, to, size, cursor));
+    }
+
+    /**
+     * 대상자 상세 화면에서 지금 반영된 생활 프로필을 확인한다.
+     * Gold 배치가 아직 프로필을 보내지 않았으면 204로 답한다.
+     */
+    @GetMapping("/{subjectId}/profile")
+    public ResponseEntity<SubjectProfileResponse> getProfile(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable Long subjectId
+    ) {
+        String authSub = jwt == null ? null : jwt.getSubject();
+        return householdProfileService.getProfile(authSub, subjectId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PostMapping
