@@ -1,3 +1,5 @@
+import pytest
+
 from realtime_analysis.config import Settings
 
 
@@ -11,12 +13,19 @@ def test_default_topic_contracts() -> None:
     assert settings.kafka_analysis_snapshot_topic == "analysis.snapshot.v1"
     assert settings.kafka_outing_event_topic == "monitoring.household-presence.v1"
     assert settings.kafka_outing_group_id == "realtime-analysis-service-outing-v1"
-    assert settings.consumer_config()["enable.auto.commit"] is False
+    assert settings.consumer_config() == {
+        "bootstrap.servers": "localhost:9092",
+        "group.id": "realtime-analysis-service-v1",
+        "auto.offset.reset": "earliest",
+        "enable.auto.commit": False,
+        "partition.assignment.strategy": "cooperative-sticky",
+    }
     assert settings.outing_consumer_config() == {
         "bootstrap.servers": "localhost:9092",
         "group.id": "realtime-analysis-service-outing-v1",
         "auto.offset.reset": "earliest",
         "enable.auto.commit": False,
+        "partition.assignment.strategy": "cooperative-sticky",
     }
     assert settings.http_host == "0.0.0.0"
     assert settings.http_port == 8000
@@ -35,3 +44,38 @@ def test_fake_appliance_setting_is_parsed() -> None:
     )
 
     assert settings.fake_on_appliance_types == ("MICROWAVE", "HAIR_DRYER")
+
+
+def test_static_membership_ids_are_loaded_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "KAFKA_PARTITION_ASSIGNMENT_STRATEGY",
+        "cooperative-sticky",
+    )
+    monkeypatch.setenv("KAFKA_GROUP_INSTANCE_ID", " analysis-node-01-power ")
+    monkeypatch.setenv(
+        "KAFKA_OUTING_GROUP_INSTANCE_ID",
+        "analysis-node-01-outing",
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.consumer_config()["group.instance.id"] == (
+        "analysis-node-01-power"
+    )
+    assert settings.outing_consumer_config()["group.instance.id"] == (
+        "analysis-node-01-outing"
+    )
+
+
+def test_blank_static_membership_ids_are_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KAFKA_GROUP_INSTANCE_ID", "  ")
+    monkeypatch.setenv("KAFKA_OUTING_GROUP_INSTANCE_ID", "")
+
+    settings = Settings(_env_file=None)
+
+    assert "group.instance.id" not in settings.consumer_config()
+    assert "group.instance.id" not in settings.outing_consumer_config()

@@ -1,8 +1,9 @@
 """Environment-based service configuration."""
 
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,9 +27,14 @@ class Settings(BaseSettings):
     kafka_analysis_snapshot_topic: str = "analysis.snapshot.v1"
     kafka_group_id: str = "realtime-analysis-service-v1"
     kafka_auto_offset_reset: str = "earliest"
+    kafka_partition_assignment_strategy: Literal["cooperative-sticky"] = (
+        "cooperative-sticky"
+    )
+    kafka_group_instance_id: str | None = None
     kafka_outing_event_topic: str = "monitoring.household-presence.v1"
     kafka_outing_group_id: str = "realtime-analysis-service-outing-v1"
     kafka_outing_auto_offset_reset: str = "earliest"
+    kafka_outing_group_instance_id: str | None = None
 
     database_host: str = "localhost"
     database_port: int = Field(default=5432, ge=1, le=65535)
@@ -108,6 +114,20 @@ class Settings(BaseSettings):
     )
     retention_max_delete_dates: int = Field(default=1, ge=1, le=31)
 
+    @field_validator(
+        "kafka_group_instance_id",
+        "kafka_outing_group_instance_id",
+        mode="before",
+    )
+    @classmethod
+    def empty_group_instance_id_is_disabled(cls, value: object) -> object:
+        """Treat blank environment values as disabled static membership."""
+
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
     @model_validator(mode="after")
     def baseline_sample_days_must_fit_window(self) -> "Settings":
         if (
@@ -129,12 +149,18 @@ class Settings(BaseSettings):
         )
 
     def consumer_config(self) -> dict[str, object]:
-        return {
+        config: dict[str, object] = {
             "bootstrap.servers": self.kafka_bootstrap_servers,
             "group.id": self.kafka_group_id,
             "auto.offset.reset": self.kafka_auto_offset_reset,
             "enable.auto.commit": False,
+            "partition.assignment.strategy": (
+                self.kafka_partition_assignment_strategy
+            ),
         }
+        if self.kafka_group_instance_id is not None:
+            config["group.instance.id"] = self.kafka_group_instance_id
+        return config
 
     def producer_config(self) -> dict[str, object]:
         return {
@@ -146,12 +172,18 @@ class Settings(BaseSettings):
     def outing_consumer_config(self) -> dict[str, object]:
         """Kafka options reserved for the monitoring outing event consumer."""
 
-        return {
+        config: dict[str, object] = {
             "bootstrap.servers": self.kafka_bootstrap_servers,
             "group.id": self.kafka_outing_group_id,
             "auto.offset.reset": self.kafka_outing_auto_offset_reset,
             "enable.auto.commit": False,
+            "partition.assignment.strategy": (
+                self.kafka_partition_assignment_strategy
+            ),
         }
+        if self.kafka_outing_group_instance_id is not None:
+            config["group.instance.id"] = self.kafka_outing_group_instance_id
+        return config
 
 
 @lru_cache
