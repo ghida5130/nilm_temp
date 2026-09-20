@@ -76,33 +76,91 @@ public class RiskAssessmentService {
      */
     @Transactional
     public void evaluate(String householdId, OffsetDateTime now, StateChangeTrigger trigger) {
-        List<Subject> matches = subjects.findHouseholdForUpdate(householdId);
-        if (matches.size() != 1) {
-            log.warn("가구에 대상자가 정확히 한 명이 아니어서 평가를 건너뛴다: householdId={}, 수={}",
-                    householdId, matches.size());
+        Subject subject = lockHousehold(householdId);
+        if (subject == null) {
             return;
         }
-        assess(matches.get(0), now, trigger, false);
+        assess(subject, now, trigger, false);
     }
 
     /**
      * 타이머가 도는 경로. 한 가구의 실패가 나머지를 막지 않도록 가구마다 트랜잭션을 연다.
+     *
+     * <p>이벤트 경로와 같은 쓰기 잠금을 상태를 처음 읽는 순간부터 잡는다. 예전에는
+     * {@code findById}로 잠금 없이 읽고 나서 점수·등급·{@code lastAlertAt}을 고쳤기 때문에,
+     * 타이머와 이벤트가 겹치면 이벤트가 방금 세운 등급이 사라지거나 두 경로가 같은
+     * 재발송 시각을 읽어 알림이 둘 나갈 수 있었다. 잠금은 커밋까지 유지되므로
+     * 재발송 판정부터 알림 생성과 평가 이력 저장까지가 한 직렬화 구간 안에 들어온다.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void evaluateSubject(
+            EvaluationTarget target,
+            OffsetDateTime now,
+            StateChangeTrigger trigger
+    ) {
+        // REQUIRES_NEW라 영속성 컨텍스트도 새로 열린다. 이 조회가 그 안의 첫 읽기이자
+        // 잠금이므로, 잠그기 전에 읽어 둔 오래된 Subject가 끼어들 자리가 없다.
+        Subject subject = lockHousehold(target.householdId());
+        if (subject == null) {
+            return;
+        }
+        if (!subject.getId().equals(target.subjectId())) {
+            // 목록을 읽은 뒤 가구 구성이 바뀌었다. 다음 순회에서 다시 본다.
+            log.warn("가구의 대상자가 순회 시작 이후 바뀌어 평가를 건너뛴다: householdId={}, 기대={}, 실제={}",
+                    target.householdId(), target.subjectId(), subject.getId());
+            return;
+        }
+
+        // 이벤트 등급을 언제까지 붙들고 있을지는 타이머만 판정할 수 있다.
+        // 해제 신호(가전 OFF, 담당자 조치)를 놓쳤을 때의 안전장치다.
+        boolean released = releaseStaleEventRisk(subject, now);
+        // 슬롯을 비운 것만으로도 유효 등급이 내려간다. 평가 결과가 그대로여도 알린다.
+        assess(subject, now, trigger, released);
+    }
+
+    /**
+     * 대상자 id만 아는 호출부를 위한 경로.
+     *
+     * <p>가구는 엔티티가 아니라 스칼라로 읽는다. 여기서 {@code findById}를 쓰면
+     * 잠금 이전 상태의 Subject가 영속성 컨텍스트에 남아, 뒤이어 잠금을 잡아도
+     * 그 사이 커밋된 변경이 보이지 않는 1차 캐시 인스턴스가 그대로 쓰인다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void evaluateSubject(Long subjectId, OffsetDateTime now, StateChangeTrigger trigger) {
-        subjects.findById(subjectId).ifPresent(subject -> {
-            // 이벤트 등급을 언제까지 붙들고 있을지는 타이머만 판정할 수 있다.
-            // 해제 신호(가전 OFF, 담당자 조치)를 놓쳤을 때의 안전장치다.
-            boolean released = releaseStaleEventRisk(subject, now);
-            // 슬롯을 비운 것만으로도 유효 등급이 내려간다. 평가 결과가 그대로여도 알린다.
-            assess(subject, now, trigger, released);
-        });
+        subjects.findHouseholdIdById(subjectId).ifPresent(householdId ->
+                evaluateSubject(new EvaluationTarget(subjectId, householdId), now, trigger));
     }
 
-    /** 타이머가 순회할 대상자 목록. */
+    /** 타이머가 순회할 대상자 목록. 엔티티가 아니라 식별자만 싣는다. */
     @Transactional(readOnly = true)
-    public List<Long> subjectIds() {
-        return subjects.findAllByOrderByIdAsc().stream().map(Subject::getId).toList();
+    public List<EvaluationTarget> targets() {
+        return subjects.findAllTargets().stream()
+                .map(row -> new EvaluationTarget(row.getId(), row.getHouseholdId()))
+                .toList();
+    }
+
+    /**
+     * 평가할 가구의 대상자를 쓰기 잠금으로 읽는다.
+     *
+     * @return 대상자가 정확히 한 명이면 그 대상자, 아니면 null
+     */
+    private Subject lockHousehold(String householdId) {
+        List<Subject> matches = subjects.findHouseholdForUpdate(householdId);
+        if (matches.size() != 1) {
+            log.warn("가구에 대상자가 정확히 한 명이 아니어서 평가를 건너뛴다: householdId={}, 수={}",
+                    householdId, matches.size());
+            return null;
+        }
+        return matches.get(0);
+    }
+
+    /**
+     * 타이머가 한 바퀴 도는 동안 붙들고 다니는 대상.
+     *
+     * <p>가구를 함께 실어야 타이머가 이벤트 경로와 같은 잠금을 잡을 수 있다.
+     * 엔티티를 싣지 않는 것이 요점이다.
+     */
+    public record EvaluationTarget(Long subjectId, String householdId) {
     }
 
     /**

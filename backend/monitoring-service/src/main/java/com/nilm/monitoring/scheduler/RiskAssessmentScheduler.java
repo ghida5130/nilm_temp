@@ -2,6 +2,7 @@ package com.nilm.monitoring.scheduler;
 
 import com.nilm.monitoring.config.enums.StateChangeTrigger;
 import com.nilm.monitoring.service.RiskAssessmentService;
+import com.nilm.monitoring.service.RiskAssessmentService.EvaluationTarget;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>가구마다 트랜잭션을 따로 연다. 한 가구의 실패가 나머지 가구의 평가를 막으면
  * 정작 위험한 가구를 놓칠 수 있다.
+ *
+ * <p>잠금 범위도 가구다. 한 가구를 평가하는 동안 다른 가구는 기다리지 않는다.
  */
 @Slf4j
 @Component
@@ -34,11 +37,15 @@ public class RiskAssessmentScheduler {
     @Scheduled(fixedDelayString = "${app.risk.scheduler-interval-ms:60000}")
     public void evaluateAll() {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        for (Long subjectId : service.subjectIds()) {
+
+        // 목록은 식별자만 읽는다. 여기서 대상자를 통째로 읽어 두면 가구 트랜잭션이
+        // 잠금을 잡기 전 상태를 들고 시작하게 된다.
+        for (EvaluationTarget target : service.targets()) {
             try {
-                service.evaluateSubject(subjectId, now, StateChangeTrigger.ASSESSMENT);
+                service.evaluateSubject(target, now, StateChangeTrigger.ASSESSMENT);
             } catch (Exception e) {
-                log.error("대상자 위험 평가 실패: subjectId={}", subjectId, e);
+                log.error("대상자 위험 평가 실패: subjectId={}, householdId={}",
+                        target.subjectId(), target.householdId(), e);
             }
         }
     }
