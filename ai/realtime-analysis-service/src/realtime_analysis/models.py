@@ -400,3 +400,140 @@ class SessionLakeOutbox(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+LAKE_RUN_STATUSES = (
+    "WAITING_INPUT",
+    "RUNNING",
+    "VALIDATING",
+    "SUCCEEDED",
+    "FAILED",
+)
+LAKE_VERSION_STATUSES = ("ACTIVE", "SUPERSEDED")
+
+
+class LakeBatchRun(Base):
+    """레이크 일일 배치 한 번의 실행.
+
+    batch_run과 달리 입력 스냅샷·규칙·설정 버전을 실행 식별에 포함한다. 날짜별 성공
+    여부만으로는 늦게 도착한 데이터나 규칙 변경에 따른 수정 재처리를 표현할 수 없다.
+    """
+
+    __tablename__ = "lake_batch_run"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_name",
+            "target_date",
+            "attempt",
+            name="uq_lake_batch_run_job_date_attempt",
+        ),
+        CheckConstraint(f"status IN ({_sql_list(LAKE_RUN_STATUSES)})", name="status"),
+        CheckConstraint("attempt >= 1", name="attempt_positive"),
+        Index("ix_lake_batch_run_job_date_status", "job_name", "target_date", "status"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    job_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    input_snapshot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rule_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    config_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+        server_default=text("'{}'"),
+    )
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class LakeDatasetVersion(Base):
+    """날짜별 레이크 데이터셋의 실행 버전과 현재 활성 버전.
+
+    여러 run_id 디렉터리를 통째로 읽으면 같은 날짜가 중복된다. 후속 집계는 여기서
+    ACTIVE인 실행만 골라 읽는다. DB가 가리키기 전의 출력은 소비하지 않는다.
+    """
+
+    __tablename__ = "lake_dataset_version"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_name",
+            "target_date",
+            "run_id",
+            name="uq_lake_dataset_version_dataset_date_run",
+        ),
+        CheckConstraint(
+            f"status IN ({_sql_list(LAKE_VERSION_STATUSES)})", name="status"
+        ),
+        CheckConstraint("row_count >= 0", name="row_count_nonnegative"),
+        Index(
+            "ix_lake_dataset_version_active",
+            "dataset_name",
+            "target_date",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+            sqlite_where=text("status = 'ACTIVE'"),
+        ),
+    )
+
+    version_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    dataset_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("lake_batch_run.run_id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    output_path: Mapped[str] = mapped_column(Text, nullable=False)
+    manifest_path: Mapped[str] = mapped_column(Text, nullable=False)
+    row_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    input_snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    rule_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    config_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class LakeDatasetDependency(Base):
+    """레이크 작업 하나가 소비한 상위 데이터셋 버전.
+
+    상위 날짜가 재처리되면 그 날짜를 소비한 하위 결과는 낡은 것이 된다. 소비 사실을
+    활성화와 같은 트랜잭션에 남겨야, 알림을 놓쳐도 "내 활성 결과가 쓴 상위 버전"과
+    "지금 활성인 상위 버전"을 비교해 다시 계산할 날짜를 정확히 찾을 수 있다.
+
+    상위 쪽은 FK로 묶지 않는다. 상위 버전 행이 정리된 뒤에도 무엇을 썼는지는 남아야 한다.
+    """
+
+    __tablename__ = "lake_dataset_dependency"
+    __table_args__ = (
+        UniqueConstraint(
+            "consumer_run_id",
+            "upstream_dataset_name",
+            "upstream_target_date",
+            name="uq_lake_dataset_dependency_consumer_upstream",
+        ),
+        Index(
+            "ix_lake_dataset_dependency_upstream",
+            "upstream_dataset_name",
+            "upstream_target_date",
+        ),
+    )
+
+    dependency_id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    consumer_run_id: Mapped[UUID] = mapped_column(
+        ForeignKey("lake_batch_run.run_id", ondelete="CASCADE"), nullable=False
+    )
+    upstream_dataset_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    upstream_target_date: Mapped[date] = mapped_column(Date, nullable=False)
+    upstream_run_id: Mapped[UUID] = mapped_column(nullable=False)
+    upstream_version_id: Mapped[UUID] = mapped_column(nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
