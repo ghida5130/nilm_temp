@@ -38,6 +38,18 @@ docker compose -f infrastructure/local/compose.yaml run --rm power-silver power-
 docker compose -f infrastructure/local/compose.yaml run --rm power-silver power-silver status --json
 ```
 
+## Gold 프로필 배치
+
+최근 28일의 활성 `appliance_usage_daily`와 세션 slice 버전을 고정해 shadow
+routine baseline과 지표별 통계 프로필을 생성합니다. 기존 serving DB baseline과 위험
+점수는 변경하지 않습니다. 자세한 계약은
+[batch/gold_profile_service/README.md](batch/gold_profile_service/README.md)를 참고하세요.
+
+```bash
+docker compose -f infrastructure/local/compose.yaml run --rm gold-profile gold-profile run --as-of 2026-09-19
+docker compose -f infrastructure/local/compose.yaml run --rm gold-profile gold-profile dirty --from 2026-09-01 --to 2026-09-28
+```
+
 ## 시뮬레이터
 1. 의존성 설치(최초 1회)
 ```dash
