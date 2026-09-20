@@ -43,6 +43,7 @@ class SubjectStatusStreamApiTest {
     @BeforeEach
     void cleanDatabase() {
         jdbc.update("delete from notifications");
+        jdbc.update("delete from risk_assessments");
         jdbc.update("delete from analysis_events");
         jdbc.update("delete from subjects");
         jdbc.update("delete from managers");
@@ -61,9 +62,9 @@ class SubjectStatusStreamApiTest {
 
         UUID eventId = UUID.randomUUID();
         analysisEvents.handle(new AnalysisEventMessage(
-                eventId, "H001", 92, OffsetDateTime.now(ZoneOffset.UTC),
-                Map.of("expected_until", "2026-09-16T08:10:00Z"),
-                "ROUTINE_MISSED", "KETTLE"));
+                eventId, "H001", null, OffsetDateTime.now(ZoneOffset.UTC),
+                Map.of("allowed_duration_minutes", 60),
+                "PROLONGED_APPLIANCE_USE", "KETTLE"));
 
         JsonNode payload = firstSubjectStatus(stream);
         assertThat(payload.get("subjectId").asText()).isEqualTo(Long.toString(subjectId));
@@ -71,7 +72,9 @@ class SubjectStatusStreamApiTest {
         assertThat(payload.get("trigger").asText())
                 .isEqualTo(StateChangeTrigger.DETECTION.name());
         assertThat(payload.get("riskLevel").asText()).isEqualTo("DANGER");
-        assertThat(payload.get("riskScore").asInt()).isEqualTo(92);
+        // 계약에 score가 없어 저장 점수는 위험 등급의 대표값이다.
+        assertThat(payload.get("riskScore").asInt()).isEqualTo(90);
+        assertThat(payload.get("riskSource").asText()).isEqualTo("EVENT");
         assertThat(payload.get("recentEventCount").asInt()).isEqualTo(1);
         assertThat(payload.get("lastActivity").get("applianceType").asText())
                 .isEqualTo("KETTLE");
@@ -80,18 +83,20 @@ class SubjectStatusStreamApiTest {
                 .isEqualTo(eventId.toString());
         assertThat(payload.get("latestAlert").get("managerStatus").asText())
                 .isEqualTo("UNCONFIRMED");
+        // 장시간 사용은 응답을 요구하지 않는 유형이다.
         assertThat(payload.get("latestAlert").get("subjectResponse").get("status").asText())
-                .isEqualTo("PENDING");
+                .isEqualTo("NOT_REQUIRED");
         assertThat(payload.get("latestAlert").get("subjectResponse").get("answer").isNull())
                 .isTrue();
         assertThat(payload.get("lastDetection").get("eventId").asText())
                 .isEqualTo(eventId.toString());
         assertThat(payload.get("lastDetection").get("eventType").asText())
-                .isEqualTo("ROUTINE_MISSED");
+                .isEqualTo("PROLONGED_APPLIANCE_USE");
         assertThat(payload.get("lastDetection").get("description").asText())
-                .isEqualTo("전기포트 미작동 감지");
-        assertThat(payload.get("lastDetection").get("reason").get("expected_until").asText())
-                .isEqualTo("2026-09-16T08:10:00Z");
+                .isEqualTo("전기포트 장시간 사용 감지");
+        assertThat(payload.get("lastDetection")
+                .get("reason").get("allowed_duration_minutes").asInt())
+                .isEqualTo(60);
         assertThat(payload.get("updatedAt").asText()).isNotBlank();
     }
 
@@ -117,8 +122,8 @@ class SubjectStatusStreamApiTest {
         insertSubject(managerId, "H001", "subject-H001");
 
         analysisEvents.handle(new AnalysisEventMessage(
-                UUID.randomUUID(), "H001", 95, OffsetDateTime.now(ZoneOffset.UTC),
-                Map.of("normal_days", 24), "ROUTINE_MISSED", "KETTLE"));
+                UUID.randomUUID(), "H001", null, OffsetDateTime.now(ZoneOffset.UTC),
+                Map.of("threshold_hours", 6), "PROLONGED_INACTIVITY", null));
 
         // 알림이 생긴 뒤에 붙은 담당자도 이후의 응답은 바로 받아야 한다.
         MvcResult stream = openStream("manager-a");

@@ -14,10 +14,10 @@ from realtime_analysis.config import Settings
 from realtime_analysis.dlq import DlqPublisher
 from realtime_analysis.metrics import METRICS
 from realtime_analysis.pipeline_timing import pipeline_timing, stage
-from realtime_analysis.schemas import PowerMeasurement
+from realtime_analysis.schemas import PowerMeasurement, ProcessingSource
 
 logger = logging.getLogger(__name__)
-MeasurementHandler = Callable[[PowerMeasurement], None]
+MeasurementHandler = Callable[[PowerMeasurement, ProcessingSource | None], None]
 
 
 class AnalysisConsumer:
@@ -113,7 +113,14 @@ class AnalysisConsumer:
                 return
 
             timer.bind_measurement(measurement)
-            self._handler(measurement)
+            self._handler(
+                measurement,
+                ProcessingSource(
+                    topic=self._message_string(message, "topic"),
+                    partition=self._message_int(message, "partition"),
+                    offset=self._message_int(message, "offset"),
+                ),
+            )
             with stage("offset_commit"):
                 self._commit(message)
             timer.mark("processed")

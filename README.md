@@ -30,6 +30,26 @@ docker compose -f infrastructure/hdfs/docker-compose.yml up -d --build
 ```
 Namenode UI: http://localhost:9870
 
+## Silver 일일 배치 (power-silver-daily)
+Bronze 전력 원본에서 정제 전력과 가구별 관측일을 만드는 Spark 배치입니다. 상시 서비스가
+아니라 하루에 한 번 실행합니다. 자세한 내용은 [batch/power_silver_service/README.md](batch/power_silver_service/README.md).
+```dash
+docker compose -f infrastructure/local/compose.yaml run --rm power-silver power-silver run --date 2026-09-19
+docker compose -f infrastructure/local/compose.yaml run --rm power-silver power-silver status --json
+```
+
+## Gold 프로필 배치
+
+최근 28일의 활성 `appliance_usage_daily`와 세션 slice 버전을 고정해 shadow
+routine baseline과 지표별 통계 프로필을 생성합니다. 기존 serving DB baseline과 위험
+점수는 변경하지 않습니다. 자세한 계약은
+[batch/gold_profile_service/README.md](batch/gold_profile_service/README.md)를 참고하세요.
+
+```bash
+docker compose -f infrastructure/local/compose.yaml run --rm gold-profile gold-profile run --as-of 2026-09-19
+docker compose -f infrastructure/local/compose.yaml run --rm gold-profile gold-profile dirty --from 2026-09-01 --to 2026-09-28
+```
+
 ## 시뮬레이터
 1. 의존성 설치(최초 1회)
 ```dash

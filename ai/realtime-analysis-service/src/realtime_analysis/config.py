@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     baseline_file: str = "config/baselines.json"
     analysis_policy_file: str = "config/analysis_policies.json"
     analysis_timezone: str = "Asia/Seoul"
+    analysis_run_id: str = Field(default="realtime-v1", min_length=1, max_length=100)
+    analysis_pipeline_version: str = Field(default="1", min_length=1, max_length=50)
     analysis_expected_samples_per_day: int = Field(default=86_400, ge=1)
     analysis_observation_valid_coverage_ratio: float = Field(
         default=0.95,

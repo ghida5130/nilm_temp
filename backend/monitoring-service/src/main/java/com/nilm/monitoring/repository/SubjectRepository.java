@@ -12,6 +12,9 @@ public interface SubjectRepository extends JpaRepository<Subject, Long> {
 
     List<Subject> findAllByManagerIdOrderByIdAsc(Long managerId);
 
+    /** 타이머 평가가 도는 순서. id 순으로 고정해 순회 결과를 재현 가능하게 둔다. */
+    List<Subject> findAllByOrderByIdAsc();
+
     Optional<Subject> findByAuthSub(String authSub);
 
     @Modifying

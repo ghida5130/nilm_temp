@@ -32,6 +32,7 @@ class ApplianceActivityFlowTest {
     @BeforeEach
     void setup() {
         jdbc.update("delete from notifications");
+        jdbc.update("delete from risk_assessments");
         jdbc.update("delete from analysis_events");
         jdbc.update("delete from appliance_states");
         jdbc.update("delete from subjects");
@@ -95,10 +96,10 @@ class ApplianceActivityFlowTest {
 
         assertThat(lastActivityAppliance()).isEqualTo("MICROWAVE");
         assertThat(lastActivityAt()).isEqualTo(baseTime.plusMinutes(10));
-        assertThat(applicationEvents.stream(SubjectStateChanged.class))
-                .singleElement()
-                .extracting(SubjectStateChanged::trigger)
-                .isEqualTo(StateChangeTrigger.ACTIVITY);
+        // 전환이 있었으므로 위험 평가도 같은 트랜잭션에서 함께 돈다.
+        assertThat(applicationEvents.stream(SubjectStateChanged.class)
+                .map(SubjectStateChanged::trigger))
+                .contains(StateChangeTrigger.ACTIVITY);
     }
 
     @Test

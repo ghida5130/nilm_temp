@@ -156,6 +156,9 @@ def main() -> None:
         snapshot_publisher=AnalysisSnapshotPublisher(settings),
         timezone_name=settings.analysis_timezone,
         data_quality_monitor=data_quality_monitor,
+        analysis_run_id=settings.analysis_run_id,
+        model_version=manifest.version,
+        pipeline_version=settings.analysis_pipeline_version,
     )
     consumer = AnalysisConsumer(
         settings=settings,

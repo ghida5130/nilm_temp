@@ -37,6 +37,26 @@ class PowerMeasurement(BaseModel):
         return value
 
 
+class AnalysisProcessingOutcome(StrEnum):
+    """Terminal result for one validated power input."""
+
+    SUCCEEDED = "SUCCEEDED"
+    SKIPPED_WARMUP = "SKIPPED_WARMUP"
+    SKIPPED_QUALITY_GATE = "SKIPPED_QUALITY_GATE"
+    FAILED_INFERENCE = "FAILED_INFERENCE"
+    FAILED_PERSISTENCE = "FAILED_PERSISTENCE"
+
+
+class ProcessingSource(BaseModel):
+    """Stable source position used to connect a receipt to Kafka input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str | None = None
+    partition: int | None = None
+    offset: int | None = None
+
+
 class AppliancePrediction(BaseModel):  # AI 모델이 직접 반환한 원본 결과 
     """One appliance ON probability returned by a Predictor."""
 

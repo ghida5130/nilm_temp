@@ -30,6 +30,7 @@ case "$phase" in
     ;;
   b-loader)
     docker compose up -d --pull never --no-deps --wait --wait-timeout 180 bronze-loader
+    docker compose up -d --pull never --no-deps --wait --wait-timeout 180 session-lake-loader
     ;;
   *) echo "Unknown deployment phase" >&2; exit 2 ;;
 esac
