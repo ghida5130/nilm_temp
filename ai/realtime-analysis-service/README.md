@@ -1,5 +1,104 @@
 # Realtime Analysis Service
 
+## 로컬 실행 방법 (Windows CMD)
+
+아래 명령은 저장소를 `C:\Users\SSAFY\Desktop\D201\S15P21D201`에 받은 경우의
+예시입니다. 다른 위치에 받았다면 경로만 바꿉니다. Docker Desktop이 실행 중이고
+`infrastructure\local\.env` 설정이 끝난 상태를 기준으로 합니다.
+
+### 1. 전체 서비스와 Consumer 1개 실행
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\infrastructure\local
+docker compose up -d --build --scale realtime-analysis-service=1
+docker compose ps realtime-analysis-service aggregation-service
+```
+
+코드를 수정한 뒤 분석 서비스만 다시 빌드하려면 다음 명령을 사용합니다.
+
+```bat
+docker compose up -d --build --force-recreate --scale realtime-analysis-service=1 realtime-analysis-service
+```
+
+기동 로그는 다음과 같이 확인합니다. `Ctrl+C`는 로그 보기만 종료하며 컨테이너는
+계속 실행됩니다.
+
+```bat
+docker compose logs -f realtime-analysis-service
+```
+
+### 2. 여러 가구 데이터 발생
+
+새 CMD 창을 열고 시뮬레이터를 실행합니다. 최초 한 번은 의존성을 설치해야 합니다.
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\infrastructure\mqtt\simulator
+pip install -r requirements.txt
+python simulator.py --scenario random --houses 20 --hz 1 --count 0 --quiet
+```
+
+- `--houses 20`: `H001`부터 `H020`까지 사용하여 여러 Kafka 파티션에 데이터를 보냅니다.
+- `--hz 1`: 가구마다 초당 1개를 보냅니다.
+- `--count 0`: 자동 종료하지 않고 계속 실행합니다. 종료할 때는 `Ctrl+C`를 누릅니다.
+- 성능 비교 시 `--hz`를 높일 수 있지만 Consumer 1·2·4개 테스트에서 같은 값을 사용해야 합니다.
+
+### 3. Consumer를 2개, 4개로 증설
+
+다중 Consumer 테스트에서는 `compose.scale.yaml`을 함께 사용합니다. 로컬에서는
+static membership을 끄고 cooperative-sticky 할당만 사용하며,
+`aggregation-service`는 항상 1개로 유지합니다.
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\infrastructure\local
+
+docker compose -f compose.yaml -f compose.scale.yaml up -d --scale realtime-analysis-service=2 --no-recreate realtime-analysis-service
+docker compose -f compose.yaml -f compose.scale.yaml ps realtime-analysis-service aggregation-service
+
+docker compose -f compose.yaml -f compose.scale.yaml up -d --scale realtime-analysis-service=4 --no-recreate realtime-analysis-service
+docker compose -f compose.yaml -f compose.scale.yaml ps realtime-analysis-service aggregation-service
+```
+
+`--no-recreate`는 이미 실행 중인 Consumer를 불필요하게 다시 만들지 않고 새 replica만
+추가하도록 합니다. 따라서 cooperative-sticky 리밸런싱과 유지된 파티션의 상태 보존을
+확인하기 쉽습니다.
+
+### 4. 리밸런싱과 상태 확인
+
+```bat
+docker compose -f compose.yaml -f compose.scale.yaml logs --since=5m realtime-analysis-service | findstr /I /C:"partitions assigned" /C:"partitions revoked" /C:"partitions lost" /C:"ILLEGAL_GENERATION" /C:"Offset store skipped"
+```
+
+- Prometheus: <http://localhost:19090>
+- Prometheus Targets: <http://localhost:19090/targets>
+- Grafana: <http://localhost:13001> (`admin / admin`)
+
+Prometheus에서 다음 쿼리를 차례로 확인합니다.
+
+```promql
+count(up{job="ai-analysis"} == 1)
+sum(nilm_analysis_consumer_assigned_partitions{job="ai-analysis"})
+sum(nilm_analysis_warmup_households{job="ai-analysis"})
+sum(nilm_analysis_consumer_lag_messages{job="ai-analysis"})
+sum(rate(nilm_analysis_messages_total{job="ai-analysis",status="processed"}[1m]))
+```
+
+정상이라면 Consumer 수는 지정한 `1`, `2`, `4`와 같고, 할당 파티션 합은 `24`입니다.
+리밸런싱 직후 이동한 가구만 warm-up에 들어갔다가 299개를 다시 모으면 빠지며,
+입력이 멈춘 뒤 lag는 최종적으로 `0`이 됩니다.
+
+### 5. 테스트 종료 후 Consumer 1개로 복구
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\infrastructure\local
+docker compose -f compose.yaml -f compose.scale.yaml up -d --scale realtime-analysis-service=1 --no-recreate realtime-analysis-service
+docker compose -f compose.yaml -f compose.scale.yaml ps realtime-analysis-service aggregation-service
+```
+
+DB와 Kafka 데이터를 유지하려면 테스트 종료 시 `docker compose down -v`는 실행하지
+않습니다. 리밸런싱 문제와 검증 기록은
+[Kafka 다중 Consumer 리밸런싱 트러블슈팅](../../docs/진행상황/최보경/20260920_Kafka_다중_Consumer_리밸런싱_트러블슈팅.md)을
+참고합니다.
+
 Kafka 전력 데이터를 검증하고, 가구별 입력 버퍼와 MVP용 가전 ON/OFF 예측을 거쳐
 위험 이벤트와 생활 패턴 변화 이벤트를 `analysis.event.v1`로 발행합니다.
 
@@ -31,7 +130,7 @@ VACUUM_CLEANER
 ```
 
 잘못된 입력은 `dlq.analysis`로 발행합니다. Kafka offset은 정상 처리 또는 DLQ 전송이
-완료된 뒤에만 수동으로 commit합니다.
+완료된 뒤에만 로컬에 저장하고, Consumer가 안정 상태일 때 자동 commit합니다.
 
 ## 실시간 Snapshot 수신 담당자 전달 사항
 
