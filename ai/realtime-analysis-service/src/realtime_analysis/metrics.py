@@ -71,6 +71,7 @@ PATTERNS = (*REALTIME_PATTERNS, "ROUTINE_CHANGED")
 PATTERN_RESULTS = ("detected", "not_detected", "error")
 DAILY_JOBS = ("activity_index", "routine_changed", "baseline_update")
 DAILY_JOB_STATUSES = ("success", "error")
+REBALANCE_EVENTS = ("assign", "revoke", "lost")
 
 
 class AnalysisMetrics:
@@ -112,6 +113,27 @@ class AnalysisMetrics:
             "nilm_analysis_consumer_lag_messages",
             "Difference between the Kafka high watermark and consumer position.",
             ("topic", "partition"),
+            registry=registry,
+        )
+        self.consumer_rebalances = Counter(
+            "nilm_analysis_consumer_rebalances_total",
+            "Kafka consumer rebalance callbacks by event.",
+            ("event",),
+            registry=registry,
+        )
+        self.assigned_partitions = Gauge(
+            "nilm_analysis_consumer_assigned_partitions",
+            "Kafka partitions currently assigned to this consumer instance.",
+            registry=registry,
+        )
+        self.household_state_resets = Counter(
+            "nilm_analysis_household_state_resets_total",
+            "Household volatile states reset after partition revocation.",
+            registry=registry,
+        )
+        self.warmup_households = Gauge(
+            "nilm_analysis_warmup_households",
+            "Households currently refilling their model input window.",
             registry=registry,
         )
         self.model = Info(
@@ -167,6 +189,8 @@ class AnalysisMetrics:
             self.messages.labels(status=status)
         for reason in DLQ_REASONS:
             self.dlq_messages.labels(reason=reason)
+        for event in REBALANCE_EVENTS:
+            self.consumer_rebalances.labels(event=event)
         for pattern in PATTERNS:
             for result in PATTERN_RESULTS:
                 self.pattern_detections.labels(pattern=pattern, result=result)
@@ -212,6 +236,19 @@ class AnalysisMetrics:
                     partition=str(partition),
                 ).set(max(lag, 0))
             self._lag_labels = current_labels
+
+    def record_consumer_rebalance(self, event: str) -> None:
+        self.consumer_rebalances.labels(event=event).inc()
+
+    def set_assigned_partitions(self, count: int) -> None:
+        self.assigned_partitions.set(max(count, 0))
+
+    def record_household_state_resets(self, count: int) -> None:
+        if count > 0:
+            self.household_state_resets.inc(count)
+
+    def set_warmup_households(self, count: int) -> None:
+        self.warmup_households.set(max(count, 0))
 
     def set_model_info(self, name: str, version: str) -> None:
         self.model.info({"name": name, "version": version})

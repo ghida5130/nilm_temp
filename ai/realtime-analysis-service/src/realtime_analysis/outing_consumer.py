@@ -82,7 +82,7 @@ class OutingEventConsumer:
             METRICS.record_error("outing_state", type(error).__name__)
             raise
 
-        self._commit(message)
+        self._store_offset(message)
         logger.info(
             "Outing event processed: household=%s event_type=%s occurred_at=%s "
             "state_applied=%s",
@@ -106,7 +106,7 @@ class OutingEventConsumer:
             str(error),
         )
         METRICS.record_dlq(error_code)
-        self._commit(message)
+        self._store_offset(message)
 
     @staticmethod
     def _decode_json(message: Message) -> Any:
@@ -115,5 +115,20 @@ class OutingEventConsumer:
             raise json.JSONDecodeError("Kafka message value is null", "", 0)
         return json.loads(raw_value.decode("utf-8"))
 
-    def _commit(self, message: Message) -> None:
-        self._consumer.commit(message=message, asynchronous=False)
+    def _store_offset(self, message: Message) -> bool:
+        try:
+            self._consumer.store_offsets(message=message)
+            return True
+        except KafkaException as error:
+            kafka_error = error.args[0] if error.args else None
+            if (
+                isinstance(kafka_error, KafkaError)
+                and kafka_error.code() == KafkaError._STATE
+            ):
+                METRICS.record_error("outing_offset_store", kafka_error.name())
+                logger.warning(
+                    "Outing offset store skipped after partition loss: error=%s",
+                    kafka_error.name(),
+                )
+                return False
+            raise

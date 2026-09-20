@@ -1,13 +1,13 @@
 {
   "uid": "nilm-ai-analysis",
   "title": "NILM · AI 분석",
-  "description": "기존 AI /metrics. 데이터 미발생은 No data, 수집 실패는 up=0. E2E는 Snapshot 생성 시각 기준.",
+  "description": "모든 실시간 AI Consumer replica의 /metrics. 데이터 미발생은 No data, 수집 실패는 up=0.",
   "tags": [
     "nilm"
   ],
   "timezone": "browser",
   "schemaVersion": 41,
-  "version": 2,
+  "version": 3,
   "editable": false,
   "refresh": "1s",
   "timepicker": { "refresh_intervals": ["1s", "5s", "10s", "30s", "1m", "5m"] },
@@ -162,7 +162,7 @@
     {
       "id": 3,
       "type": "timeseries",
-      "title": "입력 처리량 · 상태별",
+      "title": "입력 처리량 · Consumer별",
       "description": "processed에는 버퍼 적재만 완료한 입력도 포함.",
       "datasource": {
         "type": "prometheus",
@@ -199,8 +199,8 @@
         {
           "refId": "A",
           "interval": "1s",
-          "expr": "sum by(status) (rate(nilm_analysis_messages_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
-          "legendFormat": "{{status}}",
+          "expr": "sum by(instance,status) (rate(nilm_analysis_messages_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{instance}} / {{status}}",
           "datasource": {
             "type": "prometheus",
             "uid": "nilm-prometheus"
@@ -542,7 +542,7 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Consumer Lag · 토픽 합계",
+      "title": "Consumer Lag · 인스턴스별 합계",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -579,8 +579,8 @@
         {
           "refId": "A",
           "interval": "1s",
-          "expr": "sum by(topic) (nilm_analysis_consumer_lag_messages{job=\"ai-analysis\",instance=~\"$instance\"})",
-          "legendFormat": "{{topic}}",
+          "expr": "sum by(instance,topic) (nilm_analysis_consumer_lag_messages{job=\"ai-analysis\",instance=~\"$instance\"})",
+          "legendFormat": "{{instance}} / {{topic}}",
           "datasource": {
             "type": "prometheus",
             "uid": "nilm-prometheus"
@@ -791,6 +791,114 @@
           },
           "instant": false,
           "range": true
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "할당 파티션 수",
+      "description": "현재 각 Consumer replica가 소유한 Kafka 파티션 수.",
+      "datasource": { "type": "prometheus", "uid": "nilm-prometheus" },
+      "gridPos": { "x": 0, "y": 56, "w": 6, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "nilm_analysis_consumer_assigned_partitions{job=\"ai-analysis\",instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
+          "datasource": { "type": "prometheus", "uid": "nilm-prometheus" },
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Warm-up 중인 가구 수",
+      "description": "모델 입력 299개를 아직 다시 채우는 중인 가구 수.",
+      "datasource": { "type": "prometheus", "uid": "nilm-prometheus" },
+      "gridPos": { "x": 6, "y": 56, "w": 6, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "nilm_analysis_warmup_households{job=\"ai-analysis\",instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
+          "datasource": { "type": "prometheus", "uid": "nilm-prometheus" },
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "리밸런싱 콜백 횟수",
+      "description": "선택 기간의 assign/revoke 콜백 증가량.",
+      "datasource": { "type": "prometheus", "uid": "nilm-prometheus" },
+      "gridPos": { "x": 12, "y": 56, "w": 6, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance,event) (increase(nilm_analysis_consumer_rebalances_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{instance}} / {{event}}",
+          "datasource": { "type": "prometheus", "uid": "nilm-prometheus" },
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "초기화된 가구 수",
+      "description": "선택 기간에 revoke로 volatile 상태가 초기화된 가구 수.",
+      "datasource": { "type": "prometheus", "uid": "nilm-prometheus" },
+      "gridPos": { "x": 18, "y": 56, "w": 6, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance) (increase(nilm_analysis_household_state_resets_total{job=\"ai-analysis\",instance=~\"$instance\"}[$__range]))",
+          "legendFormat": "{{instance}}",
+          "datasource": { "type": "prometheus", "uid": "nilm-prometheus" },
+          "instant": true,
+          "range": false
         }
       ]
     }

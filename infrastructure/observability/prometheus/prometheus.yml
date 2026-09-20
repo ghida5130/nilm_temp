@@ -23,6 +23,27 @@ scrape_configs:
     file_sd_configs:
       - files: ["/etc/prometheus/targets/ai.json"]
         refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [service]
+        regex: aggregation-service
+        target_label: job
+        replacement: aggregation-service
+  - job_name: ai-analysis-local-replicas
+    scrape_interval: 1s
+    scrape_timeout: 1s
+    honor_labels: false
+    dns_sd_configs:
+      - names: ["realtime-analysis-service-local"]
+        type: A
+        port: 8000
+        refresh_interval: 5s
+    relabel_configs:
+      - target_label: job
+        replacement: ai-analysis
+      - target_label: service
+        replacement: realtime-analysis-service
+      - target_label: environment
+        replacement: local
   - job_name: service-http
     metrics_path: /probe
     params:

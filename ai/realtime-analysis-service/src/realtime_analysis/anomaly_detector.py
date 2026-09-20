@@ -36,6 +36,8 @@ class AnomalyDetector(Protocol):
 
     def mark_emitted(self, anomaly: "PendingAnomaly") -> None: ...
 
+    def reset(self, household_id: str) -> None: ...
+
 
 @dataclass(frozen=True)
 class PendingAnomaly:
@@ -127,6 +129,9 @@ class RoutineMissedDetector:
             anomaly.appliance_type,
             anomaly.baseline_type,
         )
+
+    def reset(self, household_id: str) -> None:
+        """This legacy detector keeps no evaluation-cadence state."""
 
 
 @dataclass(frozen=True)
@@ -386,6 +391,11 @@ class RealtimeAnomalyDetector:
             appliance_type=anomaly.appliance_type,
             emitted_at=anomaly.event.occurred_at.astimezone(timezone.utc),
         )
+
+    def reset(self, household_id: str) -> None:
+        """Forget the last volatile evaluation time for one household."""
+
+        self._last_evaluated_at.pop(household_id, None)
 
     def _is_in_cooldown(self, anomaly: PendingAnomaly) -> bool:
         policy = self._policies.get(anomaly.event.event_type)

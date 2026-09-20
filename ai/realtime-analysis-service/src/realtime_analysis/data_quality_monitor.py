@@ -208,6 +208,12 @@ class DataQualityMonitor:
             state = self._states.get(household_id)
             return state is None or state.status == "NORMAL"
 
+    def reset(self, household_id: str) -> None:
+        """Forget one household after its Kafka partition is revoked."""
+
+        with self._lock:
+            self._states.pop(household_id, None)
+
     @staticmethod
     def _event_id(
         household_id: str,

@@ -28,7 +28,8 @@ EC2-A 서비스는 Docker 네트워크, EC2-B의 AI/Kafka/PostgreSQL은 사설 I
 | 구성               | 수집 내용                                                                         |
 | ------------------ | --------------------------------------------------------------------------------- |
 | Prometheus         | AI는 1초, 나머지는 15초 주기 수집. 15일 또는 5GB 중 먼저 도달하는 보존 한도        |
-| AI `/metrics`      | 단계별 지연, E2E, 처리 상태, DLQ, 오류, Consumer Lag, 모델 정보, 런타임 기본 지표 |
+| AI `/metrics`      | 단계별 지연, 처리 상태, Consumer별 Lag·처리량, 리밸런싱, 할당 파티션, 상태 초기화, warm-up |
+| 집계 `/metrics`    | 일일 활동 지수·패턴 변화·baseline 갱신 작업의 실행 횟수와 지연                   |
 | Blackbox Exporter  | 기존 HTTP health/readiness의 성공 여부·시간·상태 코드, TCP 연결 여부·시간         |
 | Grafana            | 데이터소스와 대시보드 4개 자동 등록, 화면은 1초마다 갱신                           |
 | cAdvisor 선택 구성 | 같은 Linux Docker 호스트의 컨테이너 CPU·메모리·네트워크                           |
@@ -101,6 +102,9 @@ node-exporter 수집을 위해 9100도 같은 범위로 허용한다. TCP probe�
 로컬에서는 `.env.local.example`, EC2-A에서는 `.env.ec2-a.example`을 `.env`로 복사.
 로컬 예시는 `APPLICATION_NETWORK=nilm-net`, `TARGET_ENV=local`, `EC2_B_PRIVATE_IP=127.0.0.1` 사용.
 로컬 대상 JSON은 EC2-B 별칭을 사용하지 않으며 `TARGET_ENV`로 대상 묶음 선택.
+로컬 AI replica는 `realtime-analysis-service-local` DNS 별칭의 모든 A 레코드를
+5초마다 발견해 각각 수집한다. `prometheus/targets/local/ai.json`은 단일
+`aggregation-service` 대상만 별도로 등록한다.
 
 ## AI 대시보드 해석
 
@@ -113,6 +117,7 @@ node-exporter 수집을 위해 9100도 같은 범위로 허용한다. TCP probe�
 - 최초 DLQ/오류 발생 전, 버퍼 준비 전, 관측 없는 단계는 `No data`가 정상일 수 있음. 0으로 강제 보정해 수집 장애를 숨기지 않음.
 - rate는 최소 두 수집 샘플 필요. AI는 1초 수집 및 쿼리 Min step 1초 사용. 시작 직후 여러 샘플이 쌓인 뒤 확인. Histogram 관측이 없으면 분위수는 비어 있을 수 있음.
 - AI instance 선택기로 여러 인스턴스 중 조회 대상 선택.
+- 할당 파티션과 warm-up 가구는 현재값, 리밸런싱과 상태 초기화는 Counter 증가량으로 표시.
 
 ## 패턴 감지·일일 작업 및 1초 갱신
 
@@ -132,7 +137,7 @@ Grafana dashboard JSON은 약 30초 후 자동 반영, provisioning 설정 변�
 
 ## 확인 방법 및 제한
 
-1. Prometheus Targets에서 `ai-analysis`가 UP인지 확인.
+1. Prometheus Targets에서 모든 `ai-analysis` replica와 `aggregation-service`가 UP인지 확인.
 2. `nilm_analysis_model_info`와 `nilm_analysis_messages_total` 조회.
 3. 기존 입력 메시지 처리 후 AI 지연 및 처리량 패널 확인.
 4. `probe_success`로 각 HTTP/TCP 대상의 상태 확인. `up`은 Exporter 호출 성공이지 대상 서비스 정상 여부가 아님.

@@ -196,12 +196,18 @@ services:
 
   realtime-analysis-service:
     build: ../../ai/realtime-analysis-service
-    container_name: nilm-realtime-analysis
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
-    ports:
-      - "127.0.0.1:${ANALYSIS_HTTP_PORT:-8000}:8000"
+    # Keep metrics and health endpoints on the Compose network. Publishing one
+    # fixed host port would prevent this service from being scaled.
+    expose:
+      - "8000"
+    networks:
+      default:
+        aliases:
+          # Prometheus DNS service discovery expands this alias to every replica.
+          - realtime-analysis-service-local
     environment:
       HTTP_HOST: 0.0.0.0
       HTTP_PORT: 8000
@@ -215,6 +221,9 @@ services:
       KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
       KAFKA_GROUP_ID: ${ANALYSIS_KAFKA_GROUP_ID:-realtime-analysis-service-v1}
       KAFKA_AUTO_OFFSET_RESET: ${ANALYSIS_KAFKA_AUTO_OFFSET_RESET:-earliest}
+      KAFKA_PARTITION_ASSIGNMENT_STRATEGY: ${ANALYSIS_KAFKA_PARTITION_ASSIGNMENT_STRATEGY:-cooperative-sticky}
+      KAFKA_GROUP_INSTANCE_ID: ${ANALYSIS_KAFKA_GROUP_INSTANCE_ID:-}
+      KAFKA_OUTING_GROUP_INSTANCE_ID: ${ANALYSIS_KAFKA_OUTING_GROUP_INSTANCE_ID:-}
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: analysis_db
