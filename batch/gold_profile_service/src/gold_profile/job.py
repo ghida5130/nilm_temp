@@ -23,9 +23,12 @@ from power_silver.constants import (
     RUN_VALIDATING,
 )
 from power_silver.writer import write_parquet
+from realtime_analysis.models import LakeBatchRun
 
+from gold_profile.delivery import enqueue_payloads
 from gold_profile.input_snapshot import build_profile_snapshot, window_dates
 from gold_profile.logical_uses import build_logical_uses
+from gold_profile.message_contract import build_household_messages
 from gold_profile.routine_baseline import build_routine_baselines
 from gold_profile.statistical_profile import build_statistical_profiles
 from gold_profile.validation import (
@@ -107,6 +110,44 @@ def _paths(settings, as_of_date: date, run_id: str, *, staging: bool) -> dict[st
     }
 
 
+def _revision_of(session_factory, run_id: UUID) -> int:
+    with session_factory() as session:
+        run = session.get(LakeBatchRun, run_id)
+        if run is None:
+            raise RuntimeError(f"Gold run is missing: {run_id}")
+        return int(run.attempt)
+
+
+def _repair_reused_delivery(
+    settings, as_of_date, run_id, *, storage, session_factory, spark
+) -> None:
+    repository = SilverCommitRepository(session_factory, job_name=JOB_NAME)
+    baseline_ref = repository.active_version(DATASET_ROUTINE_BASELINE, as_of_date)
+    statistic_ref = repository.active_version(DATASET_STATISTICAL_PROFILE, as_of_date)
+    if baseline_ref is None or statistic_ref is None:
+        raise RuntimeError("reused Gold run does not have both active profile components")
+    if baseline_ref.run_id != run_id or statistic_ref.run_id != run_id:
+        raise RuntimeError("active Gold components do not match the reused run")
+    manifest = json.loads(storage.read_bytes(baseline_ref.manifest_path))
+    effective_from = datetime.fromisoformat(manifest["effective_from"])
+    baseline = spark.read.parquet(storage.uri(baseline_ref.output_path))
+    statistics = spark.read.parquet(storage.uri(statistic_ref.output_path))
+    payloads = build_household_messages(
+        baseline, statistics,
+        profile_version=str(run_id), profile_revision=_revision_of(session_factory, run_id),
+        delivery_mode=manifest.get("delivery_mode", "SHADOW"),
+        as_of_date=as_of_date,
+        window_start_date=date.fromisoformat(manifest["input"]["window_start_date"]),
+        effective_from=effective_from, published_at=effective_from,
+        input_snapshot_id=manifest["input_snapshot_id"],
+        rule_version=manifest["rule_version"],
+        statistic_rule_version=manifest["statistic_rule_version"],
+        input_incomplete=bool(manifest.get("input_incomplete")),
+    )
+    with session_factory.begin() as session:
+        enqueue_payloads(session, payloads)
+
+
 def run_gold_profile(
     settings,
     as_of_date: date,
@@ -157,6 +198,10 @@ def _run_locked(
             config_version=config_version, dataset_names=OUTPUT_DATASETS,
         )
         if reusable is not None:
+            _repair_reused_delivery(
+                settings, as_of_date, reusable, storage=storage,
+                session_factory=session_factory, spark=spark,
+            )
             return GoldJobResult(
                 "SUCCEEDED", as_of_date, reused_run_id=str(reusable),
                 incomplete=snapshot.incomplete,
@@ -220,6 +265,17 @@ def _run_locked(
         validate_baselines(baseline, input_incomplete=snapshot.incomplete)
         validate_logical_uses(logical_uses)
         validate_statistics(statistics, input_incomplete=snapshot.incomplete)
+        payloads = build_household_messages(
+            baseline, statistics,
+            profile_version=run_id, profile_revision=handle.attempt,
+            delivery_mode=settings.profile_delivery_mode,
+            as_of_date=as_of_date, window_start_date=snapshot.window_start_date,
+            effective_from=now, published_at=now,
+            input_snapshot_id=snapshot.snapshot_id,
+            rule_version=settings.profile_rule_version,
+            statistic_rule_version=settings.profile_statistic_rule_version,
+            input_incomplete=snapshot.incomplete,
+        )
         frames = {
             DATASET_ROUTINE_BASELINE: baseline,
             DATASET_LOGICAL_USES: logical_uses,
@@ -247,7 +303,10 @@ def _run_locked(
             "rule_version": settings.profile_rule_version,
             "statistic_rule_version": settings.profile_statistic_rule_version,
             "config_version": config_version,
-            "shadow_publish": True, "risk_score_generated": False,
+            "delivery_mode": settings.profile_delivery_mode,
+            "shadow_publish": settings.profile_delivery_mode == "SHADOW",
+            "profile_revision": handle.attempt,
+            "risk_score_generated": False,
             "input_incomplete": snapshot.incomplete,
             "components": {
                 name: {
@@ -264,7 +323,11 @@ def _run_locked(
         path = manifest_path(settings.profile_manifest_base, as_of_date, run_id)
         manifest["manifest_path"] = path
         write_manifest(storage, path, manifest)
-        repository.publish(manifest, depends_on=all_refs)
+        repository.publish(
+            manifest,
+            depends_on=all_refs,
+            on_activated=lambda session: enqueue_payloads(session, payloads),
+        )
     except BaseException as error:
         repository.fail(handle.run_id, error)
         raise

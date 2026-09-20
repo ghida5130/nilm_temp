@@ -12,6 +12,7 @@ dependencies = [
     "realtime-analysis-service==0.1.0",
     "pyspark==3.5.6",
     "hdfs>=2.7,<3",
+    "confluent-kafka==2.6.0",
 ]
 
 [project.optional-dependencies]

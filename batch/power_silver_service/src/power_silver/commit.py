@@ -24,7 +24,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -292,7 +292,13 @@ class SilverCommitRepository:
     def fail(self, run_id: UUID, error: BaseException) -> None:
         self.finish(run_id, RUN_FAILED, error_message=f"{type(error).__name__}: {error}")
 
-    def publish(self, manifest: dict, depends_on: Iterable = ()) -> UUID:
+    def publish(
+        self,
+        manifest: dict,
+        depends_on: Iterable = (),
+        *,
+        on_activated: Callable[[Session], None] | None = None,
+    ) -> UUID:
         """manifest가 가리키는 출력들을 활성 버전으로 만든다(여러 번 불러도 같은 결과).
 
         ``depends_on``은 이 실행이 소비한 상위 데이터셋 버전
@@ -338,6 +344,11 @@ class SilverCommitRepository:
                     if value
                 },
             }
+            # Gold uses this hook to create its delivery outbox in the exact
+            # transaction that makes all component datasets ACTIVE.  A callback
+            # is deliberately not run for a stale recovered attempt.
+            if activated and on_activated is not None:
+                on_activated(session)
         return run_id
 
     def _ensure_run(

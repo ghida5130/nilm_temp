@@ -14,6 +14,7 @@ from power_silver.spark import build_session
 from power_silver.storage import create_storage
 
 from gold_profile.config import get_settings
+from gold_profile.delivery import GoldProfilePublisher
 from gold_profile.input_snapshot import build_profile_snapshot, window_dates
 from gold_profile.job import (
     DATASET_ROUTINE_BASELINE, JOB_NAME, config_version_of, run_gold_profile,
@@ -41,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     dirty.add_argument("--as-of")
     dirty.add_argument("--from", dest="start")
     dirty.add_argument("--to", dest="end")
+    commands.add_parser("publish", help="publish one pending outbox batch")
     return parser
 
 
@@ -68,6 +70,12 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
     session_factory = _session_factory(settings)
+    if args.command == "publish":
+        published, failed = GoldProfilePublisher(
+            settings, session_factory
+        ).publish_pending()
+        logging.info("gold profile outbox published=%s failed=%s", published, failed)
+        return 1 if failed else 0
     repository = SilverCommitRepository(session_factory, job_name=JOB_NAME)
     catalog = SilverCatalog(session_factory)
     target = date.fromisoformat(args.as_of) if getattr(args, "as_of", None) else default_as_of_date(settings)

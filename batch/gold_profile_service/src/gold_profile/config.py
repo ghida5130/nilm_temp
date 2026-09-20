@@ -15,6 +15,10 @@ class GoldProfileSettings(SilverSettings):
     profile_statistic_rule_version: str = "household-statistics-v1-nearest-rank"
     profile_manifest_base: str = "/nilm/manifests/job=gold-profile"
     profile_staging_base: str = "/nilm/gold/.staging/job=gold-profile"
+    profile_delivery_mode: str = Field(default="SHADOW", pattern="^(ACTIVE|SHADOW)$")
+    profile_kafka_topic: str = "gold.household-profile.v1"
+    profile_publisher_batch_size: int = Field(default=100, ge=1, le=10_000)
+    profile_publisher_retry_seconds: int = Field(default=30, ge=1, le=86_400)
     spark_app_name: str = "gold-profile"
 
 

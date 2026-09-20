@@ -10,6 +10,7 @@ from power_silver.constants import DATASET_APPLIANCE_USAGE_DAILY, DATASET_SESSIO
 from power_silver.storage import LocalLakeStorage
 
 from gold_profile.config import GoldProfileSettings
+from gold_profile.delivery import GoldProfileDeliveryOutbox
 from gold_profile.job import (
     DATASET_LOGICAL_USES, DATASET_ROUTINE_BASELINE, DATASET_STATISTICAL_PROFILE,
     run_gold_profile,
@@ -71,6 +72,7 @@ def test_job_publishes_one_atomic_shadow_profile(spark, tmp_path):
     settings = GoldProfileSettings(
         lake_local_root=str(tmp_path / "lake"), profile_window_days=2,
         profile_minimum_sample_days=1, profile_minimum_weekday_sample_days=1,
+        profile_delivery_mode="ACTIVE",
         spark_master="local[2]",
     )
 
@@ -93,8 +95,20 @@ def test_job_publishes_one_atomic_shadow_profile(spark, tmp_path):
     assert overall.active_days == 1
     assert str(overall.daily_use_probability) == "0.5000"
     assert overall.enabled is False
+    with session_factory() as session:
+        deliveries = session.query(GoldProfileDeliveryOutbox).all()
+        assert len(deliveries) == 1
+        assert deliveries[0].status == "PENDING"
+        assert deliveries[0].payload["household_id"] == "H001"
+        assert deliveries[0].payload["profile_version"] == result.run_id
+        assert deliveries[0].payload["profile_revision"] == 1
+        assert deliveries[0].payload["delivery_mode"] == "ACTIVE"
+        assert {row["appliance_type"] for row in deliveries[0].payload["routine_baselines"]} == {"KETTLE"}
+        assert {row["metric_name"] for row in deliveries[0].payload["statistics"]}
 
     repeated = run_gold_profile(
         settings, as_of, storage=storage, session_factory=session_factory, spark=spark,
     )
     assert repeated.reused_run_id == result.run_id
+    with session_factory() as session:
+        assert session.query(GoldProfileDeliveryOutbox).count() == 1
