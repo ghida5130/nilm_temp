@@ -1,5 +1,6 @@
 package com.nilm.monitoring.service;
 
+import com.nilm.monitoring.config.PowerUsageProperties;
 import com.nilm.monitoring.domain.HourlyAppliancePowerUsage;
 import com.nilm.monitoring.domain.HourlyPowerUsage;
 import com.nilm.monitoring.domain.Subject;
@@ -38,6 +39,7 @@ public class SubjectPowerUsageService {
     private static final int USAGE_SCALE = 1;
 
     private final SubjectAccessGuard accessGuard;
+    private final PowerUsageProperties properties;
     private final HourlyPowerUsageRepository totals;
     private final HourlyAppliancePowerUsageRepository appliances;
 
@@ -63,12 +65,23 @@ public class SubjectPowerUsageService {
                         subject.getHouseholdId(), from, until);
 
         BigDecimal[] totalBuckets = emptyBuckets();
+        // 관측 커버리지는 가구 단위다. 가전별 계열도 같은 값으로 상태를 정한다.
+        int[] observedSeconds = new int[BUCKET_COUNT];
         for (HourlyPowerUsage row : totalRows) {
             add(totalBuckets, dayStart, row.getBucketStartAt(), row.getEnergyWh());
+            int hour = hourIndex(dayStart, row.getBucketStartAt());
+            if (hour >= 0) {
+                observedSeconds[hour] += row.getObservedSeconds();
+            }
         }
 
         // 가전 코드 순으로 고정해 프론트가 매번 같은 순서의 계열을 그린다.
         Map<String, BigDecimal[]> byAppliance = new TreeMap<>();
+        // 그날 한 번도 쓰지 않은 가전도 계열을 세운다. 배열에서 빠지면 화면이 가전 행을
+        // 직접 채워 넣어야 하고, 안 쓴 것과 목록에 없는 것이 같아 보인다.
+        for (String applianceType : properties.applianceTypes()) {
+            byAppliance.put(applianceType, emptyBuckets());
+        }
         for (HourlyAppliancePowerUsage row : applianceRows) {
             add(
                     byAppliance.computeIfAbsent(row.getApplianceType(), key -> emptyBuckets()),
@@ -78,10 +91,12 @@ public class SubjectPowerUsageService {
             );
         }
 
-        List<HourlyUsage> hourlyUsage = toHourlyUsage(totalBuckets, dayStart, now);
+        List<HourlyUsage> hourlyUsage =
+                toHourlyUsage(totalBuckets, observedSeconds, dayStart, now);
         List<SubjectPowerUsageResponse.ApplianceUsage> applianceUsages = byAppliance.entrySet().stream()
                 .map(entry -> {
-                    List<HourlyUsage> buckets = toHourlyUsage(entry.getValue(), dayStart, now);
+                    List<HourlyUsage> buckets =
+                            toHourlyUsage(entry.getValue(), observedSeconds, dayStart, now);
                     return new SubjectPowerUsageResponse.ApplianceUsage(
                             entry.getKey(), sum(buckets), buckets);
                 })
@@ -116,17 +131,24 @@ public class SubjectPowerUsageService {
             OffsetDateTime bucketStartAt,
             BigDecimal energyWh
     ) {
-        int hour = (int) java.time.Duration
-                .between(dayStart.toInstant(), bucketStartAt.toInstant())
-                .toHours();
-        if (hour < 0 || hour >= BUCKET_COUNT) {
+        int hour = hourIndex(dayStart, bucketStartAt);
+        if (hour < 0) {
             return;
         }
         buckets[hour] = buckets[hour].add(energyWh == null ? BigDecimal.ZERO : energyWh);
     }
 
+    /** 조회 범위 밖의 값은 들어올 수 없지만, 방어적으로 -1을 돌려준다. */
+    private int hourIndex(ZonedDateTime dayStart, OffsetDateTime bucketStartAt) {
+        int hour = (int) java.time.Duration
+                .between(dayStart.toInstant(), bucketStartAt.toInstant())
+                .toHours();
+        return hour < 0 || hour >= BUCKET_COUNT ? -1 : hour;
+    }
+
     private List<HourlyUsage> toHourlyUsage(
             BigDecimal[] buckets,
+            int[] observedSeconds,
             ZonedDateTime dayStart,
             OffsetDateTime now
     ) {
@@ -134,27 +156,46 @@ public class SubjectPowerUsageService {
         for (int hour = 0; hour < BUCKET_COUNT; hour++) {
             OffsetDateTime bucketStart = dayStart.plusHours(hour).toOffsetDateTime();
             OffsetDateTime bucketEnd = dayStart.plusHours(hour + 1L).toOffsetDateTime();
-            BucketStatus status = statusOf(bucketStart, bucketEnd, now);
-            BigDecimal usage = status == BucketStatus.NOT_YET
-                    ? null
-                    : buckets[hour].setScale(USAGE_SCALE, RoundingMode.HALF_UP);
+            BucketStatus status =
+                    statusOf(bucketStart, bucketEnd, now, observedSeconds[hour]);
+            // 믿을 수 없는 구간은 0이 아니라 null이다. 0짜리 막대는 "안 썼다"로 읽힌다.
+            BigDecimal usage =
+                    status == BucketStatus.NOT_YET || status == BucketStatus.NO_DATA
+                            ? null
+                            : buckets[hour].setScale(USAGE_SCALE, RoundingMode.HALF_UP);
             result.add(new HourlyUsage(hour, usage, status));
         }
         return result;
     }
 
+    /**
+     * 시각과 관측 커버리지를 함께 본다.
+     * 시각만으로 정하면 스냅샷이 끊긴 구간도 0으로 확정돼 "그 시간에 조용했다"로 보인다.
+     */
     private BucketStatus statusOf(
             OffsetDateTime bucketStart,
             OffsetDateTime bucketEnd,
-            OffsetDateTime now
+            OffsetDateTime now,
+            int observedSeconds
     ) {
         if (!now.isAfter(bucketStart)) {
             return BucketStatus.NOT_YET;
         }
+        if (observedSeconds <= 0) {
+            return BucketStatus.NO_DATA;
+        }
         if (now.isBefore(bucketEnd)) {
+            // 아직 차는 중이다. 커버리지가 모자란 것이 당연하므로 따지지 않는다.
             return BucketStatus.PARTIAL;
         }
-        return BucketStatus.COMPLETE;
+        return observedSeconds < requiredSeconds()
+                ? BucketStatus.PARTIAL
+                : BucketStatus.COMPLETE;
+    }
+
+    private int requiredSeconds() {
+        return (int) Math.ceil(
+                INTERVAL_MINUTES * 60 * properties.getCompleteCoverageRatio());
     }
 
     private BigDecimal sum(List<HourlyUsage> buckets) {

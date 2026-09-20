@@ -736,5 +736,106 @@ class TestScheduleRuntime(unittest.TestCase):
         self.assertEqual(tick2.measured_at, datetime(2026, 8, 21, 0, 0, 1, tzinfo=KST))
 
 
+class TestScheduledOnWindowIsContinuous(unittest.TestCase):
+    """
+    선언된 ON 구간은 듀티 사이클 없이 연속 가동되어야 한다.
+
+    induction/iron은 프로파일상 duty_cycle 가전이지만, 일정 기반 실행에서는
+    선언된 구간이 곧 '사람이 사용한 구간'이므로 내부 휴지를 넣으면 안 된다.
+    휴지가 들어가면 AI가 한 번의 사용을 수십 개 세션으로 쪼개어 인식하고,
+    사용시간 합계가 선언값보다 짧아지며, 시드에 따라 값이 흔들려 결정성도 깨진다.
+    """
+
+    ON_THRESHOLD_W = 300.0
+
+    def _high_power_blocks(self, definition, base_date, household_id):
+        """active_power가 임계값 이상인 연속 구간 목록 [(start_sec, end_sec_exclusive), ...]"""
+        plan = compile_schedule(definition, base_date=base_date)
+        runner = DeterministicScheduleRunner(plan, household_id)
+        blocks: list[tuple[int, int]] = []
+        current_start: int | None = None
+        previous_sec = -1
+        for tick in runner:
+            second = (tick.cycle - plan.first_cycle) % SECONDS_PER_DAY
+            if tick.active_power >= self.ON_THRESHOLD_W:
+                if current_start is None:
+                    current_start = second
+                previous_sec = second
+            elif current_start is not None:
+                blocks.append((current_start, previous_sec + 1))
+                current_start = None
+        if current_start is not None:
+            blocks.append((current_start, previous_sec + 1))
+        return blocks
+
+    @staticmethod
+    def _session_merge_definition():
+        return ScenarioDefinition(
+            scenario_id="ACTIVITY_SESSION_MERGE",
+            days=(
+                DaySchedule(
+                    day_offset=0,
+                    events=(
+                        ApplianceEvent(appliance="induction", start_time="10:00:00", duration_seconds=600),
+                        ApplianceEvent(appliance="induction", start_time="10:11:00", duration_seconds=600),
+                    ),
+                    omission_ranges=(),
+                    publish_samples=SECONDS_PER_DAY,
+                ),
+            ),
+        )
+
+    def test_induction_on_window_has_no_duty_cycle_gaps(self):
+        """인덕션 600초 ON 구간이 조각나지 않고 정확히 2블록으로 나온다"""
+        blocks = self._high_power_blocks(
+            self._session_merge_definition(), date(2026, 9, 16), "H001"
+        )
+
+        self.assertEqual(
+            len(blocks), 2,
+            f"선언된 ON 구간이 듀티 사이클로 쪼개졌습니다: {len(blocks)}개 블록",
+        )
+        self.assertEqual(blocks[0], (10 * 3600, 10 * 3600 + 600))
+        self.assertEqual(blocks[1], (10 * 3600 + 660, 10 * 3600 + 1260))
+
+        # 선언된 OFF 간격은 정확히 60초 (INDUCTION 병합 간격 120초 미만)
+        self.assertEqual(blocks[1][0] - blocks[0][1], 60)
+
+        # AI가 집계할 총 사용시간은 선언값과 정확히 일치해야 한다
+        total_on_seconds = sum(end - start for start, end in blocks)
+        self.assertEqual(total_on_seconds, 1200)
+
+    def test_on_window_identical_across_reference_dates_and_households(self):
+        """가동 구간이 기준일·가구와 무관하게 동일하다 (결정성)"""
+        definition = self._session_merge_definition()
+        expected = [(10 * 3600, 10 * 3600 + 600), (10 * 3600 + 660, 10 * 3600 + 1260)]
+
+        for base_date in (date(2026, 9, 16), date(2026, 9, 17), date(2026, 9, 18)):
+            for household_id in ("H001", "H002"):
+                with self.subTest(base_date=base_date, household_id=household_id):
+                    self.assertEqual(
+                        self._high_power_blocks(definition, base_date, household_id),
+                        expected,
+                    )
+
+    def test_runtime_state_machine_has_no_resting_state(self):
+        """일정 기반 런타임에는 RESTING(듀티 휴지) 상태가 존재하지 않는다"""
+        definition = self._session_merge_definition()
+        plan = compile_schedule(definition, base_date=date(2026, 9, 16))
+        runner = DeterministicScheduleRunner(plan, "H001")
+
+        # ON 구간 한복판(10:05:00)까지 진행시킨 뒤 상태를 확인한다
+        for _ in range(10 * 3600 + 300 + 1):
+            runner.step()
+
+        induction_state = runner._app_states["induction"]
+        self.assertEqual(induction_state.state, "RUNNING")
+        self.assertFalse(
+            hasattr(induction_state, "duty_remaining"),
+            "일정 기반 런타임에 duty 잔여 카운터가 남아 있습니다.",
+        )
+        self.assertIn("induction", runner.snapshot().active_appliances)
+
+
 if __name__ == "__main__":
     unittest.main()

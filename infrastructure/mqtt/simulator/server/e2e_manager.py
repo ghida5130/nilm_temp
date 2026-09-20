@@ -41,6 +41,8 @@ from engine.schedule_executor import (
 from engine.unified_catalog import get_unified_scenario_definition
 from engine.tls import resolve_mqtt_config, get_mqtt_tls_context
 
+from .config import resolve_auto_speed
+
 
 class E2EError(Exception):
     """E2E 도메인 기본 예외"""
@@ -100,7 +102,6 @@ def resolve_start_time_delay(start_time_str: str | None, now: datetime | None = 
 
     delay = (target_dt - current_now).total_seconds()
     return max(0.0, delay)
-    pass
 
 
 class E2EConflictError(E2EError):
@@ -473,6 +474,12 @@ class E2EScheduleSessionManager:
         speed_multiplier = exec_config_raw.get("speed")
 
         households_raw = params["households"]
+
+        # ACCELERATED에서 speed를 생략하면 가구 수 기반 안전 배속을 자동 산출한다.
+        # 무손실 상한은 가구당이 아닌 합계 기준이므로 가구 수로 나눈다.
+        if execution_mode == ExecutionMode.ACCELERATED and speed_multiplier is None:
+            speed_multiplier = resolve_auto_speed(len(households_raw))
+
         run_id = f"run_{uuid.uuid4().hex}"
 
         start_time_str = params.get("start_time")

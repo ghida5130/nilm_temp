@@ -24,6 +24,7 @@ import urllib.error
 import urllib.request
 from unittest.mock import MagicMock, patch
 
+from server.config import DEFAULT_SAFE_AGGREGATE_RATE, resolve_auto_speed
 from server.manager import SimulatorManager
 from server.e2e_manager import E2EScheduleSessionManager, E2ESnapshotTimeoutError
 from server.request_handler import ThreadedHTTPServer, create_request_handler
@@ -110,6 +111,100 @@ class TestE2EApi(unittest.TestCase):
                 content = {"raw": err.read().decode("utf-8")}
             return status, content
 
+    def test_accelerated_speed_omitted_resolves_to_safe_auto_speed(self):
+        """POST /api/e2e/runs: ACCELERATED에서 speed 생략 시 가구 수 기반 안전 배속 자동 산출"""
+        # 1. 순수 함수 계약: 합계가 항상 DEFAULT_SAFE_AGGREGATE_RATE로 유지된다
+        for count in (1, 2, 3, 10):
+            resolved = resolve_auto_speed(count)
+            self.assertAlmostEqual(resolved * count, DEFAULT_SAFE_AGGREGATE_RATE, places=9)
+        for bad_count in (0, -1, True, 1.5, None):
+            with self.assertRaises(ValueError):
+                resolve_auto_speed(bad_count)
+
+        # 2. 단일 가구: speed 생략 -> 202, 스냅샷에 해결된 배속이 그대로 노출된다
+        status, body = self.request("POST", "/api/e2e/runs", {
+            "reference_date": "2026-09-16",
+            "execution": {"mode": "ACCELERATED"},
+            "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
+        })
+        self.assertEqual(status, 202)
+        run_id = body["run_id"]
+
+        status_s, snap = self.request("GET", f"/api/e2e/runs/{run_id}")
+        self.assertEqual(status_s, 200)
+        self.assertEqual(snap["execution_mode"], "ACCELERATED")
+        self.assertAlmostEqual(snap["speed_multiplier"], DEFAULT_SAFE_AGGREGATE_RATE, places=9)
+
+        self.request("POST", f"/api/e2e/runs/{run_id}/stop")
+        for _ in range(50):
+            if not self.e2e_manager.is_active():
+                break
+            time.sleep(0.02)
+
+        # 3. 2가구: 한계는 합계 기준이므로 가구당 배속이 절반이어야 한다
+        status2, body2 = self.request("POST", "/api/e2e/runs", {
+            "reference_date": "2026-09-16",
+            "execution": {"mode": "ACCELERATED"},
+            "households": [
+                {"household_id": "H001", "scenario": "ACTIVITY_NORMAL"},
+                {"household_id": "H002", "scenario": "ACTIVITY_NORMAL"},
+            ],
+        })
+        self.assertEqual(status2, 202)
+        run_id2 = body2["run_id"]
+
+        status_s2, snap2 = self.request("GET", f"/api/e2e/runs/{run_id2}")
+        self.assertEqual(status_s2, 200)
+        self.assertAlmostEqual(
+            snap2["speed_multiplier"], DEFAULT_SAFE_AGGREGATE_RATE / 2, places=9
+        )
+        self.assertAlmostEqual(
+            snap2["speed_multiplier"] * 2, DEFAULT_SAFE_AGGREGATE_RATE, places=9
+        )
+
+        self.request("POST", f"/api/e2e/runs/{run_id2}/stop")
+
+    def test_explicit_speed_is_not_overridden_by_auto_resolution(self):
+        """POST /api/e2e/runs: speed를 명시하면 자동 산출이 개입하지 않는다 (하위 호환)"""
+        status, body = self.request("POST", "/api/e2e/runs", {
+            "reference_date": "2026-09-16",
+            "execution": {"mode": "ACCELERATED", "speed": 12.5},
+            "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
+        })
+        self.assertEqual(status, 202)
+        run_id = body["run_id"]
+
+        status_s, snap = self.request("GET", f"/api/e2e/runs/{run_id}")
+        self.assertEqual(status_s, 200)
+        self.assertEqual(snap["speed_multiplier"], 12.5)
+
+        self.request("POST", f"/api/e2e/runs/{run_id}/stop")
+
+    def test_burst_still_rejects_speed_and_stays_unpaced(self):
+        """BURST는 자동 배속 도입 이후에도 speed를 거절하고 무제한으로 유지된다"""
+        status, body = self.request("POST", "/api/e2e/runs", {
+            "reference_date": "2026-09-16",
+            "execution": {"mode": "BURST", "speed": 700},
+            "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
+        })
+        self.assertEqual(status, 400)
+        self.assertIn("speed", body["message"])
+
+        status_ok, body_ok = self.request("POST", "/api/e2e/runs", {
+            "reference_date": "2026-09-16",
+            "execution": {"mode": "BURST"},
+            "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
+        })
+        self.assertEqual(status_ok, 202)
+        run_id = body_ok["run_id"]
+
+        status_s, snap = self.request("GET", f"/api/e2e/runs/{run_id}")
+        self.assertEqual(status_s, 200)
+        self.assertEqual(snap["execution_mode"], "BURST")
+        self.assertIsNone(snap["speed_multiplier"])
+
+        self.request("POST", f"/api/e2e/runs/{run_id}/stop")
+
     def test_get_scenarios_returns_exact_10_summaries(self):
         """GET /api/e2e/scenarios: 10종 시나리오 요약 반환 확인"""
         status, body = self.request("GET", "/api/e2e/scenarios")
@@ -177,14 +272,13 @@ class TestE2EApi(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("execution.mode", body["message"])
 
-        # 6. ACCELERATED 모드에서 speed 누락 및 유효하지 않은 speed (0, 음수, bool, string)
-        for bad_speed in (None, 0, -5, True, False, "fast"):
-            exec_dict = {"mode": "ACCELERATED"}
-            if bad_speed is not None:
-                exec_dict["speed"] = bad_speed
+        # 6. ACCELERATED 모드에서 유효하지 않은 speed (0, 음수, bool, string) 거절
+        #    (speed 누락은 400이 아니라 자동 배속으로 해결된다:
+        #     test_accelerated_speed_omitted_resolves_to_safe_auto_speed 참조)
+        for bad_speed in (0, -5, True, False, "fast"):
             status, body = self.request("POST", "/api/e2e/runs", {
                 "reference_date": "2026-09-16",
-                "execution": exec_dict,
+                "execution": {"mode": "ACCELERATED", "speed": bad_speed},
                 "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
             })
             self.assertEqual(status, 400, f"Expected 400 for bad speed '{bad_speed}'")
