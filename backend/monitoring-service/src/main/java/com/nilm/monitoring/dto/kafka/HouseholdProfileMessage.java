@@ -26,6 +26,14 @@ public record HouseholdProfileMessage(
         @JsonProperty("profile_version")
         String profileVersion,
 
+        /** 같은 as_of_date 안에서 생산자가 단조 증가시키는 수정 순번. */
+        @JsonProperty("profile_revision")
+        Long profileRevision,
+
+        /** ACTIVE만 운영 후보가 된다. SHADOW는 비교용 이력으로만 저장한다. */
+        @JsonProperty("delivery_mode")
+        String deliveryMode,
+
         /** 프로필이 담고 있는 마지막 관측일. 평가 자격을 따지는 기준이다. */
         @JsonProperty("as_of_date")
         LocalDate asOfDate,

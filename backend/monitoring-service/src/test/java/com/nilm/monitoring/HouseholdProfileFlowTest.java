@@ -80,6 +80,8 @@ class HouseholdProfileFlowTest {
                 1,
                 householdId,
                 profileVersion,
+                Long.parseLong(profileVersion.substring(1)),
+                "ACTIVE",
                 asOfDate,
                 asOfDate.minusDays(27),
                 asOfDate,
@@ -210,14 +212,26 @@ class HouseholdProfileFlowTest {
     }
 
     @Test
-    void sameAsOfDateDoesNotReplaceTheActive() {
+    void higherRevisionOnSameDateReplacesTheActive() {
         service.receive(profile("H001", "v1", TODAY.minusDays(1), "READY"));
         applicationEvents.clear();
 
         service.receive(profile("H001", "v2", TODAY.minusDays(1), "READY"));
 
-        assertThat(activeVersion()).isEqualTo("v1");
-        assertThat(statusOf("v2")).isEqualTo("SUPERSEDED");
+        assertThat(activeVersion()).isEqualTo("v2");
+        assertThat(statusOf("v1")).isEqualTo("SUPERSEDED");
+        assertThat(profileUpdatedEvents()).isEqualTo(1);
+    }
+
+    @Test
+    void lowerRevisionArrivingLaterCannotRollBackSameDate() {
+        service.receive(profile("H001", "v2", TODAY.minusDays(1), "READY"));
+        applicationEvents.clear();
+
+        service.receive(profile("H001", "v1", TODAY.minusDays(1), "READY"));
+
+        assertThat(activeVersion()).isEqualTo("v2");
+        assertThat(statusOf("v1")).isEqualTo("SUPERSEDED");
         assertThat(profileUpdatedEvents()).isZero();
     }
 
@@ -242,7 +256,7 @@ class HouseholdProfileFlowTest {
     @Test
     void emptyProfileIsRejected() {
         var empty = new HouseholdProfileMessage(
-                1, "H001", "v1", TODAY.minusDays(1),
+                2, "H001", "v1", 1L, "ACTIVE", TODAY.minusDays(1),
                 TODAY.minusDays(28), TODAY.minusDays(1),
                 TODAY.atStartOfDay(KST).toOffsetDateTime(),
                 TODAY.atStartOfDay(KST).toOffsetDateTime(),
@@ -271,7 +285,7 @@ class HouseholdProfileFlowTest {
     @Test
     void profileMissingRequiredFieldsIsIgnored() {
         var broken = new HouseholdProfileMessage(
-                1, "H001", null, null, null, null, null, null,
+                2, "H001", null, null, null, null, null, null, null, null,
                 null, null, null, "READY", List.of(), List.of());
 
         assertThatCode(() -> service.receive(broken)).doesNotThrowAnyException();
@@ -311,6 +325,21 @@ class HouseholdProfileFlowTest {
                 "READY"));
 
         assertThat(service.resolveActive("H001", EVALUATION_TIME)).isEmpty();
+    }
+
+    @Test
+    void futureProfileDoesNotHideCurrentlyUsableProfile() {
+        service.receive(profile("H001", "v1", TODAY.minusDays(2), "READY"));
+        applicationEvents.clear();
+        service.receive(profile(
+                "H001", "v2", TODAY.minusDays(1),
+                TODAY.plusDays(1).atStartOfDay(KST).toOffsetDateTime(), "READY"));
+
+        assertThat(statusOf("v2")).isEqualTo("PENDING");
+        assertThat(activeVersion()).isEqualTo("v1");
+        assertThat(service.resolveActive("H001", EVALUATION_TIME))
+                .get().extracting(ResolvedProfile::profileVersion).isEqualTo("v1");
+        assertThat(profileUpdatedEvents()).isZero();
     }
 
     @Test

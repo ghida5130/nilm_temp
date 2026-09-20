@@ -97,6 +97,8 @@ class SubjectProfileApiTest {
                 1,
                 householdId,
                 profileVersion,
+                1L,
+                "ACTIVE",
                 asOfDate,
                 asOfDate.minusDays(27),
                 asOfDate,

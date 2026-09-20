@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Comparator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -50,6 +51,8 @@ public class HouseholdProfileService {
     private static final String QUALITY_READY = "READY";
 
     private static final String QUALITY_UNKNOWN = "UNKNOWN";
+    private static final String DELIVERY_ACTIVE = "ACTIVE";
+    private static final String DELIVERY_SHADOW = "SHADOW";
 
     /** 가전별 대표 기준선의 범위. 담당자 화면에는 이것만 보여 준다. */
     private static final String SCOPE_OVERALL = "OVERALL";
@@ -125,20 +128,40 @@ public class HouseholdProfileService {
             return;
         }
 
+        if (DELIVERY_SHADOW.equals(message.deliveryMode())) {
+            HouseholdProfile stored = profiles.save(
+                    header(message, now, HouseholdProfile.Status.SHADOW, null));
+            saveDetails(stored.getId(), message);
+            log.info("SHADOW 프로필을 운영 반영 없이 저장: householdId={}, profileVersion={}, revision={}",
+                    message.householdId(), message.profileVersion(), message.profileRevision());
+            return;
+        }
+
         List<HouseholdProfile> active = profiles
                 .findByHouseholdIdAndStatusOrderByEffectiveFromDescIdDesc(
                         message.householdId(), HouseholdProfile.Status.ACTIVE);
 
-        // 늦게 도착한 구버전이나 과거 backfill이 최신 프로필을 밀어내지 않게 한다.
-        // 같은 as_of_date의 다른 버전도 재계산일 뿐이므로 자리를 넘기지 않는다.
+        // 날짜가 우선이고, 같은 날짜에서는 생산자가 부여한 revision만 비교한다.
+        // UUID 문자열이나 Kafka 수신 순서는 절대로 최신성 근거로 쓰지 않는다.
         boolean older = active.stream()
-                .anyMatch(current -> !message.asOfDate().isAfter(current.getAsOfDate()));
+                .anyMatch(current -> compareOrder(message, current) <= 0);
         if (older) {
             HouseholdProfile stored = profiles.save(
                     header(message, now, HouseholdProfile.Status.SUPERSEDED, null));
             saveDetails(stored.getId(), message);
             log.info("현재 ACTIVE보다 오래된 프로필을 이력으로만 저장: householdId={}, profileVersion={}, asOfDate={}",
                     message.householdId(), message.profileVersion(), message.asOfDate());
+            return;
+        }
+
+        // 미래 후보를 ACTIVE로 바꾸면 지금 평가 가능한 프로필이 사라진다. PENDING으로
+        // 보존하고 resolveActive가 평가 시각에 발효된 후보 중 최신을 선택하게 한다.
+        if (message.effectiveFrom().isAfter(now)) {
+            HouseholdProfile stored = profiles.save(
+                    header(message, now, HouseholdProfile.Status.PENDING, null));
+            saveDetails(stored.getId(), message);
+            log.info("미래 적용 프로필을 PENDING으로 저장: householdId={}, profileVersion={}, effectiveFrom={}",
+                    message.householdId(), message.profileVersion(), message.effectiveFrom());
             return;
         }
 
@@ -174,20 +197,14 @@ public class HouseholdProfileService {
             return Optional.empty();
         }
 
-        List<HouseholdProfile> active = profiles
-                .findByHouseholdIdAndStatusOrderByEffectiveFromDescIdDesc(
-                        householdId, HouseholdProfile.Status.ACTIVE);
-        if (active.isEmpty()) {
+        List<HouseholdProfile> candidates = operationalCandidates(householdId).stream()
+                .filter(profile -> !profile.getEffectiveFrom().isAfter(evaluationTime))
+                .sorted(profileOrder().reversed())
+                .toList();
+        if (candidates.isEmpty()) {
             return Optional.empty();
         }
-        HouseholdProfile profile = active.get(0);
-
-        // 아직 발효 전인 프로필은 없는 것으로 본다.
-        if (profile.getEffectiveFrom().isAfter(evaluationTime)) {
-            log.debug("아직 발효되지 않은 프로필: householdId={}, effectiveFrom={}, 평가 시각={}",
-                    householdId, profile.getEffectiveFrom(), evaluationTime);
-            return Optional.empty();
-        }
+        HouseholdProfile profile = candidates.get(0);
 
         // "오늘은 어제까지의 데이터로 만든 프로필로 평가한다"는 규칙.
         // 배치가 넣는 effective_from은 실행 시각이라 믿지 않고 as_of_date로 직접 검사한다.
@@ -225,9 +242,10 @@ public class HouseholdProfileService {
     public Optional<SubjectProfileResponse> getProfile(String authSub, Long subjectId) {
         Subject subject = accessGuard.requireReadable(authSub, subjectId);
 
-        List<HouseholdProfile> active = profiles
-                .findByHouseholdIdAndStatusOrderByEffectiveFromDescIdDesc(
-                        subject.getHouseholdId(), HouseholdProfile.Status.ACTIVE);
+        List<HouseholdProfile> active = operationalCandidates(subject.getHouseholdId()).stream()
+                .filter(profile -> !profile.getEffectiveFrom().isAfter(OffsetDateTime.now(ZoneOffset.UTC)))
+                .sorted(profileOrder().reversed())
+                .toList();
         if (active.isEmpty()) {
             return Optional.empty();
         }
@@ -325,6 +343,8 @@ public class HouseholdProfileService {
         return new HouseholdProfile(
                 message.householdId(),
                 message.profileVersion(),
+                message.profileRevision(),
+                message.deliveryMode(),
                 message.asOfDate(),
                 message.windowStartDate(),
                 message.windowEndDate(),
@@ -456,6 +476,10 @@ public class HouseholdProfileService {
         if (message == null
                 || isBlank(message.householdId())
                 || isBlank(message.profileVersion())
+                || message.profileRevision() == null
+                || message.profileRevision() < 1
+                || (!DELIVERY_ACTIVE.equals(message.deliveryMode())
+                    && !DELIVERY_SHADOW.equals(message.deliveryMode()))
                 || message.asOfDate() == null
                 || message.effectiveFrom() == null) {
             log.warn("필수 항목이 빠진 프로필 무시: householdId={}, profileVersion={}",
@@ -464,6 +488,28 @@ public class HouseholdProfileService {
             return false;
         }
         return true;
+    }
+
+    private int compareOrder(HouseholdProfileMessage incoming, HouseholdProfile current) {
+        int byDate = incoming.asOfDate().compareTo(current.getAsOfDate());
+        return byDate != 0
+                ? byDate
+                : Long.compare(incoming.profileRevision(), current.getProfileRevision());
+    }
+
+    private Comparator<HouseholdProfile> profileOrder() {
+        return Comparator.comparing(HouseholdProfile::getAsOfDate)
+                .thenComparingLong(HouseholdProfile::getProfileRevision)
+                .thenComparing(HouseholdProfile::getId);
+    }
+
+    private List<HouseholdProfile> operationalCandidates(String householdId) {
+        List<HouseholdProfile> result = new ArrayList<>();
+        result.addAll(profiles.findByHouseholdIdAndStatusOrderByEffectiveFromDescIdDesc(
+                householdId, HouseholdProfile.Status.ACTIVE));
+        result.addAll(profiles.findByHouseholdIdAndStatusOrderByEffectiveFromDescIdDesc(
+                householdId, HouseholdProfile.Status.PENDING));
+        return result;
     }
 
     private static boolean isBlank(String value) {

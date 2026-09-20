@@ -25,7 +25,13 @@ public class HouseholdProfile {
         SUPERSEDED,
 
         /** 품질이 모자라 평가에 쓰지 않기로 한 버전 */
-        REJECTED
+        REJECTED,
+
+        /** 발효 시각 전까지 현재 ACTIVE를 보존하는 미래 후보 */
+        PENDING,
+
+        /** 비교 관측 전용. 운영 프로필로 자동 승격하지 않는다. */
+        SHADOW
     }
 
     @Id
@@ -37,6 +43,12 @@ public class HouseholdProfile {
 
     @Column(name = "profile_version", nullable = false, length = 100)
     private String profileVersion;
+
+    @Column(name = "profile_revision", nullable = false)
+    private long profileRevision;
+
+    @Column(name = "delivery_mode", nullable = false, length = 20)
+    private String deliveryMode;
 
     @Column(name = "as_of_date", nullable = false)
     private LocalDate asOfDate;
@@ -81,6 +93,8 @@ public class HouseholdProfile {
     public HouseholdProfile(
             String householdId,
             String profileVersion,
+            long profileRevision,
+            String deliveryMode,
             LocalDate asOfDate,
             LocalDate windowStartDate,
             LocalDate windowEndDate,
@@ -96,6 +110,8 @@ public class HouseholdProfile {
     ) {
         this.householdId = householdId;
         this.profileVersion = profileVersion;
+        this.profileRevision = profileRevision;
+        this.deliveryMode = deliveryMode;
         this.asOfDate = asOfDate;
         this.windowStartDate = windowStartDate;
         this.windowEndDate = windowEndDate;
