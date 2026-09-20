@@ -279,3 +279,47 @@ def test_pipeline_refills_model_buffer_before_processing_recovered_data() -> Non
         "DATA_GAP",
         "DATA_RECOVERED",
     ]
+
+
+def test_partition_revoke_reset_requires_target_household_to_refill_buffer() -> None:
+    buffer = HouseholdBuffer(window_size=299)
+    for household_id in ("H001", "H002"):
+        for _ in range(299):
+            buffer.append(
+                measurement(0).model_copy(
+                    update={"household_id": household_id}
+                )
+            )
+    transition_detector = Mock()
+    quality_monitor = Mock()
+    detector = Mock()
+    handler = MeasurementHandler(
+        buffer=buffer,
+        predictor=FakePredictor(),
+        state_decider=ApplianceStateDecider(
+            {appliance_type: 0.5 for appliance_type in APPLIANCE_ORDER}
+        ),
+        state_transition_detector=transition_detector,
+        activity_repository=Mock(),
+        baseline_repository=BaselineRepository([]),
+        tracker=DailyActivityTracker(),
+        detector=detector,
+        event_publisher=RecordingPublisher(),  # type: ignore[arg-type]
+        snapshot_publisher=RecordingSnapshotPublisher(),  # type: ignore[arg-type]
+        timezone_name="Asia/Seoul",
+        data_quality_monitor=quality_monitor,
+    )
+
+    handler.reset_household("H001")
+
+    assert buffer.is_ready("H001") is False
+    assert buffer.is_ready("H002") is True
+    transition_detector.reset.assert_called_once_with("H001")
+    quality_monitor.reset.assert_called_once_with("H001")
+    detector.reset.assert_called_once_with("H001")
+
+    for _ in range(298):
+        buffer.append(measurement(0))
+    assert buffer.is_ready("H001") is False
+    buffer.append(measurement(0))
+    assert buffer.is_ready("H001") is True

@@ -107,3 +107,19 @@ def test_gap_event_id_is_stable_for_the_same_episode() -> None:
         ids.append(publisher.events[0].event_id)
 
     assert ids[0] == ids[1]
+
+
+def test_reset_forgets_only_one_household() -> None:
+    monitor = DataQualityMonitor(
+        RecordingPublisher(),
+        gap_threshold_seconds=10,
+        recovery_confirmation_samples=1,
+    )
+    monitor.observe("H001", BASE, received_at=BASE)
+    monitor.observe("H002", BASE, received_at=BASE)
+    assert monitor.detect_gaps(checked_at=BASE + timedelta(seconds=10)) == 2
+
+    monitor.reset("H001")
+
+    assert monitor.is_healthy("H001") is True
+    assert monitor.is_healthy("H002") is False

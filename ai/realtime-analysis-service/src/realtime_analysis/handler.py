@@ -68,6 +68,17 @@ class MeasurementHandler:
         self._pipeline_version = pipeline_version
         self._state_epochs: dict[str, UUID] = {}
 
+    def reset_household(self, household_id: str) -> None:
+        """Discard volatile state whose Kafka partition ownership was lost."""
+
+        self._buffer.reset(household_id)
+        self._state_transition_detector.reset(household_id)
+        if self._data_quality_monitor is not None:
+            self._data_quality_monitor.reset(household_id)
+        self._detector.reset(household_id)
+        self._state_epochs.pop(household_id, None)
+        logger.info("Volatile household state reset: household=%s", household_id)
+
     def __call__(
         self,
         measurement: PowerMeasurement,

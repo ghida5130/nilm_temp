@@ -1,7 +1,9 @@
 import json
-from unittest.mock import Mock
+from threading import Event
+from unittest.mock import Mock, call
 
 import pytest
+from confluent_kafka import TopicPartition
 
 from realtime_analysis.config import Settings
 from realtime_analysis.consumer import AnalysisConsumer
@@ -20,9 +22,12 @@ def payload() -> dict[str, object]:
     }
 
 
-def kafka_message(value: object) -> Mock:
+def kafka_message(value: object, *, partition: int = 0) -> Mock:
     message = Mock()
     message.value.return_value = json.dumps(value).encode("utf-8")
+    message.topic.return_value = "power.raw.v1"
+    message.partition.return_value = partition
+    message.offset.return_value = 10
     return message
 
 
@@ -76,3 +81,48 @@ def test_handler_failure_is_not_committed() -> None:
         service(consumer, dlq, handler).process_message(message)
 
     consumer.commit.assert_not_called()
+
+
+def test_run_registers_rebalance_callbacks() -> None:
+    consumer = Mock()
+    stop_event = Event()
+    stop_event.set()
+
+    service(consumer, Mock(), Mock()).run(stop_event)
+
+    consumer.subscribe.assert_called_once()
+    assert consumer.subscribe.call_args.args == (["power.raw.v1"],)
+    assert callable(consumer.subscribe.call_args.kwargs["on_assign"])
+    assert callable(consumer.subscribe.call_args.kwargs["on_revoke"])
+
+
+def test_revoke_resets_only_households_from_revoked_partitions() -> None:
+    consumer = Mock()
+    handler = Mock()
+    analysis_consumer = service(consumer, Mock(), handler)
+    stop_event = Event()
+    stop_event.set()
+    analysis_consumer.run(stop_event)
+    on_assign = consumer.subscribe.call_args.kwargs["on_assign"]
+    on_revoke = consumer.subscribe.call_args.kwargs["on_revoke"]
+    partition_zero = TopicPartition("power.raw.v1", 0)
+    partition_one = TopicPartition("power.raw.v1", 1)
+
+    on_assign(consumer, [partition_zero, partition_one])
+    analysis_consumer.process_message(kafka_message(payload(), partition=0))
+    second_payload = payload()
+    second_payload["household_id"] = "H002"
+    analysis_consumer.process_message(
+        kafka_message(second_payload, partition=1)
+    )
+
+    on_revoke(consumer, [partition_zero])
+
+    assert handler.reset_household.call_args_list == [call("H001")]
+
+    on_revoke(consumer, [partition_one])
+
+    assert handler.reset_household.call_args_list == [
+        call("H001"),
+        call("H002"),
+    ]

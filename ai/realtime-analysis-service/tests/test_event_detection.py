@@ -554,6 +554,30 @@ def test_same_event_id_reprocessing_does_not_duplicate_emission(
     ) == []
 
 
+def test_reset_allows_household_pattern_evaluation_to_resume(
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_at = datetime.fromisoformat("2026-09-17T09:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+    active_detector = detector(session_factory)
+
+    assert active_detector.detect("H001", observed_at, [baseline()])
+    assert active_detector.detect(
+        "H001",
+        observed_at + timedelta(seconds=1),
+        [baseline()],
+    ) == []
+
+    active_detector.reset("H001")
+
+    assert active_detector.detect(
+        "H001",
+        observed_at + timedelta(seconds=1),
+        [baseline()],
+    )
+
+
 def test_realtime_detector_records_each_pattern_evaluation(
     session_factory: sessionmaker[Session],
 ) -> None:
