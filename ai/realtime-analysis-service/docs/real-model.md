@@ -10,13 +10,13 @@
 
 ## 로컬 실행
 
-서비스 디렉터리에서 Python 3.11 이상으로 실행한다. 체크포인트는 Git 밖에 둔다.
+서비스 디렉터리에서 Python 3.11 이상으로 실행한다. 체크포인트는 저장소 `ai/assets/nilm_r3`에 포함되어 있다.
 
 ```powershell
 python -m venv .venv
 .venv/Scripts/python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
 .venv/Scripts/python -m pip install -e '.[inference,dev]'
-.venv/Scripts/python -m realtime_analysis.model_replay --asset-root ../../../artifacts/nilm_r2_demo --appliance kettle --device cpu --dtype float32 --output ../../../handoff/r3/kettle_cpu_run
+.venv/Scripts/python -m realtime_analysis.model_replay --asset-root ../assets/nilm_r3 --appliance kettle --device cpu --dtype float32 --output ../evidence/kettle-new
 ```
 
 출력 디렉터리는 매 실행마다 새 경로를 지정한다. `scores.jsonl`은 실제 forward 결과와
@@ -25,7 +25,7 @@ UNKNOWN/ON/OFF 및 SYNC/전환을 담고, `runtime.json`은 해시·dtype·장�
 동일하다고 간주하지 말고, 사후 source index별 점수·상태 비교 결과를 별도로 기록한다.
 
 ```powershell
-$env:R3_TEST_ASSET_ROOT = (Resolve-Path ../../../artifacts/nilm_r2_demo).Path
+$env:R3_TEST_ASSET_ROOT = (Resolve-Path ../assets/nilm_r3).Path
 .venv/Scripts/python -m pytest tests/test_real_predictor.py -q
 ```
 
@@ -92,3 +92,7 @@ consumer offset은 각각 1184/1184, lag 0이었다. 최신 행과 ON(2490791), 
 ASCII 경로 사본에서 전체 테스트·bootJar를 완료하고 JRE 런타임 이미지에 넣었다.
 표준 monitoring Dockerfile 안의 Gradle 재다운로드는 느려 중단했으므로, 그 Dockerfile의
 전체 빌드까지 완료했다고 간주하지 않는다. 저장소의 표준 빌드 설정은 유지했다.
+
+추가 범위 검증: 6개 장면의 실제 broker/DB/API 왕복, fresh-process 반복 12회,
+긴 prefix/OFF/다른 날짜 18개 대조군과 프론트엔드 데모를 완료했다.
+현재 전체 결과는 [추가 검수 기록](../../evidence/VALIDATION.md)을 우선 참고한다.

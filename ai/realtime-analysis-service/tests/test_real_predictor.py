@@ -55,9 +55,7 @@ def test_frozen_selection():
 
 @pytest.fixture
 def real_assets():
-    root = os.environ.get("R3_TEST_ASSET_ROOT")
-    if not root:
-        pytest.skip("Set R3_TEST_ASSET_ROOT to run downloaded-checkpoint tests")
+    root = os.environ.get("R3_TEST_ASSET_ROOT", str(Path(__file__).resolve().parents[2] / 'assets/nilm_r3'))
     pytest.importorskip("torch")
     return Path(root)
 

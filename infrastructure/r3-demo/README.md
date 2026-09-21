@@ -12,7 +12,6 @@
 R3_DB_PASSWORD=로컬시험용비밀번호
 R3_RUN_ID=r3-kettle-e2e-20260921
 R3_APPLIANCE=kettle
-R3_ASSET_ROOT=C:/절대경로/artifacts/nilm_r2_demo
 ```
 
 ```powershell
@@ -21,7 +20,8 @@ docker compose --env-file infrastructure/r3-demo/.env -f infrastructure/r3-demo/
 docker compose --env-file infrastructure/r3-demo/.env -f infrastructure/r3-demo/compose.yaml ps
 ```
 
-`bridge`가 healthy이고 analysis/monitoring이 시작된 뒤 입력을 보낸다. MQTT는 localhost:18884,
+모델 자산은 저장소 `ai/assets/nilm_r3`에서 읽기 전용으로 탑재한다. 외부 절대경로 설정은 필요 없다.
+`bridge`가 시작되고 analysis/monitoring이 준비된 뒤 입력을 보낸다. MQTT는 localhost:18884,
 관리 조회 API는 localhost:18084에만 바인딩한다. 이 로컬 스택에서는 인증/외부 알림/기존
 위험 평가 스케줄러를 사용하지 않는다. 운영 구성으로 그대로 배포하지 않는다.
 
@@ -29,7 +29,7 @@ docker compose --env-file infrastructure/r3-demo/.env -f infrastructure/r3-demo/
 
 ```powershell
 .venv/Scripts/python -m pip install -e '.[demo]'
-.venv/Scripts/python -m realtime_analysis.scene_replay publish --asset-root ../../../artifacts/nilm_r2_demo --appliance kettle --household r3-kettle --run-id r3-kettle-e2e-20260921 --start-time 2026-09-21T10:00:00+09:00
+.venv/Scripts/python -m realtime_analysis.scene_replay publish --asset-root ../assets/nilm_r3 --appliance kettle --household r3-kettle --run-id r3-kettle-e2e-20260921 --start-time 2026-09-21T10:00:00+09:00
 ```
 
 기본 1초 간격으로 592개 원본 행을 보낸다. 시험 가속은 `--interval 0.01`을 사용할 수 있다.
@@ -56,7 +56,7 @@ UNKNOWN으로 저장된다. 선택 기기의 처음 확정값과 복구는 신�
 ## Broker 없이 저장 경로 검증
 
 ```powershell
-.venv/Scripts/python -m realtime_analysis.scene_replay storage-smoke --asset-root ../../../artifacts/nilm_r2_demo --run-id r3-storage-1 --start-time 2026-09-21T10:00:00+09:00 --output ../../../handoff/r3/storage-new
+.venv/Scripts/python -m realtime_analysis.scene_replay storage-smoke --asset-root ../assets/nilm_r3 --run-id r3-storage-1 --start-time 2026-09-21T10:00:00+09:00 --output ../evidence/storage-new
 ```
 
 SQLite 분석 DB와 실제 스냅샷 JSONL을 새 폴더에 만든다. 이 JSONL 경로를
@@ -64,3 +64,34 @@ SQLite 분석 DB와 실제 스냅샷 JSONL을 새 폴더에 만든다. 이 JSONL
 실제 Python 출력의 Java DB/API 계약을 검증한다. 이 시험에는 MQTT/Kafka가 포함되지 않는다.
 
 종료는 `docker compose --env-file infrastructure/r3-demo/.env -f infrastructure/r3-demo/compose.yaml stop`을 사용한다.
+
+## 6개 장면과 데모 페이지
+
+저장소 루트에서 다음 명령을 실행한다. 기존 DB 결과는 삭제하지 않고 새 run으로 기록한다.
+`demo_e2e.py`는 데모 analysis 컨테이너만 장면별로 재생성하며 실제 MQTT 입력을 보낸다.
+
+```powershell
+ai/realtime-analysis-service/.venv/Scripts/python ai/tools/verify_assets.py
+ai/realtime-analysis-service/.venv/Scripts/python ai/tools/demo_e2e.py --output ai/evidence/broker-new
+cd frontend
+npm ci
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+`docker`가 PATH에 없으면 runner에 `--docker '설치경로/docker.exe'`를 전달한다.
+[데모 페이지](http://127.0.0.1:5173/demo/ai)는 실제 monitoring API에서 저장된 초별 결과를 읽는다.
+가전 선택, 전체 전력/확률 차트, 타임라인, 1×/10×/30× 재생, warmup 및 미분석 UNKNOWN 표시를 제공한다.
+화면 재생 버튼은 저장된 결과를 재생한다. 새로운 모델 추론은 위 runner로 실행한다.
+추론을 수행하지 않은 새 DB에서는 404를 표시하며 가짜 결과로 대체하지 않는다.
+Vite 개발 프록시만 localhost:18084의 데모 API로 연결한다. 운영 nginx/인증 경로는 바꾸지 않는다.
+
+## 후속 평가 재현
+
+```powershell
+ai/realtime-analysis-service/.venv/Scripts/python ai/tools/evaluate_scenes.py --output ai/evidence/local-six-scenes-v2
+ai/realtime-analysis-service/.venv/Scripts/python ai/tools/evaluate_controls.py --output ai/evidence/local-controls
+```
+
+증거 폴더는 새 경로를 사용한다. controls 실행기의 `--cold-output`으로 앞 명령의 경로를 지정할 수 있다.
+평가는 CPU float32, batch 1, thread 1이다. 기준 H200 BF16과 확률 수치 차이가 있어도 문턱을 재조정하지 않는다.
+검수 결과와 알려진 한계는 `ai/evidence/VALIDATION.md`에 기록한다.

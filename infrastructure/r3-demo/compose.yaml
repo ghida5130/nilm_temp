@@ -81,7 +81,7 @@ services:
       DATABASE_NAME: analysis_db
       DATABASE_USER: nilm_demo
       DATABASE_PASSWORD: ${R3_DB_PASSWORD}
-    volumes: ["${R3_ASSET_ROOT:?Set absolute R3_ASSET_ROOT}:/assets:ro"]
+    volumes: ["../../ai/assets/nilm_r3:/assets:ro"]
     depends_on:
       kafka-init: {condition: service_completed_successfully}
       postgres: {condition: service_healthy}
