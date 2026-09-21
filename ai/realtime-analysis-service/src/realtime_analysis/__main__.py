@@ -60,6 +60,9 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     settings = get_settings()
+    METRICS.set_e2e_clock_skew_tolerance(
+        settings.analysis_e2e_clock_skew_tolerance_seconds
+    )
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",

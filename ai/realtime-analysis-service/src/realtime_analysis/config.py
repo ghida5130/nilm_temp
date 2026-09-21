@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     http_port: int = Field(default=8000, ge=1, le=65535)
     readiness_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     consumer_lag_refresh_seconds: float = Field(default=5.0, gt=0, le=300)
+    analysis_e2e_clock_skew_tolerance_seconds: float = Field(
+        default=0.1,
+        ge=0,
+        le=60,
+    )
     log_level: str = "INFO"
 
     hdfs_url: str = "http://namenode:9870"
