@@ -66,3 +66,35 @@ def test_failed_publish_is_retried_and_duplicate_enqueue_is_harmless(tmp_path):
         assert row.status == "PUBLISHED"
         assert row.attempt_count == 2
     assert len(producer.messages) == 2
+
+
+def test_publisher_reads_its_broker_from_settings(monkeypatch):
+    """ACTIVE 전달은 설정에서 브로커 주소를 읽는다.
+
+    producer를 주입하지 않는 운영 경로만 이 값을 읽으므로, 설정에 필드가 없으면
+    테스트는 모두 통과한 채 실제 발행에서만 AttributeError로 터진다.
+    """
+
+    import confluent_kafka
+
+    captured = {}
+
+    def fake_producer(config):
+        captured.update(config)
+        return FakeProducer()
+
+    monkeypatch.setattr(confluent_kafka, "Producer", fake_producer)
+
+    settings = GoldProfileSettings(kafka_bootstrap_servers="broker:9092")
+    GoldProfilePublisher(settings, sessionmaker())
+
+    assert captured["bootstrap.servers"] == "broker:9092"
+    # 중복 발행은 아웃박스가 막지 못한다. 브로커 쪽 멱등 전송으로 막는다.
+    assert captured["enable.idempotence"] is True
+
+
+def test_broker_comes_from_the_deployment_environment_variable(monkeypatch):
+    # compose가 주는 이름. 바뀌면 배포는 기본값(localhost)으로 조용히 되돌아간다.
+    monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:19092")
+
+    assert GoldProfileSettings().kafka_bootstrap_servers == "kafka:19092"
