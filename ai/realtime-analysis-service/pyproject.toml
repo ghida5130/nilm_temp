@@ -19,6 +19,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+inference = [
+    "torch==2.11.0",
+    "numpy>=1.26,<3",
+]
 dev = [
     "pytest>=8,<9",
     "pytest-cov>=6,<7",
@@ -26,6 +30,10 @@ dev = [
 
 [project.scripts]
 realtime-analysis = "realtime_analysis.__main__:main"
+realtime-model-replay = "realtime_analysis.model_replay:main"
+
+[tool.setuptools.package-data]
+"realtime_analysis.real_models" = ["profiles.lock.json"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
