@@ -363,8 +363,6 @@ services:
       WEB_PUSH_VAPID_PRIVATE_KEY: "${WEB_PUSH_VAPID_PRIVATE_KEY:-}"
       WEB_PUSH_SUBJECT: "${WEB_PUSH_SUBJECT:-mailto:admin@example.com}"
       PUSH_TEST_AUTH_SUB: "${PUSH_TEST_AUTH_SUB:-test-subject-3}"
-      TEST_SUBJECT_ENABLED: "${TEST_SUBJECT_ENABLED:-true}"
-      TEST_SUBJECT_HOUSEHOLD_ID: "${TEST_SUBJECT_HOUSEHOLD_ID:-H001}"
       # 기동 시 테스트 담당자 계정을 iot-device-service 가입 API로 만든다(ec2-a와 동일).
       TEST_DATA_ENABLED: "${TEST_DATA_ENABLED:-true}"
       TEST_ACCOUNT_PASSWORD: "${TEST_ACCOUNT_PASSWORD:-NilmTest1234!}"
