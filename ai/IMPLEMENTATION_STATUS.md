@@ -10,7 +10,7 @@ develop/master 직접 push 또는 임의 배포는 하지 않는다. PR은 아�
 | 3 | feature/ai/fixture-replay | 구현, 발행기 시험 7 passed |
 | 4 | feature/ai/service-events | 구현, 세션·위험 outbox 및 중단/복구 검사 |
 | 5 | feature/ai/deployment-package | 이미지 2종 빌드, 컨테이너 실제 forward 및 기존 Docker CI 151 passed / 23 skipped |
-| 6 | feature/ai/inference-e2e | 대기 |
+| 6 | feature/ai/inference-e2e | 구현, TLS 브로커 6장면 PASS / Python 173 / PostgreSQL 10 passed |
 
 ## 2번 구현
 

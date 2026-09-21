@@ -16,6 +16,8 @@ docker run --rm nilm-scene-fixture:REV --help
 발행 이미지는 raw panel만 포함한다. 두 이미지 모두 정답·기준 점수·외부 credential을 포함하지 않는다.
 빌드 시와 worker 시작 시 SHA를 검사한다. worker는 fake 설정 또는 가구 미지정 시 시작을 거부한다.
 CPU float32/thread 1/batch 1이 기본이며 worker 시작 전에 Alembic head를 적용한다.
+공유 DB에 여러 가구 worker를 처음 배포할 때 migration을 먼저 한 번 완료한 뒤 순차 시작한다.
+가구 lock은 모델 처리 독점용이며 Alembic 동시 migration을 직렬화하지 않는다.
 
 `worker.env.example`을 secret store 기반으로 채우고 `compose.example.yaml`의 변수를 연결한다.
 fixture와 worker의 가구/run/profile 선택은 반드시 동일해야 한다. fixture MQTT 인증은 MQTT_USER,
@@ -34,3 +36,6 @@ backend는 revision/event_id 멱등성을 구현하고 부분 분석 상태를 �
 롤백은 publisher와 scene worker를 중지하고 이전 immutable image로 되돌린다. DB downgrade나
 볼륨 삭제를 자동 실행하지 않는다. 새 계약 consumer는 담당자가 별도로 중지한다.
 기존 monitoring/일일 집계와 테스트 가구의 데이터를 합치지 않는다. 실제 push 알림은 비활성으로 유지한다.
+
+로컬 실제 브로커 재현·서비스 인수 절차는 [ACCEPTANCE.md](ACCEPTANCE.md)를 따른다.
+재현 스크립트를 실행할 때 위 이미지 태그의 `REV`는 `local`로 지정한다.
