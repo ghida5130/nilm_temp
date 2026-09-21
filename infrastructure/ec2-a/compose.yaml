@@ -17,6 +17,7 @@ services:
       KC_PROXY_HEADERS: xforwarded
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN required}
       NILM_SMOKE_CLIENT_SECRET: ${NILM_SMOKE_CLIENT_SECRET:?NILM_SMOKE_CLIENT_SECRET required}
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
     volumes:
       - ${CONFIG_ROOT:-.}/keycloak/nilm-realm.json:/opt/keycloak/data/import/nilm-realm.json:ro
     healthcheck:
@@ -82,6 +83,9 @@ services:
     image: ${IOT_DEVICE_IMAGE:?IOT_DEVICE_IMAGE required}
     restart: unless-stopped
     environment:
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: nilm
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
       SERVER_PORT: 8081
       APP_SECURITY_ENABLED: "${APP_SECURITY_ENABLED:-true}"
       JWT_ISSUER_URI: ${JWT_ISSUER_URI:?JWT_ISSUER_URI required}
