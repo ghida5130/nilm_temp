@@ -41,6 +41,37 @@ public final class AuthDtos {
     ) {
     }
 
+    /** 로그아웃 — 서버가 refresh token을 폐기해야 실제로 세션이 끊긴다. */
+    public record LogoutRequest(
+            @NotBlank
+            String refreshToken
+    ) {
+    }
+
+    /** 프로필 부분 수정 — null 필드는 기존 값을 유지한다. */
+    public record UpdateProfileRequest(
+            @Size(max = 50)
+            String displayName,
+            @Size(max = 20)
+            String phone
+    ) {
+    }
+
+    public record ChangePasswordRequest(
+            @NotBlank
+            String currentPassword,
+            @NotBlank @Size(min = 8, max = 72, message = "비밀번호는 8자 이상이어야 합니다")
+            String newPassword
+    ) {
+    }
+
+    /** 가입 폼에서 제출 전에 확인한다 — 다 채우고 나서 409를 만나지 않도록. */
+    public record EmailAvailability(
+            String email,
+            boolean available
+    ) {
+    }
+
     public record TokenResponse(
             String accessToken,
             String refreshToken,

@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "device_credentials")
@@ -44,7 +45,7 @@ public class DeviceCredential {
     }
 
     public void revoke() {
-        this.revokedAt = OffsetDateTime.now();
+        this.revokedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 
     public Long getDeviceId() {

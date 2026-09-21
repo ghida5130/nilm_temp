@@ -62,6 +62,22 @@ public class UserProfile {
         this.status = Status.ACTIVE;
     }
 
+    /**
+     * 프로필 부분 수정 — null은 "바꾸지 않음"이다.
+     *
+     * <p>이메일은 Keycloak의 사용자명이자 로그인 키라 여기서 바꾸지 않는다.
+     * 기관 소속도 제외한다 — 바뀌면 monitoring의 담당자 명단까지 따라가야 하므로
+     * 별도 절차가 필요하다.
+     */
+    public void updateProfile(String displayName, String phone) {
+        if (displayName != null && !displayName.isBlank()) {
+            this.displayName = displayName;
+        }
+        if (phone != null) {
+            this.phone = phone.isBlank() ? null : phone;
+        }
+    }
+
     public void suspend() {
         this.status = Status.SUSPENDED;
     }
