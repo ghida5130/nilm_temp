@@ -2,7 +2,7 @@
 
 현재 저장소: `docker.io/leejeongmin24/on-maum`.
 
-사용자가 생성한 `leejeongmin24/on-maum` 저장소에 Backend 3개, Frontend, Bridge를 서비스별 태그로 모두 저장한다. 새 저장소의 공개 범위는 아직 확인하지 않았으므로 배포 전에 Private인지 확인한다. EC2-A/B Compose 프로젝트 이름 `nilm-a`, `nilm-b`는 그대로다. 기존 Public 저장소는 이 파이프라인에서 push하지 않으며 이미 공개된 이미지의 상태는 이 변경으로 바뀌지 않는다.
+사용자가 생성한 `leejeongmin24/on-maum` 저장소에 Backend 3개, Frontend, 실시간 분석 서비스, Bridge를 서비스별 태그로 모두 저장한다. 새 저장소의 공개 범위는 아직 확인하지 않았으므로 배포 전에 Private인지 확인한다. EC2-A/B Compose 프로젝트 이름 `nilm-a`, `nilm-b`는 그대로다. 기존 Public 저장소는 이 파이프라인에서 push하지 않으며 이미 공개된 이미지의 상태는 이 변경으로 바뀌지 않는다.
 
 ## 1. 적용 전 준비
 
@@ -48,14 +48,15 @@ docker.io/leejeongmin24/on-maum:mqtt-kafka-bridge-<40자리SHA>-b<빌드번호>
 
 CI 성공과 운영 준비를 확인한 뒤 master에 푸시하거나 master에서 ENABLE_CD=true로 수동 실행한다. 이후에는 master 푸시마다 자동으로 배포된다.
 
-1. CI 테스트·빌드 → 5개 태그 push → `release.json` 생성·Jenkins artifact 보관.
+1. CI 테스트·빌드 → 6개 태그 push → `release.json` 생성·Jenkins artifact 보관.
 2. Pull A images: A용 4개를 digest로 pull하고 플랫폼/digest 검사.
-3. Pull B images: Bridge를 digest로 pull하고 플랫폼/digest 검사.
+3. Pull B images: 실시간 분석 서비스·Bridge를 digest로 pull하고 플랫폼/digest 검사.
 4. Prepare A/B: manifest·이미지·필수 파일 확인, 임시 env로 Compose 검사, 기존 설정 백업, 새 설정 배치.
 5. Deploy B base: 공식 PostgreSQL/Kafka 준비, 토픽 초기화.
 6. Deploy A and verify HTTP: 기반 서비스·Backend·Frontend 시작, HTTP 검증.
-7. Deploy Bridge and verify pipeline: 이미 받은 Bridge 실행, 메시지 검증.
-8. Record success A/B: 두 서비스 검증 통과 후 성공 manifest 기록.
+7. Deploy realtime analysis: 이미 받은 분석 서비스를 B에서 실행.
+8. Deploy Bridge and verify pipeline: 이미 받은 Bridge 실행, 메시지 검증.
+9. Record success A/B: 두 서비스 검증 통과 후 성공 manifest 기록.
 
 팀 이미지 하나라도 push/pull에 실패하면 Prepare 이전에 중단한다. 성공한 일부 push는 Hub에 남을 수 있지만 완전한 release.json이 없으면 배포하지 않는다. 서비스 실행 시 팀 이미지는 `--pull never`로 실행해 사전 검증한 로컬 digest를 사용한다.
 
@@ -72,7 +73,7 @@ HTTP `PASS: frontend, authentication, Gateway -> device/monitoring`와 Bridge `P
 
 일반적인 재실행은 새 빌드 번호로 수행한다. Jenkins의 중간 Stage 재시작은 stash 보존을 별도로 구성하지 않았으므로 지원한다고 가정하지 않는다.
 
-롤백은 직전 성공 manifest와 일치하는 백업 설정을 먼저 확인한 뒤 해당 digest 이미지를 인증된 상태에서 pull하고, 당시 설정과 함께 B 기반→A→Bridge 순서로 적용·검증한다. 수동으로 스크립트를 호출할 경우 IMAGE_REPOSITORY/IMAGE_TAG/RELEASE_ID도 선택한 manifest와 맞춰야 한다. 단순히 IMAGE_TAG만 바꿔도 이미지가 바뀌는 구조가 아니다.
+롤백은 직전 성공 manifest와 일치하는 백업 설정을 먼저 확인한 뒤 해당 digest 이미지를 인증된 상태에서 pull하고, 당시 설정과 함께 B 기반→A→B 분석→Bridge 순서로 적용·검증한다. 수동으로 스크립트를 호출할 경우 IMAGE_REPOSITORY/IMAGE_TAG/RELEASE_ID도 선택한 manifest와 맞춰야 한다. 단순히 IMAGE_TAG만 바꿔도 이미지가 바뀌는 구조가 아니다.
 
 Prepare 이후 실패하면 설정은 바뀌었지만 컨테이너는 이전 버전일 수 있다. 자동 전체 롤백/무중단 배포는 구현하지 않았다. DB 변경은 별도 호환성 확인이 필요하며 `down -v`를 복구 방법으로 사용하지 않는다. 공식 이미지의 digest 고정과 전역 배포 잠금은 후속 작업이다.
 

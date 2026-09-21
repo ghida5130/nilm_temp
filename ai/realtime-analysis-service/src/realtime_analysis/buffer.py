@@ -31,3 +31,8 @@ class HouseholdBuffer:
         if not self.is_ready(household_id):
             raise ValueError(f"Buffer is not ready for household {household_id}")
         return list(self._buffers[household_id])
+
+    def reset(self, household_id: str) -> None:
+        """Discard samples that preceded a confirmed input gap."""
+
+        self._buffers.pop(household_id, None)

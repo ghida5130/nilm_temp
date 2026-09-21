@@ -79,3 +79,14 @@ def test_duplicate_or_older_observation_is_ignored() -> None:
     assert detect(detector, 1, 0.1) == []
     assert detect(detector, 0, 0.1) == []
     assert detector.is_on("H001", "MICROWAVE") is True
+
+
+def test_reset_preserves_other_household_state() -> None:
+    detector = ApplianceStateTransitionDetector(1, 1, 0.05)
+    detector.detect("H001", START, [state(0.8)])
+    detector.detect("H002", START, [state(0.8)])
+
+    detector.reset("H001")
+
+    assert detector.is_on("H001", "MICROWAVE") is False
+    assert detector.is_on("H002", "MICROWAVE") is True

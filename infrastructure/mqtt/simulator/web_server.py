@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import os
 import sys
+import threading
 import webbrowser
 from typing import Optional
 
@@ -28,6 +29,7 @@ if CURRENT_DIR not in sys.path:
 import simulator
 from server.config import DEFAULT_PORT, ALLOWED_SCENARIOS
 from server.manager import SimulatorManager, ModeConflictError
+from server.e2e_manager import E2EScheduleSessionManager
 from server.request_handler import ThreadedHTTPServer, RequestHandler, create_request_handler
 from engine.tls import resolve_mqtt_config, create_mqtt_tls_context
 
@@ -145,7 +147,17 @@ def main(args=None):
         tls_enabled=cfg["tls_enabled"],
         ca_file=cfg["ca_file"],
     )
-    handler_class = create_request_handler(manager, HTML_PATH)
+    e2e_manager = E2EScheduleSessionManager(
+        broker_config=cfg,
+        broadcast_callback=manager.broadcast_external,
+    )
+    shared_start_lock = threading.Lock()
+    handler_class = create_request_handler(
+        manager,
+        html_path=HTML_PATH,
+        e2e_manager=e2e_manager,
+        shared_start_lock=shared_start_lock,
+    )
 
     server_address = (bind_host, web_port)
     httpd = ThreadedHTTPServer(server_address, handler_class)
@@ -172,6 +184,9 @@ def main(args=None):
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\n웹 서버를 정지합니다.", flush=True)
+    finally:
+        if e2e_manager is not None:
+            e2e_manager.shutdown(timeout_sec=5.0)
         manager.stop()
         httpd.server_close()
 

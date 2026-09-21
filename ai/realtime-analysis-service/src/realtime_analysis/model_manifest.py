@@ -22,15 +22,8 @@ class InputFeature(BaseModel):
     index: int = Field(ge=0)
     name: str
     unit: str | None
-    mean: float | None
-    std: float | None
-
-    @model_validator(mode="after")
-    def std_must_be_positive(self) -> "InputFeature":
-        if self.std is not None and self.std <= 0:
-            raise ValueError("std must be greater than zero")
-        return self
-
+    mean: float
+    std: float = Field(gt=0)
 
 class ModelInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -128,3 +121,15 @@ class ModelManifest(BaseModel):
             appliance.appliance_type: appliance.threshold
             for appliance in self.output.appliances
         }
+
+    @property
+    def normalization_parameters(self) -> tuple[tuple[float, float], ...]:
+        """Feature 순서대로 학습 데이터의 mean과 std를 반환한다."""
+
+        return tuple(
+            (feature.mean, feature.std)
+            for feature in sorted(
+                self.input.features,
+                key=lambda feature: feature.index,
+            )
+        )

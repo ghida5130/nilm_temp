@@ -1,4 +1,4 @@
-# 로컬 실행 및 배포
+# 로컬 실행 및 배포 (루트 위치 기준)
 
 Docker Compose는 `infrastructure/local`(로컬), `infrastructure/ec2-a`, `infrastructure/ec2-b`(운영)에서 각각 관리합니다. 아래 명령은 모두 `infrastructure/local`에서 실행합니다.
 
@@ -6,39 +6,82 @@ Docker Compose는 `infrastructure/local`(로컬), `infrastructure/ec2-a`, `infra
 - [전체 구조 설명](docs/배포설정/로컬_EC2_Compose_Jenkins_구조.md)
 - [Jenkins 설정과 검증 결과](docs/배포설정/Jenkins_실행_및_검증.md)
 
-## 최초 설정
 
-```powershell
-cd infrastructure/local
+
+## 인프라 + 백엔드 + 프론트엔드 한번에 실행
+```dash
+docker compose -f infrastructure/local/compose.yaml --profile frontend up -d --build
 ```
 
-`.env.example`을 바탕으로 `.env`를 만듭니다. 이미 있으면 덮어쓰지 않습니다. `MQTT_USER`, `MQTT_PASS`는 `infrastructure/mqtt/config/passwd`의 계정과 일치해야 하며, passwd 파일이 없는 새 환경은 `.\Setup-Local.ps1 -InitializeMqtt`로 생성합니다.
-
-## frontend-build.env 만들기
-
-Vite 빌드 시점에 필요한 공개 변수를 담는 파일입니다. **`infrastructure/frontend-build.env.example`을 복사해서 만듭니다.**
-
-```powershell
-Copy-Item infrastructure/frontend-build.env.example infrastructure/frontend-build.env
+## 인프라 + 백엔드 실행
+```dash
+docker compose -f infrastructure/local/compose.yaml up -d --build
 ```
 
-## 서버 실행
-
-```powershell
-docker compose up -d --build
-docker compose ps
+## 프론트엔드 실행
+```dash
+docker compose -f infrastructure/local/compose.yaml --profile frontend up -d --build frontend
 ```
 
-## 프론트엔드 실행 
+## HDFS + 원본 적재기 실행
+nilm-net을 external로 참조하므로 인프라+백엔드 실행 먼저 해야함
+```dash
+docker compose -f infrastructure/hdfs/docker-compose.yml up -d --build
+```
+Namenode UI: http://localhost:9870
 
-빌드 결과물을 nginx 이미지에 넣어 배포와 같은 형태로 확인할 때 사용한다. `frontend` 서비스는 프로필로 분리되어 있어 `--profile`을 붙여야 뜬다. `--profile`은 `up` 뒤가 아니라 `docker compose` 바로 뒤에 온다.
-
-```powershell
-cd infrastructure/local
-docker compose --profile frontend up -d --build
+## Silver 일일 배치 (power-silver-daily)
+Bronze 전력 원본에서 정제 전력과 가구별 관측일을 만드는 Spark 배치입니다. 상시 서비스가
+아니라 하루에 한 번 실행합니다. 자세한 내용은 [batch/power_silver_service/README.md](batch/power_silver_service/README.md).
+```dash
+docker compose -f infrastructure/local/compose.yaml run --rm power-silver power-silver run --date 2026-09-19
+docker compose -f infrastructure/local/compose.yaml run --rm power-silver power-silver status --json
 ```
 
-포트: Keycloak 8090, Gateway 8080, Device 8081, Monitoring 8082, PostgreSQL 5432, Kafka 9092, MQTT 1883. 모두 `127.0.0.1`에만 바인딩됩니다. `realtime-analysis-service`는 외부 포트 없이 Kafka를 소비합니다. 프론트 컨테이너(3000)와 Kafka UI(8091)는 `--profile frontend --profile tools`를 붙였을 때만 뜹니다.
+## Gold 프로필 배치
+
+최근 28일의 활성 `appliance_usage_daily`와 세션 slice 버전을 고정해 shadow
+routine baseline과 지표별 통계 프로필을 생성합니다. 기존 serving DB baseline과 위험
+점수는 변경하지 않습니다. 자세한 계약은
+[batch/gold_profile_service/README.md](batch/gold_profile_service/README.md)를 참고하세요.
+
+```bash
+docker compose -f infrastructure/local/compose.yaml run --rm gold-profile gold-profile run --as-of 2026-09-19
+docker compose -f infrastructure/local/compose.yaml run --rm gold-profile gold-profile dirty --from 2026-09-01 --to 2026-09-28
+```
+
+## 시뮬레이터
+1. 의존성 설치(최초 1회)
+```dash
+pip install -r infrastructure/mqtt/simulator/requirements.txt
+```
+
+2-1. 웹 대시보드 실행
+```dash
+python infrastructure/mqtt/simulator/web_server.py
+```
+접속: http://127.0.0.1:8085
+
+2-2. CLI 실행
+```dash 
+python infrastructure/mqtt/simulator/simulator.py --scenario normal_routine
+```
+
+### 운영 Prometheus / Grafana 확인
+1. SSH 터널 접속 (창은 닫지 말 것)
+```bash
+ssh -i <경로>\J15D201T.pem -L 13001:127.0.0.1:13001 -L 19090:127.0.0.1:19090 ubuntu@<EC2-A 퍼블릭 IP>
+```
+
+2. 내 PC 브라우저에서 접속
+
+- Prometheus: http://localhost:19090
+- Grafana: http://localhost:13001 (admin / 배포 담당자에게 문의)
+> - 포트 충돌(`Address already in use`) 시 **`-L`의 앞 숫자만** 변경하고(예: `-L 28090:127.0.0.1:19090`)
+    >   브라우저도 그 번호로 접속. 뒤 숫자는 EC2-A 포트이므로 그대로 둘 것.
+> - `컨테이너 자원` 대시보드는 운영에서 cAdvisor를 사용하지 않아 비어 있는 것이 정상.
+> - SSH 창을 닫으면 터널도 끊김.
+
 
 ## `.env`를 바꿨을 때
 

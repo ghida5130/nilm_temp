@@ -14,18 +14,30 @@ SERVICES = {
     "iot-device-service": "IOT_DEVICE_IMAGE",
     "monitoring-service": "MONITORING_IMAGE",
     "realtime-analysis-service": "REALTIME_ANALYSIS_IMAGE",
+    "aggregation-service": "AGGREGATION_IMAGE",
     "frontend": "FRONTEND_IMAGE",
     "mqtt-kafka-bridge": "MQTT_KAFKA_BRIDGE_IMAGE",
+    "bronze-loader": "BRONZE_LOADER_IMAGE",
+    "session-lake-loader": "SESSION_LAKE_LOADER_IMAGE",
+    "power-silver": "POWER_SILVER_IMAGE",
+    "gold-profile": "GOLD_PROFILE_IMAGE",
 }
 TARGETS = {
     "a": (
         "api-gateway",
         "iot-device-service",
         "monitoring-service",
-        "realtime-analysis-service",
         "frontend",
     ),
-    "b": ("mqtt-kafka-bridge",),
+    "b": (
+        "realtime-analysis-service",
+        "aggregation-service",
+        "mqtt-kafka-bridge",
+        "bronze-loader",
+        "session-lake-loader",
+        "power-silver",
+        "gold-profile",
+    ),
 }
 REPOSITORY = re.compile(r"docker\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*/[a-z0-9]+(?:[._-][a-z0-9]+)*")
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
@@ -43,7 +55,7 @@ def identity(repository, sha, release_id):
 def validate(data):
     identity(data["repository"], data["git_sha"], data["release_id"])
     if data.get("schema") != 1 or set(data["images"]) != set(SERVICES):
-        raise ValueError("Release must contain exactly the six application images")
+        raise ValueError("Release must contain exactly the application images")
     for service, entry in data["images"].items():
         if not DIGEST.fullmatch(entry["digest"]):
             raise ValueError("Invalid image digest")
@@ -125,11 +137,12 @@ def update_env(path, data):
     validate(data)
     path = Path(path)
     controlled = {"REGISTRY", "IMAGE_PREFIX", "IMAGE_TAG", "IMAGE_REPOSITORY", "RELEASE_ID",
-                  "CONFIG_ROOT", *SERVICES.values()}
+                  "CONFIG_ROOT", "OBSERVABILITY_ROOT", *SERVICES.values()}
     lines = path.read_text(encoding="utf-8-sig").splitlines()
     lines = [line for line in lines if line.split("=", 1)[0].strip() not in controlled]
     lines.extend(["IMAGE_TAG=" + data["git_sha"], "RELEASE_ID=" + data["release_id"],
-                  "IMAGE_REPOSITORY=" + data["repository"], "CONFIG_ROOT=/opt/nilm"])
+                  "IMAGE_REPOSITORY=" + data["repository"], "CONFIG_ROOT=/opt/nilm",
+                  "OBSERVABILITY_ROOT=/opt/nilm/observability"])
     lines.extend(f'{variable}={data["images"][service]["reference"]}'
                  for service, variable in SERVICES.items())
     temporary = None

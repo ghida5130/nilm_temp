@@ -80,8 +80,8 @@ pipeline {
             description: 'master 배포 활성화. master 푸시로 시작된 자동 빌드는 이 값과 무관하게 항상 배포하며, 수동 빌드(Build with Parameters)에서만 해제할 수 있다')
         string(name: 'IMAGE_REPOSITORY', defaultValue: 'docker.io/leejeongmin24/on-maum',
             description: 'Docker Hub Private repository: docker.io/account/repository (no tag)')
-        string(name: 'FRONTEND_ENV_CREDENTIAL', defaultValue: '',
-            description: 'Optional Secret file credential for public Vite build settings')
+        string(name: 'FRONTEND_ENV_CREDENTIAL', defaultValue: 'frontend-build-env',
+            description: 'Secret file credential for public Vite build settings. master 빌드에만 주입되며, 비우면 프론트가 공개 변수 없이 빌드된다')
     }
     stages {
         stage('CI') {
@@ -111,7 +111,7 @@ pipeline {
                 sh '''
                     RUN_COMPOSE_TESTS=1 python3 -m unittest discover -s infrastructure/scripts/tests -v
                     for target in local ec2-a ec2-b; do
-                        docker compose --env-file infrastructure/$target/.env.example -f infrastructure/$target/compose.yaml config --quiet
+                        docker compose --env-file infrastructure/$target/.env.example -f infrastructure/$target/compose.yaml --profile '*' config --quiet
                     done
                 '''
                 script {
@@ -124,7 +124,7 @@ pipeline {
                         sh 'bash infrastructure/scripts/build.sh'
                     }
                 }
-                stash name: 'deploy-config', includes: 'infrastructure/ec2-*/compose.yaml,infrastructure/scripts/**,infrastructure/nginx/*.template,infrastructure/keycloak/*.json,infrastructure/postgres/*.sql,infrastructure/mqtt/config/mosquitto.production.conf', excludes: '**/__pycache__/**'
+                stash name: 'deploy-config', includes: 'infrastructure/ec2-*/compose.yaml,infrastructure/ec2-b/hdfs-init.sh,infrastructure/observability/**,infrastructure/scripts/**,infrastructure/nginx/*.template,infrastructure/keycloak/*.json,infrastructure/postgres/*.sql,infrastructure/mqtt/config/mosquitto.production.conf', excludes: '**/__pycache__/**'
                 script {
                     if (env.DEPLOY == 'true') {
                         withCredentials([usernamePassword(credentialsId: 'registry-login',
@@ -208,10 +208,10 @@ pipeline {
         }
         stage('Deploy realtime analysis') {
             when { beforeAgent true; allOf { branch 'master'; expression { env.DEPLOY == 'true' } } }
-            agent { label 'ec2-a' }
+            agent { label 'ec2-b' }
             steps {
                 unstash 'deploy-config'
-                sh 'bash infrastructure/scripts/deploy.sh a-analysis'
+                sh 'bash infrastructure/scripts/deploy.sh b-analysis'
             }
         }
         stage('Deploy Bridge and verify pipeline') {
@@ -220,6 +220,14 @@ pipeline {
             steps {
                 unstash 'deploy-config'
                 sh 'bash infrastructure/scripts/deploy.sh b-bridge'
+            }
+        }
+        stage('Deploy bronze loader') {
+            when { beforeAgent true; allOf { branch 'master'; expression { env.DEPLOY == 'true' } } }
+            agent { label 'ec2-b' }
+            steps {
+                unstash 'deploy-config'
+                sh 'bash infrastructure/scripts/deploy.sh b-loader'
             }
         }
         stage('Record success A') {

@@ -17,6 +17,11 @@ if CURRENT_DIR not in sys.path:
 from scenarios import (
     KST,
     RoutineMissedScenario,
+    NormalRoutineScenario,
+    SensorFaultScenario,
+    parse_simulation_date,
+    resolve_simulation_start_time,
+    format_iso_utc,
     parse_simulation_start_time,
 )
 
@@ -61,6 +66,7 @@ from engine.state import (
 )
 from engine.power_model import (
     inject_peak_scenario_event,
+    inject_normal_routine_scenario_event,
     update_house_environment,
     update_and_generate_device_load,
     calculate_main_panel_metrics,
@@ -79,15 +85,21 @@ def parse_args(args=None):
     )
     parser.add_argument(
         "--scenario", "-s",
-        choices=["random", "peak", "routine_missed"],
+        choices=["random", "peak", "routine_missed", "normal_routine", "sensor_fault"],
         default="random",
-        help="시뮬레이션 시나리오 모드 (random: 확률 기반 연속 시뮬레이션, peak: H001 단일 가구 10초 3,000W+ 피크 시연 모드, routine_missed: H001 08:10 루틴 누락 이상치 검증 모드)"
+        help="시뮬레이션 시나리오 모드 (random: 확률 기반 연속 시뮬레이션, peak: H001 단일 가구 10초 3,000W+ 피크 시연 모드, routine_missed: H001 08:10 루틴 누락 이상치 검증 모드, normal_routine: H001 08:10 이전 정상 아침 루틴 시연 모드, sensor_fault: 가변 센서 고장(결측) 및 복구 시연 모드)"
     )
     parser.add_argument(
         "--houses", "-n",
         type=int,
         default=10,
         help="시뮬레이션 대상 가구 수 (H001~H{n:03d} 자동 생성)"
+    )
+    parser.add_argument(
+        "--fault-duration-sec",
+        type=int,
+        default=120,
+        help="센서 결측(고장) 지속 시간 (초, 1~3600, 기본값: 120)"
     )
     parser.add_argument(
         "--interval", "-i",
@@ -105,7 +117,12 @@ def parse_args(args=None):
         "--count", "-c",
         type=int,
         default=0,
-        help="전송 사이클 횟수 (0: 무한 연속 발행, N > 0: N회 전송 후 자동 종료, peak 기본값: 60회, routine_missed 기본값: 300회)"
+        help="전송 사이클 횟수 (0: 무한 연속 발행, N > 0: N회 전송 후 자동 종료, peak 기본값: 60회, routine_missed 기본값: 300회, sensor_fault: 10+D+10회)"
+    )
+    parser.add_argument(
+        "--date", "-d",
+        default=None,
+        help="시뮬레이션 데이터 기준 날짜 (YYYY-MM-DD 형식, 예: '2026-09-10')"
     )
     parser.add_argument(
         "--start-time",
@@ -180,38 +197,70 @@ async def run_simulator(args):
     """시뮬레이터 메인 비동기 실행 루프"""
     is_peak_mode = (args.scenario == "peak")
     is_missed_mode = (args.scenario == "routine_missed")
+    is_normal_mode = (args.scenario == "normal_routine")
+    is_sensor_fault_mode = (args.scenario == "sensor_fault")
+
+    # sensor_fault 모드 및 --count / fault_duration_sec 충돌 검증 (TLS 컨텍스트 생성 및 MQTT 연결 전 즉시 실행)
+    fault_duration_sec = getattr(args, "fault_duration_sec", SensorFaultScenario.DEFAULT_FAULT_DURATION_SEC)
+    if is_sensor_fault_mode:
+        if type(fault_duration_sec) is not int or isinstance(fault_duration_sec, bool) or not (1 <= fault_duration_sec <= 3600):
+            raise ValueError("fault_duration_sec는 1~3600 범위의 정수여야 합니다.")
+        expected_total = fault_duration_sec + 20
+        if args.count not in (0, expected_total):
+            raise ValueError(
+                f"sensor_fault 시나리오에서 --count({args.count})는 결측 시간({fault_duration_sec}초) 기준 총 사이클 수({expected_total})와 일치해야 합니다. (또는 0으로 기본값 사용)"
+            )
+        target_count = expected_total
+    elif args.count > 0:
+        target_count = args.count
+    elif is_peak_mode:
+        target_count = 60
+    elif is_missed_mode:
+        target_count = 300  # 299개 슬라이딩 버퍼 완충 후 이상 검증
+    elif is_normal_mode:
+        target_count = NormalRoutineScenario.TOTAL_CYCLES
+    else:
+        target_count = 0
 
     # TLS 컨텍스트 생성 및 사전 검증 (CA 파일 누락/오류 시 연결 전 즉각 실패)
     tls_context = get_mqtt_tls_context(tls_enabled=args.tls, ca_file=args.ca_file)
     tls_desc = f" [TLS ON | CA: {args.ca_file}]" if args.tls else " [TLS OFF (평문)]"
 
     # 1. 가구 목록 동적 생성 및 상태 머신 초기화
-    if (is_peak_mode or is_missed_mode) and args.houses == 10:
-        houses = ["H001"]  # peak 및 routine_missed 모드는 기본 단일 가구 H001 대상
+    if is_normal_mode:
+        if args.houses > 1 and args.houses != 10:
+            raise ValueError("normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.")
+        houses = ["H001"]
+    elif (is_peak_mode or is_missed_mode or is_sensor_fault_mode) and args.houses == 10:
+        houses = ["H001"]  # 단일 가구 H001 대상 시연 모드
     else:
         houses = [f"H{i:03d}" for i in range(1, args.houses + 1)]
 
     init_simulation_states(houses)
 
-    # 2. 발행 주기(interval) 및 목표 사이클 수 계산
+    # 2. 발행 주기(interval) 계산
     interval = (1.0 / args.hz) if args.hz and args.hz > 0 else max(0.001, args.interval)
-    if args.count > 0:
-        target_count = args.count
-    elif is_peak_mode:
-        target_count = 60
-    elif is_missed_mode:
-        target_count = 300  # 299개 슬라이딩 버퍼 완충 후 이상 검증
-    else:
-        target_count = 0
 
-    allow_random = not (is_peak_mode or is_missed_mode)
-    base_dt = parse_simulation_start_time(args.start_time, is_missed_mode)
+    allow_random = not (is_peak_mode or is_missed_mode or is_normal_mode or is_sensor_fault_mode)
+    try:
+        sim_date_parsed = parse_simulation_date(args.date) if args.date else None
+        base_dt = resolve_simulation_start_time(
+            scenario=args.scenario,
+            simulation_date=sim_date_parsed,
+            start_time_str=args.start_time,
+            routine_default_time="08:15:00"
+        )
+    except ValueError as err:
+        print(f"[오류] 시작 일시 설정 오류: {err}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"============================================================")
     if is_peak_mode:
+        start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각 (실시간)'
         print(f" NILM IoT 전력 시뮬레이터 시작 [10초 3,000W+ 피크 시연 모드]")
         print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
         print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
+        print(f" - 시작 가상 시각: {start_desc}")
         print(f" - 시연 타임라인:")
         print(f"   * T+01s ~ T+09s: 평상시 대기 상태 (약 55~65W)")
         print(f"   * T+10s ~ T+30s: [피크 경보] 전기포트(1,700W) + 인덕션(1,600W) 동시 기동 (3,300~3,500W 도달)")
@@ -228,20 +277,53 @@ async def run_simulator(args):
         print(f" - 시연 타임라인:")
         print(f"   * 전자레인지 가동 없이 대기전력(약 45~65W) 및 냉장고 주기만 연속 유지")
         print(f"   * T+001s ~ T+298s: 분석 서비스 입력 윈도우(299개) 슬라이딩 버퍼 적재")
-        print(f"   * T+299s: 299초 버퍼 충족 ➡️ Kafka 'analysis.event.v1' (score 86) 이상 이벤트 발행!")
-        print(f"   * T+300s: 검증 완료 후 자동 종료")
+        print(f"   * T+299s: 299개 분석 입력 데이터 충족 — AI 이상 감지 판정 대기")
+        print(f"   * T+300s: 검증 완료 후 자동 종료 (H001 루틴 누락 전력 패턴 발행 완료)")
         print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
         print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료")
+    elif is_normal_mode:
+        start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각'
+        print(f" NILM IoT 전력 시뮬레이터 시작 [정상 일상(NORMAL_ROUTINE) 아침 루틴 모드]")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
+        print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
+        print(f" - 시작 가상 시각: {start_desc}")
+        print(f" - 시연 타임라인:")
+        print(f"   * T+001s ~ T+242s: 평상시 아침 대기 상태 (약 45~65W)")
+        print(f"   * T+243s ~ T+302s: [아침 루틴 가동] 전자레인지(940W) 정확히 60초간 가동")
+        print(f"   * T+303s ~ T+{NormalRoutineScenario.TOTAL_CYCLES:03d}s: [루틴 완료] 전자레인지 가동 종료 후 대기전력 복귀 및 완료")
+        print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
+        print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료")
+    elif is_sensor_fault_mode:
+        tl = SensorFaultScenario.get_timeline(fault_duration_sec)
+        start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각 (실시간)'
+        print(f" NILM IoT 전력 시뮬레이터 시작 [센서 고장(SENSOR_FAULT) {tl.duration_sec}초 결측 검증 모드]")
+        print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
+        print(f" - 대상 가구: {', '.join(houses)} (총 {len(houses)}개)")
+        print(f" - 시작 가상 시각: {start_desc}")
+        print(f" - 결측 지속 시간: {tl.duration_sec}초")
+        print(f" - 시연 타임라인:")
+        print(f"   * T+001s ~ T+010s: 평상시 정상 대기전력 계측 및 MQTT 발행 (10회)")
+        print(f"   * T+{tl.fault_start:03d}s ~ T+{tl.fault_end:03d}s: [센서 고장] {tl.duration_sec}초간 MQTT 메시지 0건 발행 (결측 구간)")
+        print(f"   * T+{tl.recovery_start:03d}s ~ T+{tl.recovery_end:03d}s: [센서 복구] 계측 복구 및 정상 MQTT 발행 재개 (10회)")
+        print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
+        print(f" - 목표 사이클: {target_count}회 진행 후 자동 종료 (총 {len(houses) * 20}건 발행)")
     else:
+        start_desc = base_dt.strftime('%Y-%m-%d %H:%M:%S KST') if base_dt else '현재 시각 (실시간)'
         print(f" NILM IoT 전력 시뮬레이터 시작")
         print(f" - 브로커: {args.host}:{args.port} (QoS {args.qos}){tls_desc}")
         print(f" - 대상 가구: 총 {len(houses)}개 ({houses[0]} ~ {houses[-1]})")
+        print(f" - 시작 가상 시각: {start_desc}")
         print(f" - 전송 주기: {interval:.3f}초 (약 {1.0/interval:.1f}Hz)")
         if target_count > 0:
             print(f" - 목표 사이클: {target_count}회 발행 후 자동 종료 (총 {len(houses) * target_count}건)")
         else:
             print(f" - 실행 모드: 무한 연속 발행 (종료: Ctrl+C)")
     print(f"============================================================", flush=True)
+
+    # sensor_fault 모드에서 base_dt가 없으면 시작 시각을 1회 고정하여
+    # 배속 실행 시에도 measured_at이 가상 1초 간격으로 증가하도록 보장
+    if is_sensor_fault_mode and base_dt is None:
+        base_dt = datetime.now(timezone.utc)
 
     total_sent = 0
     cycle = 0
@@ -265,21 +347,30 @@ async def run_simulator(args):
             cycle_start = time.time()
             if base_dt is not None:
                 sim_dt = base_dt + timedelta(seconds=cycle)
-                now_iso = sim_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                now_iso = format_iso_utc(sim_dt)
             else:
-                now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                now_iso = format_iso_utc(datetime.now(timezone.utc))
             cycle += 1
 
-            # 피크 시연 모드일 경우 타임라인 이벤트 주입
+            # 시연 모드별 타임라인 이벤트 주입
             event_desc = None
             if is_peak_mode:
                 event_desc = inject_peak_scenario_event(cycle, "H001")
+            elif is_normal_mode:
+                event_desc = inject_normal_routine_scenario_event(cycle, "H001")
 
             # N개 가구 동시 비동기 발행 (Concurrent Publish)
-            results = await asyncio.gather(
-                *(publish_house_power(client, house, now_iso, qos=args.qos, allow_random=allow_random) for house in houses)
-            )
-            total_sent += len(houses)
+            # sensor_fault 모드의 고장 구간에서는 MQTT 메시지를 발행하지 않음
+            is_fault = is_sensor_fault_mode and SensorFaultScenario.is_fault_cycle(cycle, duration_sec=fault_duration_sec)
+            if is_fault:
+                for house in houses:
+                    calculate_main_panel_metrics(house, allow_random=allow_random)
+                results = []
+            else:
+                results = await asyncio.gather(
+                    *(publish_house_power(client, house, now_iso, qos=args.qos, allow_random=allow_random) for house in houses)
+                )
+                total_sent += len(houses)
 
             # 로그 출력 제어
             if is_peak_mode:
@@ -306,6 +397,28 @@ async def run_simulator(args):
 
                 status_tag, notice = RoutineMissedScenario.get_cycle_status(cycle)
                 print(f"[{now_iso} | KST {kst_str}] (T+{cycle:03d}s) 소비전력: {power_w:6.1f} W | 상태: {status_tag:<28} | 가전: {dev_str}{notice}", flush=True)
+            elif is_normal_mode:
+                res = results[0]
+                power_w = res["power"]
+                devs = res["devices"]
+                dev_str = ", ".join(devs) if devs else "대기전력(기저부하)"
+                sim_dt = base_dt + timedelta(seconds=cycle - 1) if base_dt else datetime.now(KST)
+                kst_str = sim_dt.astimezone(KST).strftime("%H:%M:%S")
+                status_tag = "전자레인지 가동 중" if "전자레인지" in devs else "정상 대기"
+                event_notice = f"  <== [{event_desc}]" if event_desc else ""
+                print(f"[{now_iso} | KST {kst_str}] (T+{cycle:03d}s) 소비전력: {power_w:6.1f} W | 상태: {status_tag:<20} | 가전: {dev_str}{event_notice}", flush=True)
+            elif is_sensor_fault_mode:
+                status_tag, notice = SensorFaultScenario.get_cycle_status(cycle, duration_sec=fault_duration_sec)
+                notice_str = f"  <== [{notice}]" if notice else ""
+                if is_fault:
+                    _, gap_elapsed, gap_remaining = SensorFaultScenario.get_gap_metrics(cycle, duration_sec=fault_duration_sec)
+                    print(f"[{now_iso}] (T+{cycle:03d}s) [센서 고장 / 측정 없음] MQTT 미발행 | 상태: {status_tag:<22} | 센서 고장 ({gap_elapsed}/{fault_duration_sec}초, 남은시간 {gap_remaining}초){notice_str}", flush=True)
+                else:
+                    res = results[0] if results else None
+                    power_w = res["power"] if res else 0.0
+                    devs = res["devices"] if res else []
+                    dev_str = ", ".join(devs) if devs else "대기전력(기저부하)"
+                    print(f"[{now_iso}] (T+{cycle:03d}s) 소비전력: {power_w:6.1f} W | 상태: {status_tag:<22} | 가전: {dev_str}{notice_str}", flush=True)
             elif not args.quiet:
                 active_info = [f"{r['house']}:{','.join(r['devices'])}" for r in results if r["devices"]]
                 active_summary = f" [가전 ON: {'; '.join(active_info)}]" if active_info else ""
