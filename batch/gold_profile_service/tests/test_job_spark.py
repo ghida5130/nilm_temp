@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from realtime_analysis.database import Base
+from power_silver.catalog import SilverCatalog
 from power_silver.commit import SilverCommitRepository
 from power_silver.constants import DATASET_APPLIANCE_USAGE_DAILY, DATASET_SESSION_SLICES
 from power_silver.storage import LocalLakeStorage
@@ -15,6 +16,7 @@ from gold_profile.job import (
     DATASET_LOGICAL_USES, DATASET_ROUTINE_BASELINE, DATASET_STATISTICAL_PROFILE,
     run_gold_profile,
 )
+from gold_profile.input_snapshot import build_profile_snapshot
 
 
 def _publish_input_day(spark, storage, session_factory, target_date, *, used):
@@ -112,3 +114,61 @@ def test_job_publishes_one_atomic_shadow_profile(spark, tmp_path):
     assert repeated.reused_run_id == result.run_id
     with session_factory() as session:
         assert session.query(GoldProfileDeliveryOutbox).count() == 1
+
+
+@pytest.mark.spark
+def test_gold_rejects_when_active_inputs_change_after_selection(spark, tmp_path):
+    storage = LocalLakeStorage(tmp_path / "lake")
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'analysis.db'}")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    as_of = date(2026, 9, 19)
+    days = (as_of - timedelta(days=1), as_of)
+    for day in days:
+        _publish_input_day(spark, storage, session_factory, day, used=True)
+    settings = GoldProfileSettings(
+        lake_local_root=str(tmp_path / "lake"), profile_window_days=2,
+        profile_minimum_sample_days=1, profile_minimum_weekday_sample_days=1,
+        spark_master="local[2]",
+    )
+    catalog = SilverCatalog(session_factory)
+    selected = build_profile_snapshot(
+        as_of, 2,
+        catalog.active_versions(DATASET_APPLIANCE_USAGE_DAILY, days),
+        catalog.active_versions(DATASET_SESSION_SLICES, days),
+        rule_version=settings.profile_rule_version,
+        statistic_rule_version=settings.profile_statistic_rule_version,
+        analysis_run_id=settings.analysis_run_id,
+        timezone_name=f"UTC{settings.business_utc_offset_seconds:+d}s",
+    )
+
+    _publish_input_day(spark, storage, session_factory, days[0], used=False)
+
+    with pytest.raises(RuntimeError, match="active analysis versions changed"):
+        run_gold_profile(
+            settings, as_of, storage=storage, session_factory=session_factory,
+            spark=spark, input_snapshot=selected,
+        )
+
+
+@pytest.mark.spark
+def test_gold_result_preserves_input_incomplete(spark, tmp_path):
+    storage = LocalLakeStorage(tmp_path / "lake")
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'analysis.db'}")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    as_of = date(2026, 9, 19)
+    _publish_input_day(spark, storage, session_factory, as_of, used=True)
+    settings = GoldProfileSettings(
+        lake_local_root=str(tmp_path / "lake"), profile_window_days=2,
+        profile_minimum_sample_days=1, profile_minimum_weekday_sample_days=1,
+        spark_master="local[2]",
+    )
+
+    result = run_gold_profile(
+        settings, as_of, storage=storage, session_factory=session_factory, spark=spark,
+    )
+
+    assert result.status == "SUCCEEDED"
+    assert result.incomplete is True
+    assert result.run_id is not None
