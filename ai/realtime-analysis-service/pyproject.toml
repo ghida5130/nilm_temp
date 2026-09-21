@@ -33,6 +33,7 @@ dev = [
 realtime-analysis = "realtime_analysis.__main__:main"
 realtime-model-replay = "realtime_analysis.model_replay:main"
 realtime-scene-replay = "realtime_analysis.scene_replay:main"
+realtime-fixture-replay = "realtime_analysis.fixture_publisher:main"
 
 [tool.setuptools.package-data]
 "realtime_analysis.real_models" = ["profiles.lock.json"]

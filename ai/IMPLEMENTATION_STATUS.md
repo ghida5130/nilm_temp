@@ -7,7 +7,7 @@ develop/master 직접 push 또는 임의 배포는 하지 않는다. PR은 아�
 | 순서 | 브랜치 | 상태 |
 |---|---|---|
 | 2 | feature/ai/inference-runtime | 구현, Python 144 passed / PG 전용 8 제외 |
-| 3 | feature/ai/fixture-replay | 대기 |
+| 3 | feature/ai/fixture-replay | 구현, 발행기 시험 7 passed |
 | 4 | feature/ai/service-events | 대기 |
 | 5 | feature/ai/deployment-package | 대기 |
 | 6 | feature/ai/inference-e2e | 대기 |
