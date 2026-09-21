@@ -640,6 +640,11 @@ python -m realtime_analysis
 있습니다. Prometheus는 Compose 내부에서 `realtime-analysis-service:8000/metrics`를
 수집하며 이 포트를 공용 인터넷에 공개하지 않습니다.
 
+E2E 지연은 원본 `observed_at`과 Snapshot `published_at`의 차이로 측정합니다.
+`ANALYSIS_E2E_CLOCK_SKEW_TOLERANCE_SECONDS`의 기본값은 `0.1`(100ms)이며, 이 범위의
+음수 지연은 호스트와 컨테이너 사이의 미세한 시계 차이로 보고 0초로 기록합니다.
+허용 범위를 초과한 음수 지연만 `ClockSkew` 오류로 집계합니다.
+
 Grafana의 단계별 레이턴시, E2E 지연, Consumer Lag, 처리량 패널에는 각각
 `nilm_analysis_stage_duration_seconds`, `nilm_analysis_e2e_duration_seconds`,
 `nilm_analysis_consumer_lag_messages`, `nilm_analysis_messages_total`을 사용합니다.
