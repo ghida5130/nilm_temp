@@ -6,6 +6,9 @@
 @email = son{{$timestamp}}@nilm.test
 @password = pass12345
 
+### 0. 이메일 중복 확인 — 가입 폼이 제출 전에 부른다 (대소문자는 정규화된다)
+GET {{host}}/api/auth/check-email?email={{email}}
+
 ### 1. 회원가입 (보호자 — organization 없음 → 즉시 ACTIVE)
 # @name signup
 POST {{host}}/api/auth/signup
@@ -18,7 +21,7 @@ Content-Type: application/json
   "phone": "010-3333-4444"
 }
 
-### 1-1. 회원가입 (복지사 — organization 있음 → PENDING, 관리자 승인 필요)
+### 1-1. 회원가입 (복지사 — organization 있음 → 담당자 아웃박스에 기록되어 monitoring으로 발행)
 POST {{host}}/api/auth/signup
 Content-Type: application/json
 
@@ -106,3 +109,61 @@ X-User-Id: {{signup.response.body.userId}}
 ### 11. 초대 코드 회수
 DELETE {{host}}/api/devices/invites/{{invite.response.body.code}}
 X-User-Id: {{signup.response.body.userId}}
+
+### 12. 내 정보 수정 — null 필드는 유지된다. 이름은 Keycloak에도 반영
+PATCH {{host}}/api/auth/me
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+X-User-Id: {{signup.response.body.userId}}
+
+{
+  "displayName": "이아들(수정)",
+  "phone": "010-5555-6666"
+}
+
+### 13. 비밀번호 변경 — 성공하면 모든 세션이 끊긴다. 이후 요청은 재로그인 필요
+POST {{host}}/api/auth/password
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.accessToken}}
+X-User-Id: {{signup.response.body.userId}}
+
+{
+  "currentPassword": "{{password}}",
+  "newPassword": "newpass12345"
+}
+
+### 13-1. 현재 비밀번호가 틀리면 400 — 재설정이 일어나지 않아야 한다
+POST {{host}}/api/auth/password
+Content-Type: application/json
+X-User-Id: {{signup.response.body.userId}}
+
+{
+  "currentPassword": "wrong-password",
+  "newPassword": "another12345"
+}
+
+### 14. 바뀐 비밀번호로 재로그인
+# @name relogin
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{signup.response.body.email}}",
+  "password": "newpass12345"
+}
+
+### 15. 로그아웃 — refresh token 폐기 (204)
+POST {{host}}/api/auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "{{relogin.response.body.refreshToken}}"
+}
+
+### 15-1. 폐기된 토큰으로 갱신 시도 — 400이어야 로그아웃이 실제로 동작한 것이다
+POST {{host}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{relogin.response.body.refreshToken}}"
+}

@@ -9,6 +9,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -118,6 +119,71 @@ public class KeycloakAdminClient {
         MultiValueMap<String, String> form = form(GRANT_REFRESH_TOKEN);
         form.add(GRANT_REFRESH_TOKEN, refreshToken);
         return token(form, "다시 로그인해 주세요");
+    }
+
+    /**
+     * 로그아웃 — refresh token을 Keycloak에서 폐기한다.
+     *
+     * <p>클라이언트가 저장소에서 토큰을 지우는 것만으로는 refresh token이 살아 있어,
+     * 유출된 토큰으로 계속 갱신할 수 있다. 서버가 폐기해야 실제로 끊긴다.
+     * 이미 만료·폐기된 토큰이어도 목적은 달성된 상태이므로 오류로 보지 않는다.
+     */
+    public void logout(String refreshToken) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("client_id", clientId);
+        form.add("client_secret", clientSecret);
+        form.add(GRANT_REFRESH_TOKEN, refreshToken);
+        http.post()
+                .uri("/realms/{realm}/protocol/openid-connect/logout", realm)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(form)
+                .exchange((request, response) -> {
+                    if (response.getStatusCode().isError()) {
+                        log.debug("로그아웃 응답 {} — 이미 무효한 토큰일 수 있다",
+                                response.getStatusCode());
+                    }
+                    return null;
+                });
+    }
+
+    /** 표시 이름 변경을 Keycloak에도 반영한다(firstName). 서비스의 원본은 user_profiles다. */
+    public void updateDisplayName(UUID userId, String displayName) {
+        adminWrite(HttpMethod.PUT, "/admin/realms/{realm}/users/{id}",
+                userId, Map.of("firstName", displayName), "이름 변경에 실패했습니다");
+    }
+
+    /** 비밀번호 재설정 — 현재 비밀번호 확인은 호출자가 먼저 끝낸다. */
+    public void resetPassword(UUID userId, String newPassword) {
+        adminWrite(HttpMethod.PUT, "/admin/realms/{realm}/users/{id}/reset-password",
+                userId,
+                Map.of("type", GRANT_PASSWORD, "value", newPassword, "temporary", false),
+                "비밀번호 변경에 실패했습니다");
+    }
+
+    /**
+     * 해당 사용자의 모든 세션을 끊는다.
+     * 비밀번호를 바꾼 뒤에도 이전 비밀번호로 받은 토큰이 살아 있으면 변경의 의미가 없다.
+     */
+    public void logoutAllSessions(UUID userId) {
+        adminWrite(HttpMethod.POST, "/admin/realms/{realm}/users/{id}/logout",
+                userId, Map.of(), "세션 정리에 실패했습니다");
+    }
+
+    private void adminWrite(HttpMethod method, String uri, UUID userId,
+                            Map<String, Object> body, String failureMessage) {
+        http.method(method)
+                .uri(uri, realm, userId)
+                .header("Authorization", "Bearer " + serviceAccountToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .exchange((request, response) -> {
+                    if (response.getStatusCode().isError()) {
+                        log.error("Keycloak 관리 요청 실패: {} {} {}", method,
+                                response.getStatusCode(), response.bodyTo(String.class));
+                        throw new InvalidOperationException(failureMessage);
+                    }
+                    return null;
+                });
     }
 
     private String serviceAccountToken() {
