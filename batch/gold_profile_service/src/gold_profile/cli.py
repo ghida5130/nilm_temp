@@ -6,6 +6,8 @@ import argparse
 from datetime import date, datetime, timedelta, timezone
 import json
 import logging
+import signal
+import threading
 
 from power_silver.catalog import SilverCatalog
 from power_silver.commit import SilverCommitRepository
@@ -14,7 +16,8 @@ from power_silver.spark import build_session
 from power_silver.storage import create_storage
 
 from gold_profile.config import get_settings
-from gold_profile.delivery import GoldProfilePublisher
+from gold_profile.daily import SparkDailyStages, run_daily_pipeline
+from gold_profile.delivery import GoldProfilePublisher, drain_outbox
 from gold_profile.input_snapshot import build_profile_snapshot, window_dates
 from gold_profile.job import (
     DATASET_ROUTINE_BASELINE, JOB_NAME, config_version_of, run_gold_profile,
@@ -42,7 +45,33 @@ def build_parser() -> argparse.ArgumentParser:
     dirty.add_argument("--as-of")
     dirty.add_argument("--from", dest="start")
     dirty.add_argument("--to", dest="end")
-    commands.add_parser("publish", help="publish one pending outbox batch")
+
+    publish = commands.add_parser("publish", help="publish pending outbox rows")
+    publish.add_argument(
+        "--loop", action="store_true",
+        help="keep draining until stopped; this is how the publisher service runs",
+    )
+    publish.add_argument(
+        "--interval", type=float,
+        help="seconds between sweeps when looping (default: the retry interval)",
+    )
+
+    daily = commands.add_parser(
+        "daily", help="run one business day end to end: silver, usage, gold, publish"
+    )
+    daily.add_argument("--as-of")
+    daily.add_argument(
+        "--attempts", type=int, default=3, help="retries per stage (default: 3)"
+    )
+    daily.add_argument("--retry-seconds", type=float, default=30.0)
+    daily.add_argument(
+        "--no-align", action="store_true",
+        help="skip rebuilding window dates that sit on an older session snapshot",
+    )
+    daily.add_argument(
+        "--no-publish", action="store_true",
+        help="leave the outbox to the publisher service",
+    )
     return parser
 
 
@@ -65,17 +94,61 @@ def _snapshot(settings, catalog, as_of_date):
     )
 
 
+def _stop_on_signal() -> threading.Event:
+    """SIGTERM/SIGINT을 받으면 서는 신호. ``docker stop``이 깔끔히 끝나게 한다."""
+
+    stop = threading.Event()
+    for received in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(received, lambda *_: stop.set())
+    return stop
+
+
+def _daily(settings, session_factory, args) -> int:
+    as_of_date = (
+        date.fromisoformat(args.as_of) if args.as_of else default_as_of_date(settings)
+    )
+    storage = create_storage(settings)
+    spark = build_session(settings)
+    try:
+        stages = SparkDailyStages(
+            settings,
+            storage=storage,
+            session_factory=session_factory,
+            spark=spark,
+            # 보내지 않을 때 브로커 연결을 만들 이유가 없다.
+            publisher=None if args.no_publish
+            else GoldProfilePublisher(settings, session_factory),
+        )
+        report = run_daily_pipeline(
+            stages, as_of_date,
+            attempts=args.attempts,
+            retry_seconds=args.retry_seconds,
+            align_window=not args.no_align,
+            publish=not args.no_publish,
+        )
+    finally:
+        spark.stop()
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report["ok"] else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = get_settings()
     logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
     session_factory = _session_factory(settings)
     if args.command == "publish":
-        published, failed = GoldProfilePublisher(
-            settings, session_factory
-        ).publish_pending()
+        publisher = GoldProfilePublisher(settings, session_factory)
+        if args.loop:
+            interval = args.interval or settings.profile_publisher_retry_seconds
+            return drain_outbox(publisher, interval, _stop_on_signal())
+        published, failed = publisher.publish_pending()
         logging.info("gold profile outbox published=%s failed=%s", published, failed)
         return 1 if failed else 0
+
+    if args.command == "daily":
+        return _daily(settings, session_factory, args)
+
     repository = SilverCommitRepository(session_factory, job_name=JOB_NAME)
     catalog = SilverCatalog(session_factory)
     target = date.fromisoformat(args.as_of) if getattr(args, "as_of", None) else default_as_of_date(settings)
