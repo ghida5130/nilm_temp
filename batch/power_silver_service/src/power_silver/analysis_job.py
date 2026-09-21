@@ -56,8 +56,26 @@ SESSION_INPUT_SCHEMA = StructType([
 ])
 
 
+def _is_confirmed_manifest(path: str) -> bool:
+    """두 적재기가 쓰는 확정 표시를 모두 알아본다.
+
+    영수증 lake는 배치 디렉터리마다 ``manifest.json`` 하나를 쓰고, 세션 lake는
+    날짜 디렉터리를 공유하며 ``manifest-<batch_id>.json`` 으로 쓴다. 어느 쪽이든
+    파일이 확정된 뒤에야 나타나는 이름이므로 둘 다 확정으로 본다.
+    """
+
+    name = path.rsplit("/", 1)[-1]
+    if name == "manifest.json":
+        return True
+    return name.startswith("manifest-") and name.endswith(".json")
+
+
 def _confirmed_files(storage, manifest_base: str) -> tuple[list[str], str, int]:
-    manifests = [item.path for item in storage.walk_files(manifest_base) if item.path.endswith("manifest.json")]
+    manifests = [
+        item.path
+        for item in storage.walk_files(manifest_base)
+        if _is_confirmed_manifest(item.path)
+    ]
     entries: list[tuple[str, str]] = []
     files: list[str] = []
     for path in sorted(manifests):
