@@ -23,10 +23,10 @@ public record CurrentState(
     /**
      * 옛 입력 계약으로 만드는 상태.
      *
-     * <p>{@code RiskAssessmentService.currentState()}가 아직 이 생성자를 부른다. 그 경로의
-     * 입력으로는 관측 커버리지도, 유효 사용 정의도 확인할 수 없어서 루틴 미사용(M)과
-     * 활동 감소(A)는 계산되지 않고 제외된다. 통합 단계에서 호출부를
-     * {@code CurrentStateProvider.of(...)}로 바꾸면 세 지표가 모두 살아난다.
+     * <p>평가 경로는 {@code CurrentStateProvider}로 옮겨서 더 이상 이 생성자를 부르지 않는다.
+     * 이 입력으로는 관측 커버리지도, 유효 사용 정의도 확인할 수 없어서 루틴 미사용(M)과
+     * 활동 감소(A)가 제외된다는 사실을 남겨 두려고 계약만 지킨다. 커버리지를 모르는
+     * 입력이 다시 들어오더라도 그 구간을 정상 관측으로 바꾸지 않는다는 뜻이다.
      *
      * @deprecated {@code CurrentStateProvider}가 만든 상태를 쓴다
      */

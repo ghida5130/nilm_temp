@@ -9,6 +9,7 @@ import com.nilm.monitoring.service.AnalysisEventService;
 import com.nilm.monitoring.service.ApplianceActivityService;
 import com.nilm.monitoring.service.NotificationReady;
 import com.nilm.monitoring.service.RiskAssessmentService;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -119,17 +120,36 @@ class RiskAssessmentFlowTest {
      * 평가가 볼 현재 상태를 기준 시각에 맞춘다.
      * 경과시간을 고정해야 매 평가에서 같은 점수가 나온다.
      *
-     * <p>무활동 경과는 지금이 아니라 비교 기준 시각에서 잰다. 마지막 활동도 그 시각에서
+     * <p>무활동 경과는 지금이 아니라 비교 기준 시각에서 잰다. 마지막 사용도 그 시각에서
      * 거꾸로 세어 심어야 평가마다 같은 경과시간이 나온다.
+     *
+     * <p>평가는 관측 커버리지와 유효 사용 원장을 읽는다({@code CurrentStateProvider}).
+     * 하루의 시작부터 끊김 없이 본 가구로 심어야 보지 못한 구간이 무활동으로 둔갑하지 않는다.
      */
     private void observe(OffsetDateTime now) {
+        OffsetDateTime dayStart = now.atZoneSameInstant(KST)
+                .toLocalDate().atStartOfDay(KST).toOffsetDateTime();
+
         jdbc.update("delete from household_observations");
         jdbc.update("""
-                insert into household_observations(household_id, last_observed_at, updated_at)
-                values ('house-risk', ?, ?)
-                """, now, now);
-        jdbc.update("update subjects set last_activity_at = ?",
-                evaluationPoint(now).minusSeconds(WARNING_INACTIVITY_SECONDS));
+                insert into household_observations(household_id, last_observed_at,
+                        continuous_since, coverage_date, covered_seconds, updated_at)
+                values ('house-risk', ?, ?, ?, ?, ?)
+                """,
+                now, dayStart, dayStart.toLocalDate(),
+                Duration.between(dayStart, now).getSeconds(), now);
+
+        // 무활동의 기준점이 되는 마지막 유효 사용. 병합과 최소 사용시간을 통과한 한 건이다.
+        OffsetDateTime endedAt = evaluationPoint(now).minusSeconds(WARNING_INACTIVITY_SECONDS);
+        jdbc.update("delete from appliance_usage_episodes");
+        jdbc.update("""
+                insert into appliance_usage_episodes(household_id, appliance_type, started_at,
+                        start_imputed, ended_at, observed_until, active_seconds, segment_count,
+                        is_valid, business_date, updated_at)
+                values ('house-risk', 'MICROWAVE', ?, false, ?, ?, 300, 1, true, ?, ?)
+                """,
+                endedAt.minusSeconds(300), endedAt, endedAt,
+                endedAt.atZoneSameInstant(KST).toLocalDate(), now);
     }
 
     /** 지금 이하의 가장 최근 30분 경계. 평가가 현재 값을 재는 시각이다. */
@@ -248,10 +268,11 @@ class RiskAssessmentFlowTest {
                 "select indicators from risk_assessments", String.class))
                 .contains("\"code\":\"I\"")
                 .contains("\"bucket\":\"12:00\"")
-                // 이 경로는 아직 옛 입력 계약을 쓴다. 유효 사용 정의를 확인할 수 없어
-                // 루틴 미사용과 활동 감소는 계산하지 않고 제외 사유를 남긴다.
-                // 통합 단계에서 CurrentStateProvider로 바꾸면 세 지표가 모두 산다.
-                .contains("USAGE_UNVERIFIED");
+                // 세 지표를 모두 계산한다. 제외되더라도 입력을 믿지 못해서가 아니라
+                // 비교할 기준선·통계가 이 프로필에 없어서다.
+                .contains("NO_BASELINE")
+                .contains("NO_STATISTIC")
+                .doesNotContain("USAGE_UNVERIFIED");
     }
 
     @Test
