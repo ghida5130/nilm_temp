@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
 
 from realtime_analysis.config import Settings
@@ -68,6 +71,41 @@ def test_real_backend_requires_assets_and_exact_model_window() -> None:
     )
 
     assert settings.model_backend == "real"
+
+
+def test_real_image_entrypoint_verifies_assets_before_start(monkeypatch) -> None:
+    import realtime_analysis.real_entrypoint as entrypoint
+
+    verify = Mock()
+    migrate = Mock()
+    execv = Mock()
+    monkeypatch.setattr(
+        entrypoint,
+        "get_settings",
+        lambda: SimpleNamespace(model_backend="real", model_asset_root="/assets"),
+    )
+    monkeypatch.setattr(entrypoint, "verify", verify)
+    monkeypatch.setattr(entrypoint.subprocess, "run", migrate)
+    monkeypatch.setattr(entrypoint.os, "execv", execv)
+
+    entrypoint.main()
+
+    verify.assert_called_once_with("/assets")
+    migrate.assert_called_once()
+    execv.assert_called_once()
+
+
+def test_real_image_entrypoint_rejects_fake_backend(monkeypatch) -> None:
+    import realtime_analysis.real_entrypoint as entrypoint
+
+    monkeypatch.setattr(
+        entrypoint,
+        "get_settings",
+        lambda: SimpleNamespace(model_backend="fake"),
+    )
+
+    with pytest.raises(ValueError, match="fake fallback is disabled"):
+        entrypoint.main()
 
 
 def test_static_membership_ids_are_loaded_from_environment(

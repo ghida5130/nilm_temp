@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu && pip install 'numpy>=1.26,<3'
 COPY assets/nilm_r3/weights /assets/weights
 COPY assets/nilm_r3/source_snapshot/m1/normalization.json /assets/source_snapshot/m1/normalization.json
-RUN python -m realtime_analysis.asset_check --asset-root /assets
+RUN python -m realtime_analysis.asset_check --asset-root /assets --forward
 USER 65532:65532
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 \
