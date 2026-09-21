@@ -34,7 +34,12 @@ public class SecurityConfig {
                         .pathMatchers("/actuator/health/**", "/actuator/info").permitAll()
                         // 가입·로그인·토큰 갱신은 토큰이 없는 상태에서 호출된다
                         .pathMatchers("/api/auth/signup", "/api/auth/login",
-                                "/api/auth/refresh").permitAll()
+                                "/api/auth/refresh",
+                                // 가입 폼의 중복 확인 — 아직 계정이 없는 단계다
+                                "/api/auth/check-email",
+                                // 만료된 access token으로도 로그아웃은 되어야 한다.
+                                // 폐기 대상은 본문의 refresh token이라 남의 세션은 끊을 수 없다.
+                                "/api/auth/logout").permitAll()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
         return http.build();
