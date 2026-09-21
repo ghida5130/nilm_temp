@@ -25,7 +25,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(Promise.all([
     self.registration.showNotification(data.title || 'On:마음 안심 알림', {
       body: data.body || '앱을 열어 알림을 확인해 주세요.',
-      icon: '/app-icon.svg', badge: '/app-icon.svg',
+      icon: '/android-chrome-192x192.png', badge: '/favicon-32x32.png',
       tag: data.notificationId ? `notification-${data.notificationId}` : undefined,
       requireInteraction: true,
       data: { url: notificationUrl(data) },
