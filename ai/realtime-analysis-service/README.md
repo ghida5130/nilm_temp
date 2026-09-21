@@ -917,3 +917,7 @@ docker exec nilm-kafka /opt/kafka/bin/kafka-consumer-groups.sh `
 정상 메시지 처리 후 해당 파티션의 lag가 0이어야 합니다. 잘못된 `event_type`이나 타임존
 없는 `occurred_at`을 보내면 상태는 바뀌지 않고 `dlq.analysis`에
 `VALIDATION_ERROR`가 생성되어야 합니다.
+# R3 실제 모델
+
+고정 체크포인트 Predictor와 로컬 실제 추론 실행기는
+[실행·통합 범위 안내](docs/real-model.md)를 참고하세요.
