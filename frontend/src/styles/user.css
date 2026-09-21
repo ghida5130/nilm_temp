@@ -38,7 +38,11 @@
   text-decoration: none;
   cursor: pointer;
   transform: translateY(0);
-  transition: transform 100ms ease, box-shadow 100ms ease, background-color 150ms ease, color 150ms ease;
+  transition:
+    transform 100ms ease,
+    box-shadow 100ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .user-interface .user-action-primary,
@@ -46,40 +50,56 @@
   background: #f37929;
   border-color: #d95e12;
   color: #3d1d0e;
-  box-shadow: 0 4px 0 #bd4d0d, 0 7px 14px rgb(243 121 41 / 20%);
+  box-shadow:
+    0 4px 0 #bd4d0d,
+    0 7px 14px rgb(243 121 41 / 20%);
 }
 
 .user-interface .user-action-secondary {
   border-color: #f37929;
   background: #fff;
   color: #773314;
-  box-shadow: 0 4px 0 #e4a16e, 0 7px 14px rgb(243 121 41 / 10%);
+  box-shadow:
+    0 4px 0 #e4a16e,
+    0 7px 14px rgb(243 121 41 / 10%);
 }
 
 .user-interface .user-action-danger {
   background: #b33b35;
   border-color: #9b312c;
   color: #fff;
-  box-shadow: 0 4px 0 #7e2925, 0 7px 14px rgb(126 41 37 / 14%);
+  box-shadow:
+    0 4px 0 #7e2925,
+    0 7px 14px rgb(126 41 37 / 14%);
 }
 
 .user-interface :is(button, a, summary) {
-  transition: background-color 150ms ease, color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 @media (hover: hover) {
   .user-interface .user-action-primary:hover:not(:disabled),
-  .user-login form > button:hover:not(:disabled) { background: #e86b1d; }
+  .user-login form > button:hover:not(:disabled) {
+    background: #e86b1d;
+  }
   .user-interface .user-action-secondary:hover:not(:disabled),
   .user-interface .user-disclosure:hover,
-  .user-interface .user-quiet-action:hover { background: #fff7f0; }
-  .user-interface .user-action-danger:hover:not(:disabled) { background: #96312c; }
+  .user-interface .user-quiet-action:hover {
+    background: #fff7f0;
+  }
+  .user-interface .user-action-danger:hover:not(:disabled) {
+    background: #96312c;
+  }
 }
 
 .user-interface .user-action:active:not(:disabled),
 .user-login form > button:active:not(:disabled) {
   transform: translateY(3px);
-  box-shadow: 0 1px 0 rgb(74 54 35 / 55%), 0 3px 6px rgb(74 54 35 / 8%);
+  box-shadow:
+    0 1px 0 rgb(74 54 35 / 55%),
+    0 3px 6px rgb(74 54 35 / 8%);
   filter: brightness(0.97);
 }
 
@@ -114,7 +134,7 @@
 }
 
 .user-interface .user-input,
-.user-login input {
+.user-login input:not([type="checkbox"]) {
   width: 100%;
   min-width: 0;
   min-height: 3.75rem;
@@ -136,14 +156,33 @@
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
 }
 
-.user-interface header { gap: 0.75rem; }
-.user-interface svg { width: 1.5rem; height: 1.5rem; }
-.user-interface p { line-height: 1.6; }
-.user-interface strong { font-weight: 600; }
-.user-login { padding-bottom: 1.25rem; }
-.user-login h1 { font-weight: 700; line-height: 1.4; }
-.user-login p { font-size: 1.125rem; color: #57534e; }
-.user-login p[role='alert'] { color: #b33b35; }
+.user-interface header {
+  gap: 0.75rem;
+}
+.user-interface svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.user-interface p {
+  line-height: 1.6;
+}
+.user-interface strong {
+  font-weight: 600;
+}
+.user-login {
+  padding-bottom: 1.25rem;
+}
+.user-login h1 {
+  font-weight: 700;
+  line-height: 1.4;
+}
+.user-login p {
+  font-size: 1.125rem;
+  color: #57534e;
+}
+.user-login p[role="alert"] {
+  color: #b33b35;
+}
 .user-login form > button {
   min-height: 4rem;
   height: auto;
@@ -153,14 +192,23 @@
   font-weight: 600;
   cursor: pointer;
   transform: translateY(0);
-  transition: transform 100ms ease, box-shadow 100ms ease, background-color 150ms ease;
+  transition:
+    transform 100ms ease,
+    box-shadow 100ms ease,
+    background-color 150ms ease;
 }
 
 @media (max-width: 359px) {
-  .user-interface .user-card { padding: 1.25rem; }
-  .user-interface header { flex-wrap: wrap; }
+  .user-interface .user-card {
+    padding: 1.25rem;
+  }
+  .user-interface header {
+    flex-wrap: wrap;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .user-interface :is(button, a, summary) { transition: none; }
+  .user-interface :is(button, a, summary) {
+    transition: none;
+  }
 }

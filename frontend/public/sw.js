@@ -36,6 +36,12 @@ self.addEventListener('push', (event) => {
   ]))
 })
 
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    clients.forEach((client) => client.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' }))
+  }))
+})
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   event.waitUntil((async () => {

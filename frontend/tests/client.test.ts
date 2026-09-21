@@ -5,7 +5,6 @@ import { clearSession, getAccessToken, saveSession } from '../src/api/tokenStora
 
 const authMock = new MockAdapter(authApi)
 const publicMock = new MockAdapter(publicApi)
-
 afterEach(() => {
   authMock.reset()
   publicMock.reset()
