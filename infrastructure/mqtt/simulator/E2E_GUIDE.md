@@ -152,6 +152,17 @@ curl -X POST http://127.0.0.1:8085/api/e2e/runs \
 - **브리지 실효 처리량: 약 1,477/s** (20일 실행의 드레인 시간 49초에서 역산)
 - **브로커 큐 깊이: 100,000건** (`max_queued_messages`)
 
+> **전제 조건: 브로커가 이 큐 설정으로 기동돼 있어야 합니다.**
+> `infrastructure/mqtt/config/mosquitto.local.conf`에 `max_inflight_messages 1000` / `max_queued_messages 100000`이 들어 있지만, **mosquitto는 이 옵션을 SIGHUP 리로드로 적용하지 않습니다.** 설정 파일이 바뀐 뒤 브로커를 재시작하지 않으면 기본값(실효 버퍼 약 1,040건)으로 동작하고, 위 무손실 수치는 전부 성립하지 않습니다(같은 조건 1일 BURST가 56.4%까지 떨어집니다).
+>
+> 적용 여부는 유실 카운터로 확인하세요. 실행 전후 값이 같아야 정상입니다.
+>
+> ```bash
+> docker exec mosquitto-broker mosquitto_sub -h localhost -u simulator_user -P test1234 -t '$SYS/broker/publish/messages/dropped' -C 1
+> ```
+>
+> PowerShell에서는 이 명령을 `sh -c "..."`로 감싸지 마세요. `$SYS`가 빈 문자열로 치환되어 없는 토픽을 구독하고 영원히 끝나지 않습니다.
+
 발행 속도가 브리지 처리량을 넘으면 **초과분이 큐에 누적**됩니다. 20일 BURST는 초당 약 64건씩 쌓여 종료 시점 백로그가 약 72,500건이었습니다 — 큐 안에 들어왔지만 여유가 크진 않습니다.
 
 ```
@@ -186,6 +197,8 @@ curl -X POST http://127.0.0.1:8085/api/e2e/runs \
 | 10 | 120.0 | 1,200/s |
 
 해결된 값은 스냅샷의 `speed_multiplier`에 그대로 노출됩니다. `speed`를 명시하면 자동 산출은 개입하지 않습니다. 기준값은 [`server/config.py`](server/config.py)의 `DEFAULT_SAFE_AGGREGATE_RATE`입니다.
+
+> 자동 배속은 **REST API에서만** 쓸 수 있습니다. 웹 제어 패널은 ACCELERATED 선택 시 배속 입력을 필수로 요구하므로, 패널에서는 위 표의 값을 직접 넣거나 BURST를 쓰세요.
 
 ### 어느 것을 쓸까
 
@@ -353,6 +366,9 @@ AI에 특정 날짜를 수동 마감하는 HTTP API가 없습니다. 시뮬레�
 
 **시뮬레이터 초기화 범위.**
 런마다 가전 상태·RNG·카운터가 완전히 새로 생성되므로 이전 실행이 남지 않습니다. 단, **AI 서비스의 슬라이딩 버퍼·analysis DB·Kafka·HDFS는 초기화 대상이 아닙니다.** 같은 날짜를 다시 태우면 다운스트림에 중복이 쌓입니다.
+
+**웹 패널에서는 자동 배속을 쓸 수 없습니다.**
+제어 패널이 ACCELERATED 선택 시 배속 입력을 필수로 검증합니다. 자동 산출은 `POST /api/e2e/runs`에서 `speed`를 생략했을 때만 동작합니다.
 
 **동시 실행 불가.**
 E2E 세션은 한 번에 하나입니다. 이전 `run_id`로 조회하면 `RUN_NOT_FOUND`가 나므로, 결과는 실행 중에 받아 두세요.
