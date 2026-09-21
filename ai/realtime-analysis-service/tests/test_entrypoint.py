@@ -49,6 +49,27 @@ def test_fake_appliance_setting_is_parsed() -> None:
     assert settings.fake_on_appliance_types == ("MICROWAVE", "HAIR_DRYER")
 
 
+def test_real_backend_requires_assets_and_exact_model_window() -> None:
+    with pytest.raises(ValueError, match="MODEL_ASSET_ROOT"):
+        Settings(_env_file=None, model_backend="real", model_window_size=255)
+
+    with pytest.raises(ValueError, match="MODEL_WINDOW_SIZE=255"):
+        Settings(
+            _env_file=None,
+            model_backend="real",
+            model_asset_root="/assets",
+        )
+
+    settings = Settings(
+        _env_file=None,
+        model_backend="real",
+        model_asset_root="/assets",
+        model_window_size=255,
+    )
+
+    assert settings.model_backend == "real"
+
+
 def test_static_membership_ids_are_loaded_from_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
