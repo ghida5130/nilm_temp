@@ -14,7 +14,7 @@
     "policy_code": "PROLONGED_INACTIVITY_DEFAULT",
     "algorithm_type": "AWAKE_INACTIVITY_ELAPSED",
     "parameters": {
-      "inactivity_hours": 6,
+      "inactivity_hours": 0.0167,
       "sleep_window": {
         "start": "23:00",
         "end": "07:00"
@@ -31,8 +31,8 @@
     "parameters": {
       "evaluation_interval_seconds": 60,
       "limits_minutes": {
-        "INDUCTION": 120,
-        "IRON": 60
+        "INDUCTION": 2,
+        "IRON": 2
       }
     },
     "event_type": "PROLONGED_APPLIANCE_USE",

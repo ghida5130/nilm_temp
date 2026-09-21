@@ -21,8 +21,18 @@ def test_bootstrap_policy_file_contains_four_event_types() -> None:
         if policy.event_type == "PROLONGED_INACTIVITY"
     )
     assert inactivity.algorithm_type == "AWAKE_INACTIVITY_ELAPSED"
-    assert inactivity.parameters["inactivity_hours"] == 6
+    assert inactivity.parameters["inactivity_hours"] == 0.0167
     assert inactivity.parameters["sleep_window"] == {
         "start": "23:00",
         "end": "07:00",
+    }
+
+    appliance_use = next(
+        policy
+        for policy in repository.policies
+        if policy.event_type == "PROLONGED_APPLIANCE_USE"
+    )
+    assert appliance_use.parameters["limits_minutes"] == {
+        "INDUCTION": 2,
+        "IRON": 2,
     }
