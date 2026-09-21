@@ -1,6 +1,7 @@
 """Debounced and hysteretic appliance ON/OFF transition detection."""
 
 from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -55,6 +56,33 @@ class ApplianceStateTransitionDetector:
     def is_on(self, household_id: str, appliance_type: str) -> bool:
         memory = self._memory.get((household_id, appliance_type))
         return memory.stable_is_on if memory is not None else False
+
+    def reset(self, household_id: str) -> None:
+        """Discard hysteresis state whose continuity was broken by a data gap."""
+
+        stale_keys = [
+            key for key in self._memory if key[0] == household_id
+        ]
+        for key in stale_keys:
+            self._memory.pop(key, None)
+
+    def checkpoint(self, household_id: str) -> dict[str, _ApplianceMemory]:
+        """Copy household state so a failed DB transaction can be retried safely."""
+
+        return {
+            appliance_type: deepcopy(memory)
+            for (saved_household, appliance_type), memory in self._memory.items()
+            if saved_household == household_id
+        }
+
+    def restore(
+        self,
+        household_id: str,
+        checkpoint: dict[str, _ApplianceMemory],
+    ) -> None:
+        self.reset(household_id)
+        for appliance_type, memory in checkpoint.items():
+            self._memory[(household_id, appliance_type)] = deepcopy(memory)
 
     def _detect_one(
         self,

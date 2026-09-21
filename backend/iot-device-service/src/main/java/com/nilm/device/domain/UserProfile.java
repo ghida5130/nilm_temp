@@ -18,7 +18,7 @@ import java.util.UUID;
 public class UserProfile {
 
     public enum Status {
-        /** 기관 소속(복지사) 가입 — 관리자 승인 전 */
+        /** 승인 절차를 두지 않기로 해 더는 부여하지 않는다. 과거 행을 읽기 위해 남긴다. */
         PENDING,
         ACTIVE,
         SUSPENDED
@@ -37,7 +37,7 @@ public class UserProfile {
     @Column(length = 20)
     private String phone;
 
-    /** 기관 소속이면 값이 있고, 그 경우 가입 직후 상태는 PENDING */
+    /** 기관 소속(복지사)이면 값이 있다. 이 가입만 monitoring의 담당자 명단으로 흘러간다. */
     @Column(length = 100)
     private String organization;
 
@@ -58,10 +58,7 @@ public class UserProfile {
         this.displayName = displayName;
         this.phone = phone;
         this.organization = organization;
-        this.status = (organization == null || organization.isBlank()) ? Status.ACTIVE : Status.PENDING;
-    }
-
-    public void approve() {
+        // 승인 절차가 없으므로 기관 소속 가입도 바로 활성이다.
         this.status = Status.ACTIVE;
     }
 

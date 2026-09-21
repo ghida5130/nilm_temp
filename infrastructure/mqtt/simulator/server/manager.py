@@ -111,6 +111,18 @@ class SimulatorManager:
                 except queue.Full:
                     pass
 
+    def broadcast_external(self, data: dict):
+        """E2E 등 외부 세션의 화면 전송 전용 브로드캐스트.
+        기존과 동일한 락 안에서 구독자 큐에만 데이터를 넣고,
+        last_metrics 및 last_metrics_by_house는 절대 변경하지 않습니다.
+        """
+        with self.lock:
+            for q in list(self.subscribers):
+                try:
+                    q.put_nowait(data)
+                except queue.Full:
+                    pass
+
     def start(
         self,
         scenario: str = "peak",
@@ -119,6 +131,7 @@ class SimulatorManager:
         *,
         households: list[dict] | None = None,
         interval: float | None = None,
+        fault_duration_sec: int | None = None,
     ) -> dict:
         """시뮬레이션을 시작합니다. 단일 가구 위치 인자 및 다중 가구 households keyword-only를 모두 지원합니다."""
         with self.lifecycle_lock:
@@ -173,6 +186,24 @@ class SimulatorManager:
             else:
                 effective_interval = validate_interval(interval)
 
+            # 3-B. fault_duration_sec 사전 검증: 기존 워커를 중지하기 전에 검증하여 잘못된 인자 시 기존 워커를 보호한다.
+            has_sensor_fault = any(h["scenario"] == "sensor_fault" for h in normalized_households)
+            if fault_duration_sec is not None:
+                if type(fault_duration_sec) is not int or isinstance(fault_duration_sec, bool):
+                    raise ValueError("fault_duration_sec는 1~3600 사이의 정수여야 합니다.")
+                if not (1 <= fault_duration_sec <= 3600):
+                    raise ValueError("fault_duration_sec는 1~3600 범위의 정수여야 합니다.")
+                if not has_sensor_fault:
+                    raise ValueError("sensor_fault 시나리오가 포함되지 않은 요청에는 fault_duration_sec를 지정할 수 없습니다.")
+                effective_fault_duration = fault_duration_sec
+            else:
+                effective_fault_duration = scenarios.SensorFaultScenario.DEFAULT_FAULT_DURATION_SEC if has_sensor_fault else None
+
+            # 각 가구 설정에 fault_duration_sec 바인딩
+            for h in normalized_households:
+                if h["scenario"] == "sensor_fault":
+                    h["fault_duration_sec"] = effective_fault_duration
+
             if not self._stop_and_join():
                 raise RuntimeError("기존 시뮬레이터 워커가 종료되지 않았습니다.")
 
@@ -206,7 +237,8 @@ class SimulatorManager:
                     h["house"]: {
                         "scenario": h["scenario"],
                         "cycle_count": 0,
-                        "status": "running"
+                        "status": "running",
+                        "fault_duration_sec": h.get("fault_duration_sec"),
                     }
                     for h in normalized_households
                 }
@@ -214,7 +246,7 @@ class SimulatorManager:
                 self.last_metrics = None
 
             worker_thread.start()
-            return {
+            resp = {
                 "status": "started",
                 "scenario": current_mode,
                 "house": normalized_households[0]["house"],
@@ -224,6 +256,9 @@ class SimulatorManager:
                 "interval": effective_interval,
                 "speed": round(1.0 / effective_interval, 2),
             }
+            if has_sensor_fault:
+                resp["fault_duration_sec"] = effective_fault_duration
+            return resp
 
     def set_device(self, house: str, device: str, enabled: bool) -> dict:
         """가전 상태를 수동 변경한다. lifecycle_lock 및 simulation_lock 안에서 원자적으로 검증 및 상태 변경."""
@@ -540,7 +575,18 @@ class SimulatorManager:
                                         event_desc = "08:04:58 아침 정상 루틴 시뮬레이션 시작 (대기전력 유지)"
                                     elif h_cycle == scenarios.NormalRoutineScenario.TOTAL_CYCLES:
                                         event_desc = "H001 정상 일상 전력 패턴 발행 완료"
+                            elif scenario == "sensor_fault":
+                                fault_dur = item.get("fault_duration_sec") or scenarios.SensorFaultScenario.DEFAULT_FAULT_DURATION_SEC
+                                tl = scenarios.SensorFaultScenario.get_timeline(fault_dur)
+                                if h_cycle == tl.fault_start:
+                                    event_desc = f"센서 고장 시작 — 전력 계측 MQTT 메시지 발행 중단 ({tl.duration_sec}초간 결측)"
+                                elif h_cycle == tl.recovery_start:
+                                    event_desc = "센서 복구 — 전력 계측 데이터 정상 발행 재개"
+                                elif h_cycle >= tl.total_cycles:
+                                    event_desc = f"시나리오 완료 — 센서 고장 및 복구 시연 완료 (총 {tl.total_cycles}초)"
 
+                            fault_dur = item.get("fault_duration_sec") or scenarios.SensorFaultScenario.DEFAULT_FAULT_DURATION_SEC
+                            is_fault = (scenario == "sensor_fault" and scenarios.SensorFaultScenario.is_fault_cycle(h_cycle, duration_sec=fault_dur))
                             metrics = simulator.calculate_main_panel_metrics(house, allow_random=allow_random)
 
                             devices_snapshot = {}
@@ -558,13 +604,16 @@ class SimulatorManager:
                                 "house": house,
                                 "scenario": scenario,
                                 "h_cycle": h_cycle,
+                                "is_fault": is_fault,
+                                "fault_dur": fault_dur if scenario == "sensor_fault" else None,
                                 "event_desc": event_desc,
                                 "metrics": metrics,
                                 "devices_snapshot": devices_snapshot
                             })
 
                     # 4. simulation_lock 해제 후 가구별 MQTT 동시 발행 (네트워크 I/O 중 lock 미보유)
-                    await asyncio.gather(*(
+                    #    sensor_fault 고장 가구는 MQTT 발행을 건너뜀 (0건 발행)
+                    mqtt_pub_tasks = [
                         simulator.publish_house_power(
                             client=client,
                             house=res["house"],
@@ -574,7 +623,10 @@ class SimulatorManager:
                             metrics=res["metrics"]
                         )
                         for res in tick_calc_results
-                    ))
+                        if not res.get("is_fault", False)
+                    ]
+                    if mqtt_pub_tasks:
+                        await asyncio.gather(*mqtt_pub_tasks)
 
                     # 5. 한 tick의 모든 공개 상태(cycle, status, last_metrics)를 단일 락 안에서 원자적으로 일괄 커밋(batch commit)
                     broadcast_items = []
@@ -586,6 +638,7 @@ class SimulatorManager:
                             house = res["house"]
                             scenario = res["scenario"]
                             h_cycle = res["h_cycle"]
+                            is_fault = res.get("is_fault", False)
                             metrics = res["metrics"]
                             event_desc = res["event_desc"]
                             devices_snapshot = res["devices_snapshot"]
@@ -598,33 +651,78 @@ class SimulatorManager:
                                 is_completed = True
                             elif scenario == "normal_routine" and h_cycle >= scenarios.NormalRoutineScenario.TOTAL_CYCLES:
                                 is_completed = True
+                            elif scenario == "sensor_fault":
+                                fault_dur = res.get("fault_dur") or self.active_households[house].get("fault_duration_sec") or scenarios.SensorFaultScenario.DEFAULT_FAULT_DURATION_SEC
+                                if h_cycle >= scenarios.get_scenario_target_cycles("sensor_fault", fault_dur):
+                                    is_completed = True
 
                             self.active_households[house]["cycle_count"] = h_cycle
                             if is_completed:
                                 self.active_households[house]["status"] = "completed"
                             h_status = self.active_households[house]["status"]
 
-                            broadcast_data = {
-                                "sec": h_cycle,
-                                "cycle_count": h_cycle,
-                                "house": house,
-                                "scenario": scenario,
-                                "mode": scenario,
-                                "status": h_status,
-                                "now_iso": now_iso,
-                                "simTimeKst": sim_time_kst,
-                                "simDateKst": sim_date_kst,
-                                "simDateTimeKst": sim_datetime_kst,
-                                "totalP": metrics["active_power"],
-                                "totalQ": metrics["reactive_power"],
-                                "apparentS": metrics["apparent_power"],
-                                "pf": metrics["power_factor"],
-                                "voltage": metrics["voltage"],
-                                "currentA": metrics["current"],
-                                "activeNames": metrics["active_devices"],
-                                "eventNoticeText": event_desc,
-                                "devices": devices_snapshot
-                            }
+                            # SSE 데이터 생성: 고장 구간에는 전력/전압/전류 필드를 null로 설정하고 위조하지 않음
+                            fault_dur = (res.get("fault_dur") or self.active_households[house].get("fault_duration_sec") or scenarios.SensorFaultScenario.DEFAULT_FAULT_DURATION_SEC) if scenario == "sensor_fault" else None
+                            if scenario == "sensor_fault":
+                                _, gap_elapsed, gap_remaining = scenarios.SensorFaultScenario.get_gap_metrics(h_cycle, duration_sec=fault_dur)
+                            else:
+                                gap_elapsed = None
+                                gap_remaining = None
+
+                            if is_fault:
+                                broadcast_data = {
+                                    "sec": h_cycle,
+                                    "cycle_count": h_cycle,
+                                    "house": house,
+                                    "scenario": scenario,
+                                    "mode": scenario,
+                                    "status": h_status,
+                                    "now_iso": now_iso,
+                                    "simTimeKst": sim_time_kst,
+                                    "simDateKst": sim_date_kst,
+                                    "simDateTimeKst": sim_datetime_kst,
+                                    "measurementAvailable": False,
+                                    "sensorFault": True,
+                                    "faultDurationSec": fault_dur,
+                                    "gapElapsedSec": gap_elapsed,
+                                    "gapRemainingSec": gap_remaining,
+                                    "totalP": None,
+                                    "totalQ": None,
+                                    "apparentS": None,
+                                    "pf": None,
+                                    "voltage": None,
+                                    "currentA": None,
+                                    "activeNames": [],
+                                    "eventNoticeText": event_desc,
+                                    "devices": devices_snapshot
+                                }
+                            else:
+                                broadcast_data = {
+                                    "sec": h_cycle,
+                                    "cycle_count": h_cycle,
+                                    "house": house,
+                                    "scenario": scenario,
+                                    "mode": scenario,
+                                    "status": h_status,
+                                    "now_iso": now_iso,
+                                    "simTimeKst": sim_time_kst,
+                                    "simDateKst": sim_date_kst,
+                                    "simDateTimeKst": sim_datetime_kst,
+                                    "measurementAvailable": True,
+                                    "sensorFault": False,
+                                    "faultDurationSec": fault_dur,
+                                    "gapElapsedSec": gap_elapsed,
+                                    "gapRemainingSec": gap_remaining,
+                                    "totalP": metrics["active_power"],
+                                    "totalQ": metrics["reactive_power"],
+                                    "apparentS": metrics["apparent_power"],
+                                    "pf": metrics["power_factor"],
+                                    "voltage": metrics["voltage"],
+                                    "currentA": metrics["current"],
+                                    "activeNames": metrics["active_devices"],
+                                    "eventNoticeText": event_desc,
+                                    "devices": devices_snapshot
+                                }
 
                             self.last_metrics_by_house[house] = broadcast_data
                             self.last_metrics = broadcast_data
@@ -636,11 +734,12 @@ class SimulatorManager:
 
                         scenario = res["scenario"]
                         h_cycle = res["h_cycle"]
+                        is_fault = res.get("is_fault", False)
                         metrics = res["metrics"]
                         event_desc = res["event_desc"]
                         house = res["house"]
 
-                        # 터미널 로그 출력
+                        # 터미널 로그 출력: sensor_fault 고장 구간에는 내부 계산값을 출력하지 않고 [센서 고장 / 측정 없음]으로 표시
                         if scenario == "peak":
                             status_tag = "대기"
                             if metrics["active_power"] >= 3000.0:
@@ -657,6 +756,16 @@ class SimulatorManager:
                             status_tag = "전자레인지 가동 중" if "전자레인지" in metrics["active_devices"] else "정상 대기"
                             notice_str = f" <== [{event_desc}]" if event_desc else ""
                             print(f"[WebSimulator] (T+{h_cycle:03d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {status_tag} [{h_status}]{notice_str}", flush=True)
+                        elif scenario == "sensor_fault":
+                            notice_str = f" <== [{event_desc}]" if event_desc else ""
+                            fault_dur = res.get("fault_dur") or self.active_households[house].get("fault_duration_sec") or scenarios.SensorFaultScenario.DEFAULT_FAULT_DURATION_SEC
+                            tl = scenarios.SensorFaultScenario.get_timeline(fault_dur)
+                            _, gap_elapsed, gap_remaining = scenarios.SensorFaultScenario.get_gap_metrics(h_cycle, duration_sec=fault_dur)
+                            if is_fault:
+                                print(f"[WebSimulator] (T+{h_cycle:03d}s | {sim_datetime_kst}) {house} [센서 고장 / 측정 없음] MQTT 미발행 | 센서 고장 ({gap_elapsed}/{tl.duration_sec}초, 남은시간 {gap_remaining}초) [{h_status}]{notice_str}", flush=True)
+                            else:
+                                recov_tag = "센서 복구 (정상 계측)" if h_cycle >= tl.recovery_start else "정상 대기 계측"
+                                print(f"[WebSimulator] (T+{h_cycle:03d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | {recov_tag} [{h_status}]{notice_str}", flush=True)
                         elif scenario == "manual":
                             act_str = ", ".join(metrics["active_devices"]) if metrics["active_devices"] else "대기(가전 OFF)"
                             print(f"[WebSimulator] (T+{h_cycle:02d}s | {sim_datetime_kst}) {house} 전력: {metrics['active_power']:7.1f} W | 수동 [{act_str}] [{h_status}]", flush=True)

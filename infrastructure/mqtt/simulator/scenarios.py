@@ -9,6 +9,7 @@ NILM 스마트홈 전력 시뮬레이터 시나리오 및 대기전력 모델 (S
 import math
 import re
 import random
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta, date
 
 # 한국 표준시 (KST = UTC+9)
@@ -173,6 +174,116 @@ def inject_normal_routine_scenario_event(cycle_sec: int, house: str, device_stat
                     device_states[house][dev_name].update(dev_conf)
         return item["desc"]
     return None
+
+
+# ==========================================
+# 2-B. 센서 고장/결측(SENSOR_FAULT) 시나리오
+# ==========================================
+@dataclass(frozen=True)
+class SensorFaultTimeline:
+    """센서 고장 시나리오의 경계값 및 총 사이클을 보관하는 불변 객체"""
+    duration_sec: int
+    fault_start: int
+    fault_end: int
+    recovery_start: int
+    recovery_end: int
+    total_cycles: int
+    publish_count: int = 20
+
+    @classmethod
+    def create(cls, duration_sec: int = 120) -> "SensorFaultTimeline":
+        fault_end = 10 + duration_sec
+        recovery_start = fault_end + 1
+        total_cycles = 20 + duration_sec
+        return cls(
+            duration_sec=duration_sec,
+            fault_start=11,
+            fault_end=fault_end,
+            recovery_start=recovery_start,
+            recovery_end=total_cycles,
+            total_cycles=total_cycles,
+            publish_count=20,
+        )
+
+
+class SensorFaultScenario:
+    """
+    센서 고장(SENSOR_FAULT) 시나리오:
+    - 타임라인 (D = fault_duration_sec, 기본 120초):
+      * cycle 1~10: 정상 대기전력 계측 및 MQTT 발행 (10회)
+      * cycle 11: "센서 고장 시작" 이벤트 발생
+      * cycle 11~(10+D): 센서 고장. 해당 가구 MQTT 메시지 0건 발행 (D초간 무발행)
+      * cycle (11+D): "센서 복구" 이벤트 발생 및 복구 후 정상 계측/발행 재개 (D+1초 시간 간격)
+      * cycle (11+D)~(20+D): 센서 복구 후 정상 계측 및 MQTT 발행 (10회)
+      * cycle (20+D): "시나리오 완료" 이벤트 발생 및 완료 처리
+    - 총 사이클: D + 20초 (기본 140초)
+    - 고장 지속 시간: D초 (기본 120초, 1~3600초 가변)
+    - 총 MQTT 발행 횟수: 20회 (1~10: 10회, 복구 후: 10회)
+    """
+    NAME = "sensor_fault"
+    SCENARIO_NAME = "sensor_fault"
+    DEFAULT_FAULT_DURATION_SEC = 120
+    NORMAL_BEFORE_FAULT_CYCLES = 10
+    FAULT_START_CYCLE = 11
+    RECOVERED_DURATION_CYCLES = 10
+    TOTAL_PUBLISH_COUNT = 20
+
+    # 하위 호환 레퍼런스 상수 (기본값 D=120 기준)
+    TOTAL_CYCLES = 140
+    DEFAULT_COUNT = 140
+    FAULT_END_CYCLE = 130
+    FAULT_DURATION_SEC = 120
+    RECOVERED_START_CYCLE = 131
+    RECOVERED_END_CYCLE = 140
+
+    @classmethod
+    def get_timeline(cls, duration_sec: int = DEFAULT_FAULT_DURATION_SEC) -> SensorFaultTimeline:
+        return SensorFaultTimeline.create(duration_sec)
+
+    @classmethod
+    def is_fault_cycle(cls, cycle: int, duration_sec: int = DEFAULT_FAULT_DURATION_SEC) -> bool:
+        """현재 사이클이 센서 고장(결측) 구간인지 여부 반환"""
+        tl = cls.get_timeline(duration_sec)
+        return tl.fault_start <= cycle <= tl.fault_end
+
+    @classmethod
+    def get_gap_metrics(cls, cycle: int, duration_sec: int = DEFAULT_FAULT_DURATION_SEC) -> tuple[bool, int, int]:
+        """
+        반환: (is_fault, gap_elapsed_sec, gap_remaining_sec)
+        - cycle 1~10: (False, 0, D)
+        - cycle 11: (True, 1, D - 1)
+        - cycle 10+D: (True, D, 0)
+        - cycle (11+D)~: (False, D, 0)
+        """
+        tl = cls.get_timeline(duration_sec)
+        if cycle < tl.fault_start:
+            return False, 0, tl.duration_sec
+        elif cycle <= tl.fault_end:
+            elapsed = cycle - tl.fault_start + 1
+            remaining = tl.fault_end - cycle
+            return True, elapsed, remaining
+        else:
+            return False, tl.duration_sec, 0
+
+    @classmethod
+    def get_cycle_status(cls, cycle: int, duration_sec: int = DEFAULT_FAULT_DURATION_SEC) -> tuple[str, str | None]:
+        """
+        사이클에 따른 진행 상태 태그 및 이벤트 알림 메시지 반환.
+        반환: (status_tag, notice_desc)
+        """
+        tl = cls.get_timeline(duration_sec)
+        is_fault = tl.fault_start <= cycle <= tl.fault_end
+        status_tag = "시나리오 완료" if cycle >= tl.total_cycles else "센서 고장" if is_fault else "정상 계측"
+        notice = None
+        if cycle == tl.fault_start:
+            notice = f"센서 고장 시작 — 전력 계측 MQTT 메시지 발행 중단 ({tl.duration_sec}초간 결측)"
+        elif cycle == tl.recovery_start:
+            notice = "센서 복구 — 전력 계측 데이터 정상 발행 재개"
+        elif cycle >= tl.total_cycles:
+            notice = f"시나리오 완료 — 센서 고장 및 복구 시연 완료 (총 {tl.total_cycles}초)"
+        return status_tag, notice
+
+
 
 
 # ==========================================
@@ -456,3 +567,16 @@ def resolve_multi_simulation_start_time(
         )
 
     return now_dt
+
+
+def get_scenario_target_cycles(scenario: str, fault_duration_sec: int = 120) -> int:
+    """시나리오별 자동 종료 목표 사이클 수 반환 (0이면 무제한)"""
+    if scenario == "peak":
+        return 60
+    elif scenario == "routine_missed":
+        return 300
+    elif scenario == "normal_routine":
+        return NormalRoutineScenario.TOTAL_CYCLES
+    elif scenario == "sensor_fault":
+        return fault_duration_sec + 20
+    return 0

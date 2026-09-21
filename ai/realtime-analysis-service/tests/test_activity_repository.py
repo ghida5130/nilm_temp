@@ -144,6 +144,39 @@ def test_session_lifecycle_and_daily_count_are_persisted(
         )
 
 
+def test_data_gap_closes_open_sessions_at_last_valid_measurement(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = SqlAlchemyApplianceActivityRepository(
+        session_factory,
+        "Asia/Seoul",
+    )
+    repository.record(
+        "H001",
+        START + timedelta(seconds=2),
+        [state(0.8, True)],
+        [
+            transition(
+                ApplianceTransitionType.TURNED_ON,
+                0.8,
+                START,
+                START + timedelta(seconds=2),
+            )
+        ],
+        {"MICROWAVE"},
+    )
+
+    repository.close_open_sessions("H001", START + timedelta(seconds=30))
+
+    with session_factory() as session:
+        usage_session = session.scalar(select(ApplianceUsageSession))
+        assert usage_session is not None
+        assert usage_session.ended_at is not None
+        assert usage_session.ended_at.replace(tzinfo=START.tzinfo) == (
+            START + timedelta(seconds=30)
+        )
+
+
 def test_replayed_turn_on_does_not_duplicate_session_or_event_count(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -213,7 +246,6 @@ def test_observation_sample_count_and_coverage_are_accumulated(
         session_factory,
         "Asia/Seoul",
         expected_samples_per_day=4,
-        valid_coverage_ratio=0.75,
     )
 
     repository.record_observation("H001", START)
@@ -248,14 +280,42 @@ def test_replayed_timestamp_is_not_counted_twice(
         assert observation.coverage_ratio == Decimal("0.2500")
 
 
-def test_previous_day_observations_are_finalized(
+def test_finalized_observation_ignores_late_sample(
     session_factory: sessionmaker[Session],
 ) -> None:
     repository = SqlAlchemyApplianceActivityRepository(
         session_factory,
         "Asia/Seoul",
         expected_samples_per_day=4,
-        valid_coverage_ratio=0.75,
+    )
+    with session_factory.begin() as session:
+        session.add(
+            HouseholdObservationDaily(
+                household_id="H001",
+                observation_date=START.date(),
+                sample_count=3,
+                expected_sample_count=4,
+                coverage_ratio=Decimal("0.7500"),
+                observation_status="VALID",
+                updated_at=START,
+            )
+        )
+
+    repository.record_observation("H001", START + timedelta(seconds=1))
+
+    with session_factory() as session:
+        observation = session.scalar(select(HouseholdObservationDaily))
+        assert observation is not None
+        assert observation.sample_count == 3
+
+
+def test_next_day_input_keeps_previous_day_collecting_until_daily_job(
+    session_factory: sessionmaker[Session],
+) -> None:
+    repository = SqlAlchemyApplianceActivityRepository(
+        session_factory,
+        "Asia/Seoul",
+        expected_samples_per_day=4,
     )
 
     for second in range(3):
@@ -282,15 +342,9 @@ def test_previous_day_observations_are_finalized(
             (item.household_id, item.observation_date.isoformat()): item
             for item in session.scalars(select(HouseholdObservationDaily)).all()
         }
-        assert observations[("H001", "2026-09-10")].observation_status == "VALID"
-        assert (
-            observations[("H002", "2026-09-10")].observation_status
-            == "INSUFFICIENT_DATA"
-        )
-        assert (
-            observations[("H003", "2026-09-10")].observation_status
-            == "SENSOR_GAP"
-        )
+        assert observations[("H001", "2026-09-10")].observation_status == "COLLECTING"
+        assert observations[("H002", "2026-09-10")].observation_status == "COLLECTING"
+        assert observations[("H003", "2026-09-10")].observation_status == "COLLECTING"
         current = observations[("H001", "2026-09-11")]
         assert current.observation_status == "COLLECTING"
         assert current.sample_count == 1

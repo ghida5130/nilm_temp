@@ -6,14 +6,17 @@ from decimal import Decimal
 from typing import AbstractSet, Protocol
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.models import (
+    AnalysisProcessingReceipt,
+    AnalysisReceiptLakeOutbox,
     ApplianceUsageSession,
     HouseholdActivityDaily,
     HouseholdObservationDaily,
 )
+from realtime_analysis.processing_receipt import ProcessingReceipt
 from realtime_analysis.schemas import (
     ApplianceState,
     ApplianceStateTransition,
@@ -43,6 +46,15 @@ class ApplianceActivityRepository(Protocol):
         states: Sequence[ApplianceState],
         transitions: Sequence[ApplianceStateTransition],
         active_appliance_types: AbstractSet[str],
+        processing_receipt: ProcessingReceipt | None = None,
+    ) -> None: ...
+
+    def record_processing_outcome(self, receipt: ProcessingReceipt) -> None: ...
+
+    def close_open_sessions(
+        self,
+        household_id: str,
+        ended_at: datetime,
     ) -> None: ...
 
 
@@ -54,16 +66,12 @@ class SqlAlchemyApplianceActivityRepository:
         session_factory: sessionmaker[Session],
         timezone_name: str,
         expected_samples_per_day: int = EXPECTED_SAMPLES_PER_DAY,
-        valid_coverage_ratio: float = 0.95,
     ) -> None:
         if expected_samples_per_day < 1:
             raise ValueError("expected_samples_per_day must be greater than zero")
-        if not 0 <= valid_coverage_ratio <= 1:
-            raise ValueError("valid_coverage_ratio must be between zero and one")
         self._session_factory = session_factory
         self._timezone = ZoneInfo(timezone_name)
         self._expected_samples_per_day = expected_samples_per_day
-        self._valid_coverage_ratio = Decimal(str(valid_coverage_ratio))
 
     def record_observation(
         self,
@@ -74,13 +82,6 @@ class SqlAlchemyApplianceActivityRepository:
 
         observation_date = observed_at.astimezone(self._timezone).date()
         with self._session_factory.begin() as session:
-            # 다음 날짜의 데이터가 들어오면 아직 COLLECTING인 이전 날짜를 마감한다.
-            self._finalize_observations_before(
-                session,
-                observation_date,
-                observed_at,
-            )
-
             observation = session.scalar(
                 select(HouseholdObservationDaily)
                 .where(
@@ -102,6 +103,10 @@ class SqlAlchemyApplianceActivityRepository:
                 session.add(observation)
                 return
 
+            # 00:10 일일 마감 이후 도착한 지연 샘플은 이미 발행한 지수를 바꾸지 않는다.
+            if observation.observation_status != "COLLECTING":
+                return
+
             # Consumer는 가구별 메시지를 순서대로 처리한다. Snapshot 발행 후 Offset 커밋
             # 전에 재시작되어 같은 입력이 재처리되면 updated_at을 기준으로 중복 집계하지 않는다.
             if not self._is_newer_than_last_update(observed_at, observation.updated_at):
@@ -121,8 +126,9 @@ class SqlAlchemyApplianceActivityRepository:
         states: Sequence[ApplianceState],
         transitions: Sequence[ApplianceStateTransition],
         active_appliance_types: AbstractSet[str],
+        processing_receipt: ProcessingReceipt | None = None,
     ) -> None:
-        if not transitions and not active_appliance_types:
+        if not transitions and not active_appliance_types and processing_receipt is None:
             return
 
         state_by_appliance = {state.appliance_type: state for state in states}
@@ -130,6 +136,8 @@ class SqlAlchemyApplianceActivityRepository:
         # 이 블록 안의 INSERT/UPDATE는 모두 같은 DB 트랜잭션에 포함된다.
         # 정상 종료하면 한 번에 COMMIT하고, 하나라도 실패하면 전부 ROLLBACK한다.
         with self._session_factory.begin() as session:
+            if processing_receipt is not None and self._success_exists(session, processing_receipt):
+                return
             # OFF → ON: 일일 관측/활동 행을 준비하고 새 사용 세션을 생성한다.
             for transition in transitions:
                 if transition.transition_type == ApplianceTransitionType.TURNED_ON:
@@ -152,6 +160,162 @@ class SqlAlchemyApplianceActivityRepository:
             for transition in transitions:
                 if transition.transition_type == ApplianceTransitionType.TURNED_OFF:
                     self._finish_session(session, transition)
+
+            if processing_receipt is not None:
+                session.flush()
+                refs = self._changed_session_refs(
+                    session, household_id, observed_at
+                )
+                self._add_receipt(session, processing_receipt, refs)
+
+    def record_processing_outcome(self, receipt: ProcessingReceipt) -> None:
+        """Persist a non-success outcome and its lake outbox idempotently."""
+
+        with self._session_factory.begin() as session:
+            if receipt.outcome.value == "SUCCEEDED" and self._success_exists(session, receipt):
+                return
+            self._add_receipt(session, receipt, [])
+
+    @staticmethod
+    def _success_exists(session: Session, receipt: ProcessingReceipt) -> bool:
+        return session.scalar(
+            select(AnalysisProcessingReceipt.receipt_id).where(
+                AnalysisProcessingReceipt.message_id == receipt.message_id,
+                AnalysisProcessingReceipt.analysis_run_id == receipt.analysis_run_id,
+                AnalysisProcessingReceipt.outcome == "SUCCEEDED",
+            )
+        ) is not None
+
+    @staticmethod
+    def _changed_session_refs(
+        session: Session,
+        household_id: str,
+        observed_at: datetime,
+    ) -> list[dict[str, object]]:
+        changed = session.scalars(
+            select(ApplianceUsageSession)
+            .join(
+                HouseholdActivityDaily,
+                HouseholdActivityDaily.id == ApplianceUsageSession.activity_daily_id,
+            )
+            .join(
+                HouseholdObservationDaily,
+                HouseholdObservationDaily.id == HouseholdActivityDaily.observation_daily_id,
+            )
+            .where(
+                HouseholdObservationDaily.household_id == household_id,
+                ApplianceUsageSession.updated_at == observed_at,
+            )
+        ).all()
+        return [
+            {"session_id": str(item.id), "session_version": int(item.lake_version)}
+            for item in changed
+        ]
+
+    @staticmethod
+    def _add_receipt(
+        session: Session,
+        receipt: ProcessingReceipt,
+        session_change_refs: list[dict[str, object]],
+    ) -> None:
+        appliance_types = sorted(set(receipt.appliance_types))
+        attempt = int(
+            session.scalar(
+                select(func.coalesce(func.max(AnalysisProcessingReceipt.attempt), 0)).where(
+                    AnalysisProcessingReceipt.message_id == receipt.message_id,
+                    AnalysisProcessingReceipt.analysis_run_id == receipt.analysis_run_id,
+                )
+            )
+            or 0
+        ) + 1
+        row = AnalysisProcessingReceipt(
+            receipt_id=receipt.receipt_id,
+            message_id=receipt.message_id,
+            household_id=receipt.household_id,
+            device_id=receipt.device_id,
+            source_topic=receipt.source.topic,
+            source_partition=receipt.source.partition,
+            source_offset=receipt.source.offset,
+            measured_at=receipt.measured_at,
+            processed_at=receipt.processed_at,
+            analysis_run_id=receipt.analysis_run_id,
+            attempt=attempt,
+            model_version=receipt.model_version,
+            pipeline_version=receipt.pipeline_version,
+            state_epoch=receipt.state_epoch,
+            outcome=receipt.outcome.value,
+            appliance_types=appliance_types,
+            session_change_refs=session_change_refs,
+            error_type=receipt.error_type,
+        )
+        payload = {
+            "receipt_id": str(receipt.receipt_id),
+            "message_id": str(receipt.message_id),
+            "household_id": receipt.household_id,
+            "device_id": receipt.device_id,
+            "source_topic": receipt.source.topic,
+            "source_partition": receipt.source.partition,
+            "source_offset": receipt.source.offset,
+            "measured_at": receipt.measured_at.isoformat(),
+            "processed_at": receipt.processed_at.isoformat(),
+            "analysis_run_id": receipt.analysis_run_id,
+            "attempt": attempt,
+            "model_version": receipt.model_version,
+            "pipeline_version": receipt.pipeline_version,
+            "state_epoch": str(receipt.state_epoch),
+            "outcome": receipt.outcome.value,
+            "appliance_types": appliance_types,
+            "session_change_refs": session_change_refs,
+            "error_type": receipt.error_type,
+        }
+        session.add(row)
+        session.add(
+            AnalysisReceiptLakeOutbox(
+                receipt_id=receipt.receipt_id,
+                payload=payload,
+                changed_at=receipt.processed_at,
+                delivery_status="PENDING",
+            )
+        )
+
+    def close_open_sessions(
+        self,
+        household_id: str,
+        ended_at: datetime,
+    ) -> None:
+        """Close sessions whose continuity can no longer be proven after a gap."""
+
+        with self._session_factory.begin() as session:
+            open_sessions = session.scalars(
+                select(ApplianceUsageSession)
+                .join(
+                    HouseholdActivityDaily,
+                    HouseholdActivityDaily.id
+                    == ApplianceUsageSession.activity_daily_id,
+                )
+                .join(
+                    HouseholdObservationDaily,
+                    HouseholdObservationDaily.id
+                    == HouseholdActivityDaily.observation_daily_id,
+                )
+                .where(
+                    HouseholdObservationDaily.household_id == household_id,
+                    ApplianceUsageSession.ended_at.is_(None),
+                )
+                .with_for_update()
+            ).all()
+            for usage_session in open_sessions:
+                session_start = usage_session.started_at
+                if session_start.tzinfo is None:
+                    session_start = session_start.replace(tzinfo=self._timezone)
+                safe_end = ended_at
+                if (
+                    session_start.astimezone(timezone.utc)
+                    > ended_at.astimezone(timezone.utc)
+                ):
+                    safe_end = usage_session.started_at
+                usage_session.ended_at = safe_end
+                usage_session.updated_at = safe_end
 
     # OFF -> ON
     def _start_session(
@@ -183,6 +347,8 @@ class SqlAlchemyApplianceActivityRepository:
             activity_date,
             transition.confirmed_at,
         )
+        if observation.observation_status != "COLLECTING":
+            return
         activity = self._get_or_create_activity(
             session,
             observation,
@@ -293,34 +459,6 @@ class SqlAlchemyApplianceActivityRepository:
         session.add(observation)
         session.flush()
         return observation
-
-    def _finalize_observations_before(
-        self,
-        session: Session,
-        current_date: date,
-        finalized_at: datetime,
-    ) -> None:
-        observations = session.scalars(
-            select(HouseholdObservationDaily)
-            .where(
-                HouseholdObservationDaily.observation_date < current_date,
-                HouseholdObservationDaily.observation_status == "COLLECTING",
-            )
-            .with_for_update()
-        ).all()
-
-        for observation in observations:
-            observation.coverage_ratio = self._coverage_ratio(
-                observation.sample_count,
-                observation.expected_sample_count,
-            )
-            if observation.sample_count == 0:
-                observation.observation_status = "SENSOR_GAP"
-            elif observation.coverage_ratio >= self._valid_coverage_ratio:
-                observation.observation_status = "VALID"
-            else:
-                observation.observation_status = "INSUFFICIENT_DATA"
-            observation.updated_at = finalized_at
 
     def _coverage_ratio(
         self,

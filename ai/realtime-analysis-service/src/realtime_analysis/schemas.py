@@ -1,6 +1,6 @@
 """Kafka input, model output, baseline, and analysis event schemas."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
@@ -35,6 +35,26 @@ class PowerMeasurement(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("measured_at must include a timezone")
         return value
+
+
+class AnalysisProcessingOutcome(StrEnum):
+    """Terminal result for one validated power input."""
+
+    SUCCEEDED = "SUCCEEDED"
+    SKIPPED_WARMUP = "SKIPPED_WARMUP"
+    SKIPPED_QUALITY_GATE = "SKIPPED_QUALITY_GATE"
+    FAILED_INFERENCE = "FAILED_INFERENCE"
+    FAILED_PERSISTENCE = "FAILED_PERSISTENCE"
+
+
+class ProcessingSource(BaseModel):
+    """Stable source position used to connect a receipt to Kafka input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str | None = None
+    partition: int | None = None
+    offset: int | None = None
 
 
 class AppliancePrediction(BaseModel):  # AI 모델이 직접 반환한 원본 결과 
@@ -157,6 +177,24 @@ class RoutineBaseline(BaseModel):
         return self
 
 
+class AnalysisPolicyDefinition(BaseModel):
+    """Bootstrap and runtime shape of an enabled anomaly policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    policy_code: str = Field(min_length=1, max_length=50)
+    algorithm_type: str = Field(min_length=1, max_length=50)
+    parameters: dict[str, Any]
+    event_type: Literal[
+        "ROUTINE_MISSED",
+        "PROLONGED_INACTIVITY",
+        "PROLONGED_APPLIANCE_USE",
+        "ROUTINE_CHANGED",
+    ]
+    cooldown_hours: int = Field(default=0, ge=0)
+    enabled: bool = True
+
+
 # 이상 이벤트 형식 
 class AnalysisEvent(BaseModel):
     """MVP contract published to analysis.event.v1."""
@@ -165,9 +203,98 @@ class AnalysisEvent(BaseModel):
 
     event_id: UUID
     household_id: str = Field(min_length=1, max_length=50)
-    score: int = Field(ge=0, le=100)
+    event_type: Literal[
+        "ROUTINE_MISSED",
+        "PROLONGED_INACTIVITY",
+        "PROLONGED_APPLIANCE_USE",
+        "ROUTINE_CHANGED",
+    ]
     occurred_at: datetime
     reason: dict[str, Any]
+
+    @field_validator("occurred_at")
+    @classmethod
+    def event_time_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("occurred_at must include a timezone")
+        return value
+
+
+class ActivityIndexComponents(BaseModel):
+    """Inputs and normalized component scores used for a daily activity index."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    usage_count: int = Field(ge=0)
+    appliance_type_count: int = Field(ge=0, le=len(SNAPSHOT_APPLIANCE_ORDER))
+    usage_duration_seconds: int = Field(ge=0)
+    usage_count_score: int = Field(ge=0, le=100)
+    appliance_diversity_score: int = Field(ge=0, le=100)
+    usage_duration_score: int = Field(ge=0, le=100)
+
+
+class ActivityIndexMessage(BaseModel):
+    """Daily activity index contract published to analysis.activity.v1."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    message_id: UUID
+    household_id: str = Field(min_length=1, max_length=50)
+    activity_date: date
+    activity_index: int | None = Field(default=None, ge=0, le=100)
+    data_status: Literal["VALID", "INSUFFICIENT_DATA"]
+    components: ActivityIndexComponents | None = None
+
+    @model_validator(mode="after")
+    def index_and_components_must_match_status(self) -> "ActivityIndexMessage":
+        if self.data_status == "VALID":
+            if self.activity_index is None or self.components is None:
+                raise ValueError(
+                    "VALID activity data requires activity_index and components"
+                )
+        elif self.activity_index is not None:
+            raise ValueError("non-VALID activity data must not contain activity_index")
+        return self
+
+
+class DataQualityEvent(BaseModel):
+    """Data availability contract published to analysis.data-quality.v1."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: UUID
+    household_id: str = Field(min_length=1, max_length=50)
+    event_type: Literal["DATA_GAP", "DATA_RECOVERED"]
+    occurred_at: datetime
+    reason: dict[str, Any]
+
+    @field_validator("occurred_at")
+    @classmethod
+    def data_quality_time_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("occurred_at must include a timezone")
+        return value
+
+
+class OutingEvent(BaseModel):
+    """Household outing contract consumed from monitoring."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    event_id: UUID
+    household_id: str = Field(min_length=1, max_length=50)
+    event_type: Literal["OUTING_STARTED", "OUTING_ENDED"]
+    occurred_at: datetime
+
+    @field_validator("occurred_at")
+    @classmethod
+    def outing_time_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("occurred_at must include a timezone")
+        return value
 
 
 class DlqMessage(BaseModel):

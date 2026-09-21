@@ -17,6 +17,7 @@ services:
       KC_PROXY_HEADERS: xforwarded
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN required}
       NILM_SMOKE_CLIENT_SECRET: ${NILM_SMOKE_CLIENT_SECRET:?NILM_SMOKE_CLIENT_SECRET required}
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
     volumes:
       - ${CONFIG_ROOT:-.}/keycloak/nilm-realm.json:/opt/keycloak/data/import/nilm-realm.json:ro
     healthcheck:
@@ -82,6 +83,9 @@ services:
     image: ${IOT_DEVICE_IMAGE:?IOT_DEVICE_IMAGE required}
     restart: unless-stopped
     environment:
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: nilm
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
       SERVER_PORT: 8081
       APP_SECURITY_ENABLED: "${APP_SECURITY_ENABLED:-true}"
       JWT_ISSUER_URI: ${JWT_ISSUER_URI:?JWT_ISSUER_URI required}
@@ -89,6 +93,8 @@ services:
       POSTGRES_URL: jdbc:postgresql://${POSTGRES_HOST:?POSTGRES_HOST required}:5432/device_db
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS required}
+      KAFKA_MANAGER_REGISTERED_TOPIC: ${KAFKA_MANAGER_REGISTERED_TOPIC:-device.manager-registered.v1}
     depends_on:
       keycloak:
         condition: service_healthy
@@ -121,7 +127,12 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS required}
       KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
+      KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
+      KAFKA_HOUSEHOLD_PROFILE_TOPIC: ${KAFKA_HOUSEHOLD_PROFILE_TOPIC:-gold.household-profile.v1}
+      KAFKA_MANAGER_REGISTERED_TOPIC: ${KAFKA_MANAGER_REGISTERED_TOPIC:-device.manager-registered.v1}
       MONITORING_KAFKA_GROUP_ID: ${MONITORING_KAFKA_GROUP_ID:-monitoring-service-analysis-event-v1}
+      MONITORING_KAFKA_HOUSEHOLD_PROFILE_GROUP_ID: ${MONITORING_KAFKA_HOUSEHOLD_PROFILE_GROUP_ID:-monitoring-service-household-profile-v1}
+      PROFILE_MAX_AGE_DAYS: "${PROFILE_MAX_AGE_DAYS:-3}"
       KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET:-latest}
       KAFKA_CONSUMER_ENABLED: "${KAFKA_CONSUMER_ENABLED:-true}"
       WEB_PUSH_ENABLED: "${WEB_PUSH_ENABLED:-false}"
@@ -129,12 +140,15 @@ services:
       WEB_PUSH_VAPID_PRIVATE_KEY: "${WEB_PUSH_VAPID_PRIVATE_KEY:-}"
       WEB_PUSH_SUBJECT: "${WEB_PUSH_SUBJECT:-mailto:admin@example.com}"
       PUSH_TEST_AUTH_SUB: "${PUSH_TEST_AUTH_SUB:-test-subject-3}"
-      TEST_SUBJECT_ENABLED: "${TEST_SUBJECT_ENABLED:-true}"
-      TEST_SUBJECT_HOUSEHOLD_ID: "${TEST_SUBJECT_HOUSEHOLD_ID:-H001}"
+      TEST_DATA_ENABLED: "${TEST_DATA_ENABLED:-false}"
+      TEST_ACCOUNT_PASSWORD: "${TEST_ACCOUNT_PASSWORD:-}"
+      IOT_DEVICE_SERVICE_URL: http://iot-device-service:8081
       RISK_WARNING_THRESHOLD: "${RISK_WARNING_THRESHOLD:-70}"
       RISK_DANGER_THRESHOLD: "${RISK_DANGER_THRESHOLD:-90}"
     depends_on:
       keycloak:
+        condition: service_healthy
+      iot-device-service:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -195,8 +209,92 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=5GB
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ${OBSERVABILITY_ROOT:?OBSERVABILITY_ROOT required}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${OBSERVABILITY_ROOT:?OBSERVABILITY_ROOT required}/prometheus/targets/ec2-a:/etc/prometheus/targets:ro
+      - ${OBSERVABILITY_ROOT:?OBSERVABILITY_ROOT required}/prometheus/resources-disabled:/etc/prometheus/resources:ro
+      - ${OBSERVABILITY_ROOT:?OBSERVABILITY_ROOT required}/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    extra_hosts:
+      - "ec2-b.internal:${EC2_B_PRIVATE_IP:?EC2_B_PRIVATE_IP required}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9090/-/ready >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 1s
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-13001}:3000"
+    volumes:
+      - ${OBSERVABILITY_ROOT:?OBSERVABILITY_ROOT required}/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${OBSERVABILITY_ROOT:?OBSERVABILITY_ROOT required}/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.27.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ${OBSERVABILITY_ROOT:?OBSERVABILITY_ROOT required}/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    extra_hosts:
+      - "ec2-b.internal:${EC2_B_PRIVATE_IP:?EC2_B_PRIVATE_IP required}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9115/-/healthy >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   redis_data:
     name: nilm-a_redis_data
   mosquitto_data:
     name: nilm-a_mosquitto_data
+  prometheus_data:
+    name: nilm-a_prometheus_data
+  grafana_data:
+    name: nilm-a_grafana_data

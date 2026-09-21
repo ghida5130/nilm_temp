@@ -1,0 +1,30 @@
+import { useState } from "react";
+import "../styles/user.css";
+import type { FormEvent } from "react";
+import { login } from "../api/auth";
+import { getApiErrorMessage } from "../api/client";
+import { saveSession } from "../api/tokenStorage";
+import LoginCard from "../components/auth/LoginCard";
+
+export default function LoginPage({ role }: { role: "staff" | "user" }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setError("");
+    const keepSignedIn = form.get("keepSignedIn") === "true";
+    login(String(form.get("email")).trim(), String(form.get("password")))
+      .then((tokens) => saveSession(tokens, keepSignedIn))
+      .catch((cause: unknown) => setError(getApiErrorMessage(cause)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <main
+      className={`grid min-h-screen place-items-center p-5 ${role === "user" ? "user-interface user-login" : "bg-stone-100"}`}
+    >
+      <LoginCard role={role} busy={busy} error={error} onSubmit={submit} />
+    </main>
+  );
+}
