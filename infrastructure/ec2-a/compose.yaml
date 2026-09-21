@@ -17,6 +17,7 @@ services:
       KC_PROXY_HEADERS: xforwarded
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?FRONTEND_ORIGIN required}
       NILM_SMOKE_CLIENT_SECRET: ${NILM_SMOKE_CLIENT_SECRET:?NILM_SMOKE_CLIENT_SECRET required}
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
     volumes:
       - ${CONFIG_ROOT:-.}/keycloak/nilm-realm.json:/opt/keycloak/data/import/nilm-realm.json:ro
     healthcheck:
@@ -82,6 +83,9 @@ services:
     image: ${IOT_DEVICE_IMAGE:?IOT_DEVICE_IMAGE required}
     restart: unless-stopped
     environment:
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: nilm
+      NILM_BACKEND_CLIENT_SECRET: ${NILM_BACKEND_CLIENT_SECRET:?NILM_BACKEND_CLIENT_SECRET required}
       SERVER_PORT: 8081
       APP_SECURITY_ENABLED: "${APP_SECURITY_ENABLED:-true}"
       JWT_ISSUER_URI: ${JWT_ISSUER_URI:?JWT_ISSUER_URI required}
@@ -89,6 +93,8 @@ services:
       POSTGRES_URL: jdbc:postgresql://${POSTGRES_HOST:?POSTGRES_HOST required}:5432/device_db
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS required}
+      KAFKA_MANAGER_REGISTERED_TOPIC: ${KAFKA_MANAGER_REGISTERED_TOPIC:-device.manager-registered.v1}
     depends_on:
       keycloak:
         condition: service_healthy
@@ -121,7 +127,12 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:?KAFKA_BOOTSTRAP_SERVERS required}
       KAFKA_ANALYSIS_EVENT_TOPIC: ${KAFKA_ANALYSIS_EVENT_TOPIC:-analysis.event.v1}
       KAFKA_MONITORING_DLQ_TOPIC: ${KAFKA_MONITORING_DLQ_TOPIC:-dlq.monitoring}
+      KAFKA_OUTING_EVENT_TOPIC: ${KAFKA_OUTING_EVENT_TOPIC:-monitoring.household-presence.v1}
+      KAFKA_HOUSEHOLD_PROFILE_TOPIC: ${KAFKA_HOUSEHOLD_PROFILE_TOPIC:-gold.household-profile.v1}
+      KAFKA_MANAGER_REGISTERED_TOPIC: ${KAFKA_MANAGER_REGISTERED_TOPIC:-device.manager-registered.v1}
       MONITORING_KAFKA_GROUP_ID: ${MONITORING_KAFKA_GROUP_ID:-monitoring-service-analysis-event-v1}
+      MONITORING_KAFKA_HOUSEHOLD_PROFILE_GROUP_ID: ${MONITORING_KAFKA_HOUSEHOLD_PROFILE_GROUP_ID:-monitoring-service-household-profile-v1}
+      PROFILE_MAX_AGE_DAYS: "${PROFILE_MAX_AGE_DAYS:-3}"
       KAFKA_AUTO_OFFSET_RESET: ${KAFKA_AUTO_OFFSET_RESET:-latest}
       KAFKA_CONSUMER_ENABLED: "${KAFKA_CONSUMER_ENABLED:-true}"
       WEB_PUSH_ENABLED: "${WEB_PUSH_ENABLED:-false}"

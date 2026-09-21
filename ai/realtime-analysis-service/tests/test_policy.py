@@ -14,3 +14,15 @@ def test_bootstrap_policy_file_contains_four_event_types() -> None:
     }
     assert all("score" not in policy.model_dump() for policy in repository.policies)
     assert all("severity" not in policy.model_dump() for policy in repository.policies)
+
+    inactivity = next(
+        policy
+        for policy in repository.policies
+        if policy.event_type == "PROLONGED_INACTIVITY"
+    )
+    assert inactivity.algorithm_type == "AWAKE_INACTIVITY_ELAPSED"
+    assert inactivity.parameters["inactivity_hours"] == 6
+    assert inactivity.parameters["sleep_window"] == {
+        "start": "23:00",
+        "end": "07:00",
+    }

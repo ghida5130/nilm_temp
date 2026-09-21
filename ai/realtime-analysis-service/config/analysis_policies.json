@@ -12,9 +12,13 @@
   },
   {
     "policy_code": "PROLONGED_INACTIVITY_DEFAULT",
-    "algorithm_type": "LAST_ACTIVITY_ELAPSED",
+    "algorithm_type": "AWAKE_INACTIVITY_ELAPSED",
     "parameters": {
-      "inactivity_hours": 12,
+      "inactivity_hours": 6,
+      "sleep_window": {
+        "start": "23:00",
+        "end": "07:00"
+      },
       "evaluation_interval_seconds": 60
     },
     "event_type": "PROLONGED_INACTIVITY",

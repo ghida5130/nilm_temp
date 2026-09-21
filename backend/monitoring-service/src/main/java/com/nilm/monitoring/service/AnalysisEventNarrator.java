@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nilm.monitoring.config.enums.ApplianceType;
 import com.nilm.monitoring.domain.AnalysisEvent;
 import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -23,7 +24,9 @@ public class AnalysisEventNarrator {
      * 표에 없는 값은 일반 문구로 되돌린다.
      */
     private static final Map<String, String> DESCRIPTIONS = Map.of(
-            "ROUTINE_MISSED", "%s 미작동 감지"
+            "ROUTINE_MISSED", "%s 미작동 감지",
+            "PROLONGED_APPLIANCE_USE", "%s 장시간 사용 감지",
+            "PROLONGED_INACTIVITY", "장시간 무활동 감지"
     );
 
     private final ObjectMapper objectMapper;
@@ -38,6 +41,54 @@ public class AnalysisEventNarrator {
                     : ApplianceType.labelOf(event.getApplianceType()) + " 사용 이상 감지";
         }
         return String.format(template, ApplianceType.labelOf(event.getApplianceType()));
+    }
+
+    /**
+     * 알림 본문. 유형별 문구에 reason의 수치를 붙여 담당자가 무엇이 근거였는지 알게 한다.
+     *
+     * <p>유형 무관 고정 문구를 쓰지 않는다는 것이 설계 11.4절의 요구다.
+     * reason의 구조는 유형마다 다르고 분석 서비스가 바꿀 수 있으므로,
+     * 값이 없거나 형식이 다르면 수치를 빼고 기본 문구만 돌려준다.
+     */
+    public String describeDetail(AnalysisEvent event) {
+        String headline = describe(event);
+        Map<String, Object> reason = parseReason(event);
+
+        String detail = switch (event.getEventType() == null ? "" : event.getEventType()) {
+            case "PROLONGED_APPLIANCE_USE" -> number(reason.get("allowed_duration_minutes"))
+                    .map(minutes -> "허용 시간 %s분을 넘겼습니다.".formatted(trim(minutes)))
+                    .orElse(null);
+            case "PROLONGED_INACTIVITY" -> number(reason.get("threshold_hours"))
+                    .map(hours -> "%s시간 넘게 활동이 없습니다.".formatted(trim(hours)))
+                    .orElse(null);
+            case "ROUTINE_MISSED" -> reason.get("expected_until") instanceof String until
+                    ? "평소 %s까지는 사용하던 가전입니다.".formatted(until)
+                    : null;
+            default -> null;
+        };
+
+        return detail == null ? headline : headline + ". " + detail;
+    }
+
+    private Optional<Double> number(Object value) {
+        if (value instanceof Number parsed) {
+            return Optional.of(parsed.doubleValue());
+        }
+        if (value instanceof String text) {
+            try {
+                return Optional.of(Double.parseDouble(text));
+            } catch (NumberFormatException e) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** 6.0시간이 아니라 6시간으로 읽히게 한다. */
+    private String trim(double value) {
+        return value == Math.rint(value)
+                ? String.valueOf((long) value)
+                : String.valueOf(value);
     }
 
     /**

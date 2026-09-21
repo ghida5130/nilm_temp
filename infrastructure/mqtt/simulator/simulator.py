@@ -320,6 +320,11 @@ async def run_simulator(args):
             print(f" - 실행 모드: 무한 연속 발행 (종료: Ctrl+C)")
     print(f"============================================================", flush=True)
 
+    # sensor_fault 모드에서 base_dt가 없으면 시작 시각을 1회 고정하여
+    # 배속 실행 시에도 measured_at이 가상 1초 간격으로 증가하도록 보장
+    if is_sensor_fault_mode and base_dt is None:
+        base_dt = datetime.now(timezone.utc)
+
     total_sent = 0
     cycle = 0
     start_time = time.time()

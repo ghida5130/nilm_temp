@@ -17,6 +17,7 @@ from realtime_analysis.models import (
     HouseholdActivityDaily,
     HouseholdObservationDaily,
 )
+from realtime_analysis.outing_repository import OutingStateProvider
 from realtime_analysis.policy import SqlAlchemyPolicyRepository
 from realtime_analysis.schemas import AnalysisEvent, RoutineBaseline
 from realtime_analysis.state_tracker import DailyActivityTracker
@@ -34,6 +35,8 @@ class AnomalyDetector(Protocol):
     ) -> list["PendingAnomaly"]: ...
 
     def mark_emitted(self, anomaly: "PendingAnomaly") -> None: ...
+
+    def reset(self, household_id: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,9 @@ class RoutineMissedDetector:
             anomaly.appliance_type,
             anomaly.baseline_type,
         )
+
+    def reset(self, household_id: str) -> None:
+        """This legacy detector keeps no evaluation-cadence state."""
 
 
 @dataclass(frozen=True)
@@ -272,12 +278,14 @@ class RealtimeAnomalyDetector:
         policy_repository: SqlAlchemyPolicyRepository,
         timezone_name: str,
         emission_repository: EventEmissionRepository,
+        outing_state_provider: OutingStateProvider,
         metrics: AnalysisMetrics = METRICS,
     ) -> None:
         self._repository = repository
         self._policies = policy_repository
         self._timezone = ZoneInfo(timezone_name)
         self._emissions = emission_repository
+        self._outing_states = outing_state_provider
         self._metrics = metrics
         self._last_evaluated_at: dict[str, datetime] = {}
 
@@ -384,6 +392,11 @@ class RealtimeAnomalyDetector:
             emitted_at=anomaly.event.occurred_at.astimezone(timezone.utc),
         )
 
+    def reset(self, household_id: str) -> None:
+        """Forget the last volatile evaluation time for one household."""
+
+        self._last_evaluated_at.pop(household_id, None)
+
     def _is_in_cooldown(self, anomaly: PendingAnomaly) -> bool:
         policy = self._policies.get(anomaly.event.event_type)
         if policy is None or policy.cooldown_hours <= 0:
@@ -460,6 +473,12 @@ class RealtimeAnomalyDetector:
             )
             if strength < minimum_strength:
                 continue
+            if self._outing_states.has_outing_overlap(
+                household_id,
+                day_start.astimezone(timezone.utc),
+                deadline.astimezone(timezone.utc),
+            ):
+                continue
             if self._repository.was_used_before(
                 household_id,
                 baseline.appliance_type,
@@ -500,29 +519,75 @@ class RealtimeAnomalyDetector:
         observed_at: datetime,
     ) -> list[PendingAnomaly]:
         policy = self._policies.get("PROLONGED_INACTIVITY")
-        if policy is None or self._repository.open_sessions(household_id):
+        if policy is None:
             return []
+        outing_state = self._outing_states.get_state(household_id)
+        if outing_state is not None and outing_state.is_outing:
+            return []
+        if self._repository.open_sessions(household_id):
+            return []
+
         last_activity_at = self._repository.last_completed_activity_at(
             household_id
         )
-        if last_activity_at is None:
+        last_returned_at = (
+            self._as_utc(outing_state.last_returned_at)
+            if outing_state is not None
+            and outing_state.last_returned_at is not None
+            else None
+        )
+        inactivity_started_at = self._latest_timestamp(
+            last_activity_at,
+            last_returned_at,
+        )
+        if inactivity_started_at is None:
             return []
-        threshold_hours = float(policy.parameters.get("inactivity_hours", 12))
-        occurred_at = last_activity_at + timedelta(hours=threshold_hours)
+        threshold_hours = float(policy.parameters.get("inactivity_hours", 6))
+        sleep_window = policy.parameters.get("sleep_window", {})
+        if not isinstance(sleep_window, dict):
+            raise ValueError("sleep_window must be an object")
+        sleep_start = self._parse_policy_time(
+            sleep_window.get("start", "23:00"),
+            "sleep_window.start",
+        )
+        sleep_end = self._parse_policy_time(
+            sleep_window.get("end", "07:00"),
+            "sleep_window.end",
+        )
+        occurred_at = self._add_awake_duration(
+            inactivity_started_at,
+            timedelta(hours=threshold_hours),
+            sleep_start,
+            sleep_end,
+        )
         if observed_at < occurred_at:
             return []
         event = AnalysisEvent(
             event_id=event_id_for(
                 household_id,
                 "PROLONGED_INACTIVITY",
-                last_activity_at.isoformat(),
+                inactivity_started_at.isoformat(),
             ),
             household_id=household_id,
             event_type="PROLONGED_INACTIVITY",
             occurred_at=occurred_at,
             reason={
-                "last_activity_at": last_activity_at.isoformat(),
+                "last_activity_at": (
+                    last_activity_at.isoformat()
+                    if last_activity_at is not None
+                    else None
+                ),
+                "last_returned_at": (
+                    last_returned_at.isoformat()
+                    if last_returned_at is not None
+                    else None
+                ),
+                "inactivity_started_at": inactivity_started_at.isoformat(),
                 "threshold_hours": threshold_hours,
+                "sleep_window": {
+                    "start": sleep_start.strftime("%H:%M"),
+                    "end": sleep_end.strftime("%H:%M"),
+                },
             },
         )
         return [
@@ -533,6 +598,86 @@ class RealtimeAnomalyDetector:
                 baseline_type="PROLONGED_INACTIVITY",
             )
         ]
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    @staticmethod
+    def _latest_timestamp(
+        first: datetime | None,
+        second: datetime | None,
+    ) -> datetime | None:
+        candidates = [value for value in (first, second) if value is not None]
+        return max(candidates) if candidates else None
+
+    @staticmethod
+    def _parse_policy_time(value: object, field_name: str) -> time:
+        if not isinstance(value, str):
+            raise ValueError(f"{field_name} must be an HH:MM string")
+        try:
+            parsed = time.fromisoformat(value)
+        except ValueError as error:
+            raise ValueError(
+                f"{field_name} must be a valid HH:MM string"
+            ) from error
+        if parsed.tzinfo is not None:
+            raise ValueError(f"{field_name} must not contain a timezone")
+        return parsed
+
+    def _add_awake_duration(
+        self,
+        started_at: datetime,
+        duration: timedelta,
+        sleep_start: time,
+        sleep_end: time,
+    ) -> datetime:
+        """Add duration while excluding the recurring local sleep window."""
+
+        cursor = started_at.astimezone(timezone.utc)
+        remaining_seconds = duration.total_seconds()
+        if remaining_seconds <= 0:
+            return cursor
+        # Equal boundaries mean that no sleep exclusion is configured. Treating
+        # them as a 24-hour sleep window would make the loop impossible to end.
+        if sleep_start == sleep_end:
+            return cursor + duration
+
+        sleep_date = cursor.astimezone(self._timezone).date() - timedelta(days=1)
+        while remaining_seconds > 0:
+            sleep_started_local = datetime.combine(
+                sleep_date,
+                sleep_start,
+                self._timezone,
+            )
+            sleep_ended_date = sleep_date
+            if sleep_end <= sleep_start:
+                sleep_ended_date += timedelta(days=1)
+            sleep_ended_local = datetime.combine(
+                sleep_ended_date,
+                sleep_end,
+                self._timezone,
+            )
+            sleep_date += timedelta(days=1)
+
+            sleep_started_at = sleep_started_local.astimezone(timezone.utc)
+            sleep_ended_at = sleep_ended_local.astimezone(timezone.utc)
+            if sleep_ended_at <= cursor:
+                continue
+
+            if cursor < sleep_started_at:
+                awake_seconds = (sleep_started_at - cursor).total_seconds()
+                if remaining_seconds <= awake_seconds:
+                    return cursor + timedelta(seconds=remaining_seconds)
+                remaining_seconds -= awake_seconds
+                cursor = sleep_started_at
+
+            if cursor < sleep_ended_at:
+                cursor = sleep_ended_at
+
+        return cursor
 
     def _prolonged_appliance_use(
         self,

@@ -30,6 +30,26 @@ docker compose -f infrastructure/hdfs/docker-compose.yml up -d --build
 ```
 Namenode UI: http://localhost:9870
 
+## Silver 일일 배치 (power-silver-daily)
+Bronze 전력 원본에서 정제 전력과 가구별 관측일을 만드는 Spark 배치입니다. 상시 서비스가
+아니라 하루에 한 번 실행합니다. 자세한 내용은 [batch/power_silver_service/README.md](batch/power_silver_service/README.md).
+```dash
+docker compose -f infrastructure/local/compose.yaml run --rm power-silver power-silver run --date 2026-09-19
+docker compose -f infrastructure/local/compose.yaml run --rm power-silver power-silver status --json
+```
+
+## Gold 프로필 배치
+
+최근 28일의 활성 `appliance_usage_daily`와 세션 slice 버전을 고정해 shadow
+routine baseline과 지표별 통계 프로필을 생성합니다. 기존 serving DB baseline과 위험
+점수는 변경하지 않습니다. 자세한 계약은
+[batch/gold_profile_service/README.md](batch/gold_profile_service/README.md)를 참고하세요.
+
+```bash
+docker compose -f infrastructure/local/compose.yaml run --rm gold-profile gold-profile run --as-of 2026-09-19
+docker compose -f infrastructure/local/compose.yaml run --rm gold-profile gold-profile dirty --from 2026-09-01 --to 2026-09-28
+```
+
 ## 시뮬레이터
 1. 의존성 설치(최초 1회)
 ```dash
@@ -46,6 +66,22 @@ python infrastructure/mqtt/simulator/web_server.py
 ```dash 
 python infrastructure/mqtt/simulator/simulator.py --scenario normal_routine
 ```
+
+### 운영 Prometheus / Grafana 확인
+1. SSH 터널 접속 (창은 닫지 말 것)
+```bash
+ssh -i <경로>\J15D201T.pem -L 13001:127.0.0.1:13001 -L 19090:127.0.0.1:19090 ubuntu@<EC2-A 퍼블릭 IP>
+```
+
+2. 내 PC 브라우저에서 접속
+
+- Prometheus: http://localhost:19090
+- Grafana: http://localhost:13001 (admin / 배포 담당자에게 문의)
+> - 포트 충돌(`Address already in use`) 시 **`-L`의 앞 숫자만** 변경하고(예: `-L 28090:127.0.0.1:19090`)
+    >   브라우저도 그 번호로 접속. 뒤 숫자는 EC2-A 포트이므로 그대로 둘 것.
+> - `컨테이너 자원` 대시보드는 운영에서 cAdvisor를 사용하지 않아 비어 있는 것이 정상.
+> - SSH 창을 닫으면 터널도 끊김.
+
 
 ## `.env`를 바꿨을 때
 

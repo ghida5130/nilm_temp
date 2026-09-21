@@ -21,7 +21,7 @@ public final class AuthDtos {
             String displayName,
             @Size(max = 20)
             String phone,
-            /** 기관 소속이면 입력 — 복지사 가입으로 간주되어 승인 대기 상태가 된다 */
+            /** 기관 소속이면 입력 — 복지사 가입으로 간주되어 담당자 명단에 오른다 */
             @Size(max = 100)
             String organization
     ) {

@@ -16,11 +16,17 @@ import java.util.UUID;
 // 동시 응답 -> 비관적락
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
+    /**
+     * 가장 최근 생성된 알림 한 건.
+     *
+     * <p>분석 이벤트를 join하지 않고 알림 행의 subject_id로 찾는다.
+     * 모니터링 자체 평가가 만든 알림은 분석 이벤트에 걸리지 않아
+     * join으로는 영영 잡히지 않기 때문이다.
+     */
     @Query(value = """
             select n.*
             from notifications n
-            join analysis_events e on e.id = n.event_id
-            where e.subject_id = :subjectId
+            where n.subject_id = :subjectId
             order by n.id desc
             limit 1
             """, nativeQuery = true)
@@ -28,13 +34,12 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     /**
      * 담당자가 아직 조치를 끝내지 않은 알림 수 = 미해결 사건 수.
-     * 일일 요약처럼 이벤트가 없는 알림은 대상자를 특정할 수 없어 제외된다.
+     * 일일 요약처럼 대상자를 특정할 수 없는 알림은 제외된다.
      */
     @Query(value = """
             select count(*)
             from notifications n
-            join analysis_events e on e.id = n.event_id
-            where e.subject_id = :subjectId
+            where n.subject_id = :subjectId
               and n.manager_response_status <> 'RESOLVED'
             """, nativeQuery = true)
     long countUnresolvedBySubjectId(@Param("subjectId") Long subjectId);

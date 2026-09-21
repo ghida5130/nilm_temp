@@ -17,6 +17,7 @@ import asyncio
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
+import re
 import threading
 import time
 import uuid
@@ -29,6 +30,7 @@ from engine.schedule import (
     ScenarioDefinition,
     SECONDS_PER_DAY,
     compile_schedule,
+    resolve_base_date,
 )
 from engine.schedule_executor import (
     DeterministicScheduleExecutor,
@@ -39,10 +41,67 @@ from engine.schedule_executor import (
 from engine.unified_catalog import get_unified_scenario_definition
 from engine.tls import resolve_mqtt_config, get_mqtt_tls_context
 
+from .config import resolve_auto_speed
+
 
 class E2EError(Exception):
     """E2E 도메인 기본 예외"""
-    pass
+
+
+KST = timezone(timedelta(hours=9))
+
+
+def resolve_start_time_delay(start_time_str: str | None, now: datetime | None = None) -> float:
+    """
+    start_time 문자열을 Asia/Seoul(KST) 기준 실제 MQTT 발행 개시 예약 시각으로 해석하여 현재 시각 대비 대기 시간(초)을 산출합니다.
+
+    해석 및 처리 규칙:
+    1. 생략 또는 None:
+       - 즉시 시작 (지연 0.0초 반환).
+    2. 시간만 입력된 경우 (HH:MM 또는 HH:MM:SS):
+       - 요청 처리 시점의 Asia/Seoul 현재 날짜(오늘)에 해당 시각을 결합하여 목표 시각을 생성합니다.
+       - 예: 현재 시각 2026-09-19 20:00:00 KST에 "20:30:00" 입력 시 -> 2026-09-19 20:30:00 KST로 해석.
+    3. 날짜와 시간이 함께 입력된 경우 (ISO 8601 형식: YYYY-MM-DDTHH:MM:SS 등):
+       - 입력된 날짜와 시각을 파싱합니다.
+       - 타임존 오프셋이 없으면 기본 Asia/Seoul로 간주하고, 오프셋이 지정되어 있으면 Asia/Seoul로 변환합니다.
+       - 예: "2026-09-20T01:00:00" -> 2026-09-20 01:00:00 KST로 해석.
+    4. 과거 시각 처리 규칙:
+       - 산출된 목표 예약 시각이 현재 시각 이전이거나 동일하면 (target_dt <= current_dt),
+         지연 시간은 0.0초로 산출되어 대기 없이 즉시 시작합니다 (음수 대기 방지).
+    """
+    if not start_time_str:
+        return 0.0
+
+    clean_st = start_time_str.strip()
+    if not clean_st:
+        return 0.0
+
+    current_now = now or datetime.now(KST)
+    if current_now.tzinfo is None:
+        current_now = current_now.replace(tzinfo=KST)
+    else:
+        current_now = current_now.astimezone(KST)
+
+    # 1) 시간만 입력된 경우 (HH:MM 또는 HH:MM:SS)
+    time_match = re.match(r"^(\d{2}):(\d{2})(?::(\d{2}))?$", clean_st)
+    if time_match:
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2))
+        second = int(time_match.group(3)) if time_match.group(3) is not None else 0
+        target_dt = current_now.replace(hour=hour, minute=minute, second=second, microsecond=0)
+    else:
+        # 2) 날짜 및 시간이 포함된 ISO 형식
+        try:
+            parsed_dt = datetime.fromisoformat(clean_st)
+            if parsed_dt.tzinfo is None:
+                target_dt = parsed_dt.replace(tzinfo=KST)
+            else:
+                target_dt = parsed_dt.astimezone(KST)
+        except ValueError:
+            return 0.0
+
+    delay = (target_dt - current_now).total_seconds()
+    return max(0.0, delay)
 
 
 class E2EConflictError(E2EError):
@@ -186,6 +245,7 @@ class HouseholdExecutionTask:
         self.plan = plan
         self.executor: DeterministicScheduleExecutor | None = None
         self.asyncio_task: asyncio.Task | None = None
+        self.stop_event: asyncio.Event | None = None
         self.state: HouseholdTaskStatus = HouseholdTaskStatus.STARTING
         self.last_error: str | None = None
         self.overall_result: Any | None = None
@@ -201,11 +261,13 @@ class E2ESession:
         reference_date: date,
         execution_mode: ExecutionMode,
         speed_multiplier: float | None = None,
+        start_time: str | None = None,
     ):
         self.run_id = run_id
         self.reference_date = reference_date
         self.execution_mode = execution_mode
         self.speed_multiplier = speed_multiplier
+        self.start_time = start_time
         self.created_at = datetime.now(timezone.utc)
         self.tasks: dict[str, HouseholdExecutionTask] = {}
         self.overall_state: SessionStatus = SessionStatus.STARTING
@@ -213,6 +275,8 @@ class E2ESession:
         self.activation_state: SessionActivationState = SessionActivationState.PREPARING
         self.activation_lock = threading.Lock()
         self.activation_gate: asyncio.Event | None = None
+        self.scheduled_start_event: asyncio.Event | None = None
+        self.scheduled_task: asyncio.Task | None = None
 
     def is_active(self) -> bool:
         """세션이 아직 실행 중이거나 정지/대기 중인지 확인 (terminal 도달 여부)"""
@@ -317,9 +381,11 @@ class E2EScheduleSessionManager:
         self,
         broker_config: dict | None = None,
         mqtt_client_factory: Callable[[str], AsyncContextManager] | None = None,
+        broadcast_callback: Callable[[dict[str, Any]], Any] | None = None,
     ):
         self.broker_config = broker_config or resolve_mqtt_config()
         self._client_factory = mqtt_client_factory or DefaultMqttClientFactory(self.broker_config)
+        self._broadcast_callback = broadcast_callback
         self._current_session: E2ESession | None = None
         self._session_lock = threading.Lock()
         self._is_shutting_down = False
@@ -408,13 +474,22 @@ class E2EScheduleSessionManager:
         speed_multiplier = exec_config_raw.get("speed")
 
         households_raw = params["households"]
+
+        # ACCELERATED에서 speed를 생략하면 가구 수 기반 안전 배속을 자동 산출한다.
+        # 무손실 상한은 가구당이 아닌 합계 기준이므로 가구 수로 나눈다.
+        if execution_mode == ExecutionMode.ACCELERATED and speed_multiplier is None:
+            speed_multiplier = resolve_auto_speed(len(households_raw))
+
         run_id = f"run_{uuid.uuid4().hex}"
+
+        start_time_str = params.get("start_time")
 
         session = E2ESession(
             run_id=run_id,
             reference_date=reference_date,
             execution_mode=execution_mode,
             speed_multiplier=speed_multiplier,
+            start_time=start_time_str,
         )
 
         # HTTP 스레드: 가구별 plan 컴파일 및 Task 래퍼 생성만 수행 (Executor는 E2E 루프에서 생성)
@@ -424,7 +499,7 @@ class E2EScheduleSessionManager:
             defn = get_unified_scenario_definition(sc_id)
 
             total_days = len(defn.days)
-            base_date = reference_date - timedelta(days=total_days - 1)
+            base_date = resolve_base_date(reference_date, total_days)
             plan = compile_schedule(defn, base_date=base_date)
 
             task = HouseholdExecutionTask(household_id=h_id, scenario_id=sc_id, plan=plan)
@@ -537,21 +612,48 @@ class E2EScheduleSessionManager:
                 raise RuntimeError("세션 활성화 상태가 PREPARING이 아닙니다.")
 
         session.activation_gate = asyncio.Event()
+        session.scheduled_start_event = asyncio.Event()
+
+        # start_time 예약 대기 지연 계산
+        delay = resolve_start_time_delay(session.start_time)
+        if delay <= 0.0:
+            session.scheduled_start_event.set()
+        else:
+            session.scheduled_task = asyncio.create_task(
+                self._wait_and_trigger_scheduled_start(session, delay),
+                name=f"e2e_schedule_{session.run_id}"
+            )
 
         try:
             for task in session.tasks.values():
+                task.stop_event = asyncio.Event()
                 task.asyncio_task = asyncio.create_task(
                     self._run_household_task(session, task),
                     name=f"e2e_{session.run_id}_{task.household_id}"
                 )
         except Exception:
+            if session.scheduled_task is not None and not session.scheduled_task.done():
+                session.scheduled_task.cancel()
             with session._lock:
                 session.overall_state = SessionStatus.FAILED
             raise
 
+    async def _wait_and_trigger_scheduled_start(self, session: E2ESession, delay: float) -> None:
+        """지정된 start_time 예약 시각까지 비동기 대기 후 scheduled_start_event 개방"""
+        try:
+            await asyncio.sleep(delay)
+            if session.scheduled_start_event is not None:
+                session.scheduled_start_event.set()
+        except asyncio.CancelledError:
+            pass
+
     def _cleanup_aborted_session_on_loop(self, session: E2ESession) -> None:
         """취소된 세션의 잔여 태스크 및 executor 정리"""
+        if session.scheduled_task is not None and not session.scheduled_task.done():
+            session.scheduled_task.cancel()
         for task in session.tasks.values():
+            if task.stop_event is not None:
+                task.stop_event.set()
             if task.executor is not None:
                 task.executor.request_stop()
             if task.asyncio_task is not None and not task.asyncio_task.done():
@@ -584,6 +686,7 @@ class E2EScheduleSessionManager:
             run_id=session.run_id,
             config=executor_config,
             day_completed_callback=make_day_cb(task),
+            broadcast_callback=self._broadcast_callback,
         )
 
         # Gate 대기
@@ -602,6 +705,44 @@ class E2EScheduleSessionManager:
                 task.state = HouseholdTaskStatus.STOPPED
             self._sync_session_state(session)
             return
+
+        # 예약 시각 대기 (start_time이 미래 시각으로 지정된 경우)
+        if session.scheduled_start_event is not None and not session.scheduled_start_event.is_set():
+            start_waiter = asyncio.create_task(session.scheduled_start_event.wait())
+            stop_waiter = asyncio.create_task(task.stop_event.wait()) if task.stop_event else None
+            wait_tasks = [start_waiter]
+            if stop_waiter is not None:
+                wait_tasks.append(stop_waiter)
+
+            try:
+                done, pending = await asyncio.wait(wait_tasks, return_when=asyncio.FIRST_COMPLETED)
+                for p in pending:
+                    p.cancel()
+            except asyncio.CancelledError:
+                for w in wait_tasks:
+                    w.cancel()
+                with task._lock:
+                    task.state = HouseholdTaskStatus.STOPPED
+                self._sync_session_state(session)
+                raise
+
+            should_stop = False
+            with task._lock:
+                if task.state in (HouseholdTaskStatus.STOPPING, HouseholdTaskStatus.STOPPED):
+                    task.state = HouseholdTaskStatus.STOPPED
+                    should_stop = True
+
+            if should_stop:
+                self._sync_session_state(session)
+                return
+
+            with self._session_lock:
+                is_not_current = (self._current_session is not session)
+            if is_not_current:
+                with task._lock:
+                    task.state = HouseholdTaskStatus.STOPPED
+                self._sync_session_state(session)
+                return
 
         try:
             client_ctx = self._create_client_context(task.household_id)
@@ -653,6 +794,13 @@ class E2EScheduleSessionManager:
         with session._lock:
             session.overall_state = SessionStatus(new_status_str)
 
+        # 모든 가구가 terminal 상태(COMPLETED, STOPPED, FAILED)에 도달한 경우,
+        # 미래 예약 시각 대기 타이머가 남아 있다면 즉시 취소하여 리소스 누수 방지
+        terminal_statuses = (HouseholdTaskStatus.COMPLETED, HouseholdTaskStatus.STOPPED, HouseholdTaskStatus.FAILED)
+        if all(s in terminal_statuses for s in statuses):
+            if session.scheduled_task is not None and not session.scheduled_task.done():
+                session.scheduled_task.cancel()
+
     async def _build_household_snapshot_on_loop(self, session: E2ESession, household_id: str) -> dict:
         """이벤트 루프 스레드 내에서 가구 스냅샷 생성"""
         task = session.tasks.get(household_id)
@@ -666,6 +814,7 @@ class E2EScheduleSessionManager:
         published_samples = 0
         omitted_samples = 0
         current_activity_date = session.reference_date.isoformat()
+        day_results_raw: list[Any] = []
 
         if task.executor is not None:
             snap = task.executor.snapshot()
@@ -680,13 +829,30 @@ class E2EScheduleSessionManager:
                 if 0 <= day_index < len(task.plan.day_plans):
                     current_activity_date = task.plan.day_plans[day_index].calendar_date.isoformat()
 
+            day_results_raw = list(snap.completed_days)
+        elif task.overall_result is not None and getattr(task.overall_result, "day_results", None):
+            day_results_raw = list(task.overall_result.day_results)
+
+        day_results = [
+            d.to_dict() if hasattr(d, "to_dict") else {
+                "scenario": d.scenario,
+                "household_id": d.household_id,
+                "run_id": d.run_id,
+                "activity_date": d.activity_date,
+                "published_samples": d.published_samples,
+                "omitted_samples": d.omitted_samples,
+                "status": d.status,
+            }
+            for d in day_results_raw
+        ]
+
         total_days = len(task.plan.day_plans)
         planned_virtual_slots = task.plan.total_virtual_slots
         planned_publish_samples = task.plan.total_planned_publish_samples
 
         with task._lock:
             last_error = task.last_error
-            completed_days = task.completed_days
+            completed_days = len(day_results) if task.executor is not None else task.completed_days
 
         return {
             "run_id": session.run_id,
@@ -695,6 +861,7 @@ class E2EScheduleSessionManager:
             "scenario_id": task.scenario_id,
             "state": effective_state.value,
             "reference_date": session.reference_date.isoformat(),
+            "start_time": session.start_time,
             "current_activity_date": current_activity_date,
             "current_day": current_activity_date,
             "execution_mode": session.execution_mode.value,
@@ -710,6 +877,8 @@ class E2EScheduleSessionManager:
             "completed_days": completed_days,
             "total_days": total_days,
             "last_error": last_error,
+            "day_results": day_results,
+            "daily_results": day_results,
         }
 
     async def _build_session_snapshot_on_loop(self, session: E2ESession) -> dict:
@@ -730,6 +899,7 @@ class E2EScheduleSessionManager:
             "status": "success",
             "run_id": session.run_id,
             "reference_date": session.reference_date.isoformat(),
+            "start_time": session.start_time,
             "execution_mode": session.execution_mode.value,
             "speed_multiplier": session.speed_multiplier,
             "overall_status": overall_status,
@@ -946,10 +1116,21 @@ class E2EScheduleSessionManager:
                     task.state = HouseholdTaskStatus.STOPPING
                     if task.executor is not None:
                         task.executor.request_stop()
+                    if task.stop_event is not None:
+                        task.stop_event.set()
                     elif task.asyncio_task is not None and not task.asyncio_task.done():
                         task.asyncio_task.cancel()
                 self._sync_session_state(session)
+                non_terminal = [
+                    t for t in session.tasks.values()
+                    if get_effective_state(t) not in (HouseholdTaskStatus.COMPLETED, HouseholdTaskStatus.FAILED, HouseholdTaskStatus.STOPPED, HouseholdTaskStatus.STOPPING)
+                ]
+                if not non_terminal:
+                    if session.scheduled_task is not None and not session.scheduled_task.done():
+                        session.scheduled_task.cancel()
             elif envelope.action == "STOP_SESSION":
+                if session.scheduled_task is not None and not session.scheduled_task.done():
+                    session.scheduled_task.cancel()
                 for t in session.tasks.values():
                     eff = get_effective_state(t)
                     if eff not in (HouseholdTaskStatus.COMPLETED, HouseholdTaskStatus.FAILED, HouseholdTaskStatus.STOPPED):
@@ -957,6 +1138,8 @@ class E2EScheduleSessionManager:
                             t.state = HouseholdTaskStatus.STOPPING
                             if t.executor is not None:
                                 t.executor.request_stop()
+                            if t.stop_event is not None:
+                                t.stop_event.set()
                             elif t.asyncio_task is not None and not t.asyncio_task.done():
                                 t.asyncio_task.cancel()
                 self._sync_session_state(session)
@@ -1026,7 +1209,11 @@ class E2EScheduleSessionManager:
     async def _shutdown_on_loop(self, session: E2ESession | None, deadline: float) -> None:
         """이벤트 루프 내에서 실행 중인 태스크 및 executor 정리 (2단계 bounded asyncio.wait, wait_for(gather) 미사용)"""
         if session is not None:
+            if session.scheduled_task is not None and not session.scheduled_task.done():
+                session.scheduled_task.cancel()
             for task in session.tasks.values():
+                if task.stop_event is not None:
+                    task.stop_event.set()
                 if task.executor is not None:
                     task.executor.request_stop()
                 if task.asyncio_task is not None and not task.asyncio_task.done():

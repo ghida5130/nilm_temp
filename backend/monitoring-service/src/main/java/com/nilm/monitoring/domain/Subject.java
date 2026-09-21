@@ -1,6 +1,10 @@
 package com.nilm.monitoring.domain;
 
 import com.nilm.monitoring.config.enums.RiskLevel;
+import com.nilm.monitoring.risk.AssessmentStatus;
+import com.nilm.monitoring.risk.RiskAssessment;
+import com.nilm.monitoring.risk.RiskAssessor;
+import com.nilm.monitoring.risk.RiskPolicy;
 import jakarta.persistence.*;
 import lombok.Getter;
 
@@ -8,6 +12,8 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Objects;
+import java.util.UUID;
 
 @Entity
 @Getter
@@ -63,12 +69,73 @@ public class Subject {
     @Column(name = "state_version", nullable = false)
     private long stateVersion = 1;
 
+    /**
+     * 화면과 스트림에 나가는 유효 등급.
+     * 자체 평가 등급과 이벤트 등급 중 높은 쪽이며, 직접 쓰지 않고
+     * {@link #refreshEffectiveRisk(OffsetDateTime)}가 두 슬롯에서 다시 계산한다.
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "current_risk_level", nullable = false)
     private RiskLevel currentRiskLevel = RiskLevel.NORMAL;
 
+    /** 유효 등급을 만든 쪽의 점수. */
     @Column(name = "current_risk_score", nullable = false)
     private int currentRiskScore;
+
+    /** 모니터링이 스스로 계산한 등급. 평가 불가일 때는 직전 값을 그대로 둔다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "assessed_risk_level")
+    private RiskLevel assessedRiskLevel;
+
+    @Column(name = "assessed_risk_score")
+    private Integer assessedRiskScore;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "assessment_status")
+    private AssessmentStatus assessmentStatus;
+
+    @Column(name = "assessment_confidence")
+    private Double assessmentConfidence;
+
+    @Column(name = "assessed_at")
+    private OffsetDateTime assessedAt;
+
+    /** 마지막으로 VALID였던 평가 시각. 평가 불가가 이어져도 지우지 않는다. */
+    @Column(name = "last_valid_assessed_at")
+    private OffsetDateTime lastValidAssessedAt;
+
+    @Column(name = "risk_level_since")
+    private OffsetDateTime riskLevelSince;
+
+    /** 히스테리시스 후보 등급. 유지시간을 채워야 실제로 움직인다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pending_risk_level")
+    private RiskLevel pendingRiskLevel;
+
+    @Column(name = "pending_since")
+    private OffsetDateTime pendingSince;
+
+    /** 분석 서비스 이벤트가 세운 등급. 자체 평가가 덮어쓰지 못하는 별도 슬롯이다. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "event_risk_level")
+    private RiskLevel eventRiskLevel;
+
+    @Column(name = "event_risk_score")
+    private Integer eventRiskScore;
+
+    @Column(name = "event_risk_event_id")
+    private UUID eventRiskEventId;
+
+    /** 이 가전의 ON→OFF 전환을 보면 슬롯을 해제한다. */
+    @Column(name = "event_risk_appliance", length = 50)
+    private String eventRiskAppliance;
+
+    @Column(name = "event_risk_set_at")
+    private OffsetDateTime eventRiskSetAt;
+
+    /** 같은 등급이 이어질 때 알림을 다시 보낼지 판정하는 기준. */
+    @Column(name = "last_alert_at")
+    private OffsetDateTime lastAlertAt;
 
     @Column(name = "last_activity_at")
     private OffsetDateTime lastActivityAt;
@@ -124,17 +191,216 @@ public class Subject {
     }
 
     /**
-     * 분석 이벤트의 위험 판정 결과만 반영한다.
-     * 마지막 활동(가전 ON-OFF 전환)은 별도 경로에서 갱신하므로 여기서 건드리지 않는다.
+     * 분석 서비스 이벤트가 정한 등급을 이벤트 슬롯에 세운다.
+     *
+     * <p>자체 평가 슬롯은 건드리지 않는다. 설계 11.4절대로 두 판단을 따로 보관하고
+     * 화면에는 둘 중 높은 값만 내보내, 타이머 평가가 낮은 점수를 내도
+     * 이벤트 등급이 지워지지 않게 한다.
+     *
+     * @param representativeScore 이벤트 계약에 score가 없으므로 등급의 대표값을 쓴다
+     * @return 유효 등급이 실제로 바뀌었으면 true
      */
-    public void applyRiskAssessment(
-            RiskLevel riskLevel,
-            int riskScore,
-            OffsetDateTime updatedAt
+    public boolean applyEventRisk(
+            RiskLevel level,
+            int representativeScore,
+            UUID eventId,
+            String applianceType,
+            OffsetDateTime now
     ) {
-        this.currentRiskLevel = riskLevel;
-        this.currentRiskScore = riskScore;
-        touch(updatedAt);
+        this.eventRiskLevel = level;
+        this.eventRiskScore = representativeScore;
+        this.eventRiskEventId = eventId;
+        this.eventRiskAppliance = applianceType;
+        this.eventRiskSetAt = now;
+        return refreshEffectiveRisk(now);
+    }
+
+    /**
+     * 이벤트 등급 슬롯을 비운다.
+     *
+     * <p>해제 조건은 설계 11.4절의 세 가지다: 해당 가전의 ON→OFF 전환,
+     * 담당자의 조치 완료, 안전장치로서의 최대 유지시간 경과.
+     *
+     * @return 슬롯이 실제로 비워졌으면 true
+     */
+    public boolean clearEventRisk(OffsetDateTime now) {
+        if (eventRiskLevel == null) {
+            return false;
+        }
+        this.eventRiskLevel = null;
+        this.eventRiskScore = null;
+        this.eventRiskEventId = null;
+        this.eventRiskAppliance = null;
+        this.eventRiskSetAt = null;
+        refreshEffectiveRisk(now);
+        return true;
+    }
+
+    /**
+     * 자체 평가 결과를 반영한다.
+     *
+     * <p>VALID가 아니면 등급·점수를 건드리지 않는다. 평가 불가를 0점·정상으로 덮어쓰면
+     * 화면에서 "데이터 없음"과 "정상"을 구분할 수 없게 된다(설계 11.1절).
+     *
+     * <p>등급 전이에는 히스테리시스를 건다. 임계를 한 번 넘겼다고 바로 올리지 않고,
+     * 같은 후보가 {@code raiseHold} 동안 유지돼야 올린다. 내릴 때도 점수가
+     * {@code recoverBelow} 아래로 {@code recoverHold} 동안 유지돼야 내린다.
+     */
+    public AssessmentOutcome applyAssessment(
+            RiskAssessment assessment,
+            RiskPolicy policy,
+            OffsetDateTime now
+    ) {
+        RiskLevel before = effectiveRiskLevel();
+        AssessmentStatus previousStatus = assessmentStatus;
+        Integer previousScore = assessedRiskScore;
+
+        this.assessmentStatus = assessment.status();
+        this.assessmentConfidence = assessment.confidence();
+        this.assessedAt = now;
+
+        if (assessment.status() == AssessmentStatus.VALID && assessment.score() != null) {
+            this.lastValidAssessedAt = now;
+            // 점수는 지금 관측한 값이라 바로 갱신한다. 등급만 유지시간으로 눌러 둔다.
+            this.assessedRiskScore = assessment.score();
+            applyHysteresis(assessment.score(), policy, now);
+        }
+        // VALID가 아니면 등급·점수를 건드리지 않는다.
+        // 평가 불가를 0점·정상으로 덮어쓰면 "데이터 없음"과 "정상"을 구분할 수 없다.
+
+        RiskLevel after = effectiveRiskLevel();
+        int score = effectiveRiskScore();
+        boolean effectiveChanged = after != currentRiskLevel || score != currentRiskScore;
+        this.currentRiskLevel = after;
+        this.currentRiskScore = score;
+
+        // 타이머가 매분 도는데 결과가 같을 때마다 상태 버전을 올리면
+        // 담당자 화면이 아무 일도 없는 갱신으로 가득 찬다.
+        boolean changed = effectiveChanged
+                || previousStatus != assessment.status()
+                || !Objects.equals(previousScore, assessedRiskScore);
+        if (changed) {
+            touch(now);
+        }
+        return new AssessmentOutcome(before != after, changed, before, after);
+    }
+
+    /**
+     * 등급 전이를 유지시간으로 눌러 둔다.
+     * 임계를 한 번 스쳤다고 올리지 않고, 내릴 때도 복귀 임계 아래로 충분히 머물러야 내린다.
+     */
+    private void applyHysteresis(int score, RiskPolicy policy, OffsetDateTime now) {
+        RiskLevel current = assessedRiskLevel == null ? RiskLevel.NORMAL : assessedRiskLevel;
+        RiskLevel candidate = RiskAssessor.levelOf(score, policy);
+
+        if (candidate.compareTo(current) > 0) {
+            if (pendingRiskLevel != candidate) {
+                this.pendingRiskLevel = candidate;
+                this.pendingSince = now;
+            } else if (!now.isBefore(pendingSince.plus(policy.raiseHold()))) {
+                commitAssessedLevel(candidate, now);
+            }
+            return;
+        }
+        if (candidate.compareTo(current) < 0) {
+            if (score >= policy.recoverBelow()) {
+                // 복귀 임계까지 내려오지 않았다. 후보를 세우지 않는다.
+                clearPending();
+            } else if (pendingRiskLevel != candidate) {
+                this.pendingRiskLevel = candidate;
+                this.pendingSince = now;
+            } else if (!now.isBefore(pendingSince.plus(policy.recoverHold()))) {
+                commitAssessedLevel(candidate, now);
+            }
+            return;
+        }
+        clearPending();
+    }
+
+    /** 알림을 실제로 만든 시각. 같은 등급의 재발송 간격을 여기서 잰다. */
+    public void markAlerted(OffsetDateTime now) {
+        this.lastAlertAt = now;
+    }
+
+    /** 화면·스트림에 내보내는 유효 등급 = max(자체 평가, 이벤트). */
+    public RiskLevel effectiveRiskLevel() {
+        if (assessedRiskLevel == null) {
+            return eventRiskLevel == null ? RiskLevel.NORMAL : eventRiskLevel;
+        }
+        if (eventRiskLevel == null) {
+            return assessedRiskLevel;
+        }
+        return assessedRiskLevel.compareTo(eventRiskLevel) >= 0 ? assessedRiskLevel : eventRiskLevel;
+    }
+
+    /** 유효 등급을 만든 쪽. 담당자 화면이 "왜 이 등급인가"를 구분하는 데 쓴다. */
+    public String riskSource() {
+        RiskLevel effective = effectiveRiskLevel();
+        if (effective == RiskLevel.NORMAL && assessedRiskLevel == null && eventRiskLevel == null) {
+            return "NONE";
+        }
+        if (eventRiskLevel != null && eventRiskLevel == effective) {
+            // 두 슬롯이 같은 등급이면 즉시 알림 경로를 출처로 본다.
+            return "EVENT";
+        }
+        return assessedRiskLevel == null ? "NONE" : "ASSESSMENT";
+    }
+
+    /**
+     * 두 슬롯에서 유효 등급과 점수를 다시 계산한다.
+     *
+     * @return 등급 또는 점수가 실제로 바뀌었으면 true
+     */
+    public boolean refreshEffectiveRisk(OffsetDateTime now) {
+        RiskLevel level = effectiveRiskLevel();
+        int score = effectiveRiskScore();
+
+        if (level == currentRiskLevel && score == currentRiskScore) {
+            return false;
+        }
+        this.currentRiskLevel = level;
+        this.currentRiskScore = score;
+        touch(now);
+        return true;
+    }
+
+    /** 유효 등급을 만든 쪽의 점수. */
+    private int effectiveRiskScore() {
+        if ("EVENT".equals(riskSource())) {
+            return eventRiskScore == null ? 0 : eventRiskScore;
+        }
+        return assessedRiskScore == null ? 0 : assessedRiskScore;
+    }
+
+    private void commitAssessedLevel(RiskLevel level, OffsetDateTime now) {
+        this.assessedRiskLevel = level;
+        this.riskLevelSince = now;
+        clearPending();
+    }
+
+    private void clearPending() {
+        this.pendingRiskLevel = null;
+        this.pendingSince = null;
+    }
+
+    /**
+     * 평가 반영 결과.
+     *
+     * @param levelChanged 유효 등급이 실제로 움직였는지
+     * @param changed 등급·점수·평가 상태 중 하나라도 달라졌는지.
+     *                같은 결과가 반복되는 동안에는 화면을 갱신하지 않는 기준이다
+     */
+    public record AssessmentOutcome(
+            boolean levelChanged,
+            boolean changed,
+            RiskLevel before,
+            RiskLevel after
+    ) {
+
+        /** 등급이 올라갔는지. 알림은 상승에만 건다. */
+        public boolean raised() {
+            return after.compareTo(before) > 0;
+        }
     }
 
     /**

@@ -93,6 +93,29 @@ docker compose logs -f mqtt-kafka-bridge
 docker compose logs -f realtime-analysis-service
 ```
 
+실시간 분석 Consumer는 기본적으로 1개가 실행된다. 고정 컨테이너 이름과 호스트 포트를
+사용하지 않으므로 동일한 구성에서 replica 수만 바꿔 비교할 수 있다. 로컬 scale 테스트에서는
+`.env`의 `ANALYSIS_KAFKA_GROUP_INSTANCE_ID`와
+`ANALYSIS_KAFKA_OUTING_GROUP_INSTANCE_ID`를 비워 static membership을 끈다.
+
+```powershell
+docker compose up -d --build --scale realtime-analysis-service=1
+docker compose up -d --build --scale realtime-analysis-service=2
+docker compose up -d --build --scale realtime-analysis-service=4
+```
+
+반복 테스트에서 replica 수를 환경변수로 관리하려면 scale override를 사용한다. 이 override는
+static membership을 강제로 비활성화하고 `aggregation-service`를 1개로 유지한다.
+
+```powershell
+$env:ANALYSIS_REPLICAS = '2'
+docker compose -f compose.yaml -f compose.scale.yaml up -d --build
+docker compose -f compose.yaml -f compose.scale.yaml ps
+```
+
+분석 서비스의 HTTP 8000 포트는 Compose 네트워크에만 노출된다. 개별 replica 상태는
+`docker compose ps`와 `docker compose logs`로 확인한다.
+
 프론트는 기본적으로 `frontend` 폴더에서 `npm ci`, `npm run dev`로 실행한다. Vite의 `/api` 프록시는 `localhost:8080`을 사용한다.
 
 프론트 컨테이너 또는 Kafka UI가 필요할 때만 해당 프로필을 활성화한다.

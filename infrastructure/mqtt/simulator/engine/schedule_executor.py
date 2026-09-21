@@ -18,9 +18,12 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from enum import Enum
+import logging
 import math
 import time
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from .schedule import CompiledExecutionPlan, KST
 from .schedule_runtime import (
@@ -108,6 +111,17 @@ class DayExecutionResult:
     omitted_samples: int          # 계획된 OMITTED 확정 수
     status: str = "COMPLETED"     # "COMPLETED" 고정
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scenario": self.scenario,
+            "household_id": self.household_id,
+            "run_id": self.run_id,
+            "activity_date": self.activity_date,
+            "published_samples": self.published_samples,
+            "omitted_samples": self.omitted_samples,
+            "status": self.status,
+        }
+
 
 DayCompletedCallback = Callable[[DayExecutionResult], Awaitable[None]]
 
@@ -168,6 +182,8 @@ class DeterministicScheduleExecutor:
         day_completed_callback: DayCompletedCallback | None = None,
         sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
         time_func: Callable[[], float] = time.monotonic,
+        broadcast_callback: Callable[[dict[str, Any]], Any] | None = None,
+        max_broadcast_rate_hz: float = 20.0,
     ):
         if not isinstance(plan, CompiledExecutionPlan):
             raise TypeError(f"plan은 CompiledExecutionPlan 인스턴스여야 합니다: {type(plan).__name__}")
@@ -182,6 +198,12 @@ class DeterministicScheduleExecutor:
         if day_completed_callback is not None and not callable(day_completed_callback):
             raise TypeError("day_completed_callback은 callable이어야 합니다.")
 
+        if broadcast_callback is not None and not callable(broadcast_callback):
+            raise TypeError("broadcast_callback은 callable이어야 합니다.")
+
+        if not isinstance(max_broadcast_rate_hz, (int, float)) or max_broadcast_rate_hz <= 0:
+            raise ValueError(f"max_broadcast_rate_hz는 양수여야 합니다: {max_broadcast_rate_hz}")
+
         self._plan = plan
         self._household_id = household_id
         self._run_id = run_id
@@ -189,6 +211,10 @@ class DeterministicScheduleExecutor:
         self._day_completed_callback = day_completed_callback
         self._sleeper = sleeper
         self._time_func = time_func
+        self._broadcast_callback = broadcast_callback
+        self._max_broadcast_rate_hz = float(max_broadcast_rate_hz)
+        self._last_broadcast_time: float | None = None
+        self._broadcast_count: int = 0
 
         # 가구별 격리 실행기
         self._runner = DeterministicScheduleRunner(plan, household_id, seed=seed)
@@ -242,6 +268,78 @@ class DeterministicScheduleExecutor:
     @property
     def plan(self) -> CompiledExecutionPlan:
         return self._plan
+
+    @property
+    def broadcast_count(self) -> int:
+        return self._broadcast_count
+
+    def _should_broadcast(self, now: float) -> bool:
+        """화면 전송 여부 판정 (BURST 제외, max_broadcast_rate_hz 상한 적용)"""
+        if self._broadcast_callback is None:
+            return False
+        if self._config.mode == ExecutionMode.BURST:
+            return False
+        if self._last_broadcast_time is None:
+            self._last_broadcast_time = now
+            return True
+        min_interval = 1.0 / self._max_broadcast_rate_hz
+        if (now - self._last_broadcast_time) >= min_interval:
+            self._last_broadcast_time = now
+            return True
+        return False
+
+    def _build_broadcast_payload(self, tick: ScheduledTick) -> dict[str, Any]:
+        """기존 파형 뷰어가 요구하는 필드에 맞추어 실제 물리 계측치로부터 페이로드 생성"""
+        is_pub = tick.is_publish_candidate
+        active_set = set(tick.active_appliances) if is_pub else set()
+        devices = {
+            app: {
+                "state": "ON" if app in active_set else "OFF",
+                "enabled": app in active_set,
+                "manualHold": False,
+            }
+            for app in ("kettle", "induction", "iron", "microwave", "hair_dryer", "vacuum_cleaner")
+        }
+        return {
+            "house": self._household_id,
+            "scenario": self._plan.scenario_id,
+            "status": self._status.value.lower(),
+            "simTimeKst": tick.measured_at.strftime("%H:%M:%S"),
+            "simDateKst": tick.measured_at.strftime("%Y-%m-%d"),
+            "simDateTimeKst": tick.measured_at.strftime("%Y-%m-%d %H:%M:%S KST"),
+            "totalP": tick.active_power if is_pub else None,
+            "totalQ": tick.reactive_power if is_pub else None,
+            "apparentS": tick.apparent_power if is_pub else None,
+            "pf": tick.power_factor if is_pub else None,
+            "voltage": tick.voltage if is_pub else None,
+            "currentA": tick.current if is_pub else None,
+            "activeNames": list(tick.active_appliances) if is_pub else [],
+            "devices": devices,
+            "measurementAvailable": is_pub,
+            "sensorFault": False,
+            "sec": tick.cycle,
+            "source": "E2E",
+            "run_id": self._run_id,
+        }
+
+    def _maybe_broadcast(self, tick: ScheduledTick) -> None:
+        """화면 전송 콜백 호출 (예외 발생 시 삼키고 경고 로그만 기록)"""
+        if self._broadcast_callback is None:
+            return
+        now = self._time_func()
+        if not self._should_broadcast(now):
+            return
+        try:
+            payload = self._build_broadcast_payload(tick)
+            self._broadcast_callback(payload)
+            self._broadcast_count += 1
+        except Exception as err:
+            logger.warning(
+                "E2E broadcast callback error for household %s (run_id: %s): %s",
+                self._household_id,
+                self._run_id,
+                err,
+            )
 
     def _reset_pacing_segment(self) -> None:
         """페이싱 세그먼트 앵커 시각 및 슬롯 카운터를 현재 시점으로 재설정"""
@@ -648,6 +746,9 @@ class DeterministicScheduleExecutor:
 
                 # 3) pending_tick 제거
                 self._pending_tick = None
+
+                # [화면 전송 부가 작업 (발행 및 카운터 확정 후 수행, 예외 격리)]
+                self._maybe_broadcast(tick)
 
                 # [날짜 경계 검사]
                 current_day_plan = self._plan.day_plans[self._current_day_index]

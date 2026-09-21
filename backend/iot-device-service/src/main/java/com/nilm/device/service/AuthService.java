@@ -3,8 +3,11 @@ package com.nilm.device.service;
 import com.nilm.device.api.dto.AuthDtos;
 import com.nilm.device.common.DuplicateResourceException;
 import com.nilm.device.common.NotFoundException;
+import com.nilm.device.domain.ManagerRegistrationOutbox;
 import com.nilm.device.domain.UserProfile;
+import com.nilm.device.repository.ManagerRegistrationOutboxRepository;
 import com.nilm.device.repository.UserProfileRepository;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,20 +27,26 @@ public class AuthService {
 
     private final KeycloakAdminClient keycloak;
     private final UserProfileRepository profileRepository;
+    private final ManagerRegistrationOutboxRepository outboxRepository;
     private final MembershipService membershipService;
 
     public AuthService(KeycloakAdminClient keycloak,
                        UserProfileRepository profileRepository,
+                       ManagerRegistrationOutboxRepository outboxRepository,
                        MembershipService membershipService) {
         this.keycloak = keycloak;
         this.profileRepository = profileRepository;
+        this.outboxRepository = outboxRepository;
         this.membershipService = membershipService;
     }
 
     /**
      * 가입: Keycloak 계정 생성 후 서비스 프로필 저장.
      * 프로필 저장이 실패하면 생성된 Keycloak 계정을 되돌린다(보상).
-     * 기관 소속을 입력한 가입은 PENDING으로 시작해 관리자 승인이 필요하다.
+     *
+     * <p>기관 소속을 입력한 가입은 복지사로 보고 담당자 등록 이벤트를 같은 트랜잭션에
+     * 적어둔다. 그래야 monitoring 쪽 담당자 명단에 올라 대상자를 등록할 수 있다.
+     * 발행은 릴레이가 맡으므로 Kafka가 잠시 죽어 있어도 가입 자체는 성공한다.
      */
     @Transactional
     public AuthDtos.ProfileResponse signup(AuthDtos.SignupRequest request) {
@@ -49,12 +58,22 @@ public class AuthService {
             UserProfile profile = profileRepository.save(new UserProfile(
                     userId, request.email(), request.displayName(),
                     request.phone(), request.organization()));
+            enqueueManagerRegistration(profile);
             return AuthDtos.ProfileResponse.from(profile);
         } catch (RuntimeException e) {
             log.error("프로필 저장 실패 — Keycloak 계정 보상 삭제: {}", userId, e);
             keycloak.deleteUser(userId);
             throw e;
         }
+    }
+
+    /** 기관 소속이 없는 가입(본인·보호자)은 담당자가 아니므로 내보낼 것이 없다. */
+    private void enqueueManagerRegistration(UserProfile profile) {
+        String organization = profile.getOrganization();
+        if (organization == null || organization.isBlank()) {
+            return;
+        }
+        outboxRepository.save(new ManagerRegistrationOutbox(profile, OffsetDateTime.now()));
     }
 
     public AuthDtos.TokenResponse login(AuthDtos.LoginRequest request) {

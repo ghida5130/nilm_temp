@@ -111,7 +111,7 @@ pipeline {
                 sh '''
                     RUN_COMPOSE_TESTS=1 python3 -m unittest discover -s infrastructure/scripts/tests -v
                     for target in local ec2-a ec2-b; do
-                        docker compose --env-file infrastructure/$target/.env.example -f infrastructure/$target/compose.yaml config --quiet
+                        docker compose --env-file infrastructure/$target/.env.example -f infrastructure/$target/compose.yaml --profile '*' config --quiet
                     done
                 '''
                 script {

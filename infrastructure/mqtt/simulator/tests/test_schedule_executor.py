@@ -1443,6 +1443,236 @@ class TestScheduleExecutor(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exec_inst.status, ExecutionStatus.FAILED)
         self.assertIn("KeyError", exec_inst.snapshot().last_error)
 
+from engine.unified_catalog import get_unified_scenario_definition
+
+
+class TestDeterministicScheduleExecutorBroadcast(unittest.IsolatedAsyncioTestCase):
+    """결정적 시나리오 화면 전송 콜백, 20Hz 상한, BURST 제외, 결측 렌더링 계약 단위 테스트"""
+
+    def setUp(self):
+        self.ref_date = date(2026, 9, 17)
+        self.normal_defn = get_unified_scenario_definition("ACTIVITY_NORMAL")
+        self.normal_plan = compile_schedule(self.normal_defn, self.ref_date)
+        self.insufficient_defn = get_unified_scenario_definition("ACTIVITY_INSUFFICIENT")
+        self.insufficient_plan = compile_schedule(self.insufficient_defn, self.ref_date)
+        self.run_id = "run-broadcast-test-1234"
+        self.household_id = "H001"
+        self.client = CountingPublishClient()
+
+    async def test_broadcast_callback_none_regression(self):
+        """a. broadcast_callback이 None일 때 기존 동작과 100% 동일하게 완주 및 불변식 통과"""
+        executor = DeterministicScheduleExecutor(
+            self.normal_plan,
+            self.household_id,
+            self.run_id,
+            config=ExecutorConfig(mode=ExecutionMode.BURST),
+            broadcast_callback=None,
+        )
+        res = await executor.run(self.client)
+        self.assertIsNotNone(res)
+        self.assertEqual(res.status, "COMPLETED")
+        self.assertEqual(res.published_samples, self.normal_plan.total_planned_publish_samples)
+        self.assertEqual(executor.broadcast_count, 0)
+
+    async def test_broadcast_callback_burst_zero_calls(self):
+        """b. BURST 모드 실행 시 broadcast_callback 호출 횟수가 엄격히 0회이며 published_samples는 전량 보존"""
+        called_payloads = []
+
+        def cb(payload):
+            called_payloads.append(payload)
+
+        executor = DeterministicScheduleExecutor(
+            self.normal_plan,
+            self.household_id,
+            self.run_id,
+            config=ExecutorConfig(mode=ExecutionMode.BURST),
+            broadcast_callback=cb,
+        )
+        res = await executor.run(self.client)
+        self.assertIsNotNone(res)
+        self.assertEqual(len(called_payloads), 0)
+        self.assertEqual(executor.broadcast_count, 0)
+        self.assertEqual(res.published_samples, self.normal_plan.total_planned_publish_samples)
+        self.assertEqual(res.omitted_samples, self.normal_plan.total_planned_omitted_samples)
+
+    async def test_broadcast_callback_payload_fields_and_source(self):
+        """c. REALTIME/ACCELERATED 실행 시 콜백이 호출되고, 필수 17개 필드와 source='E2E', sensorFault=False, run_id 포함"""
+        called_payloads = []
+
+        def cb(payload):
+            called_payloads.append(payload)
+
+        simulated_time = 0.0
+
+        def mock_time():
+            return simulated_time
+
+        async def mock_sleep(d):
+            nonlocal simulated_time
+            simulated_time += 1.0
+
+        executor = DeterministicScheduleExecutor(
+            self.normal_plan,
+            self.household_id,
+            self.run_id,
+            config=ExecutorConfig(mode=ExecutionMode.ACCELERATED, speed_multiplier=1.0),
+            broadcast_callback=cb,
+            sleeper=mock_sleep,
+            time_func=mock_time,
+        )
+
+        orig_step = executor._runner.step
+        step_count = 0
+
+        def limited_step():
+            nonlocal step_count
+            step_count += 1
+            tick = orig_step()
+            if step_count >= 5:
+                executor.request_stop()
+            return tick
+
+        executor._runner.step = limited_step
+
+        await executor.run(self.client)
+        self.assertGreaterEqual(len(called_payloads), 1)
+
+        first = called_payloads[0]
+        required_fields = [
+            "house", "scenario", "status", "simTimeKst", "simDateKst", "simDateTimeKst",
+            "totalP", "totalQ", "apparentS", "pf", "voltage", "currentA",
+            "activeNames", "devices", "measurementAvailable", "sensorFault", "sec",
+            "source", "run_id",
+        ]
+        for field in required_fields:
+            self.assertIn(field, first, f"필수 필드 누락: {field}")
+
+        self.assertEqual(first["source"], "E2E")
+        self.assertEqual(first["run_id"], self.run_id)
+        self.assertEqual(first["house"], self.household_id)
+        self.assertEqual(first["scenario"], "ACTIVITY_NORMAL")
+        self.assertEqual(first["sensorFault"], False)
+        self.assertEqual(first["measurementAvailable"], True)
+        self.assertIsInstance(first["devices"], dict)
+        self.assertEqual(len(first["devices"]), 6)
+
+    async def test_broadcast_callback_rate_limit_and_counter_isolation(self):
+        """d. 고빈도 틱에서 콜백 호출 수는 상한(20Hz)으로 제한되지만 published_samples와 omitted_samples는 계획값과 100% 일치"""
+        called_count = 0
+
+        def cb(payload):
+            nonlocal called_count
+            called_count += 1
+
+        current_time = 0.0
+
+        def mock_time():
+            nonlocal current_time
+            current_time += 0.001
+            return current_time
+
+        async def instant_sleep(d):
+            pass
+
+        executor = DeterministicScheduleExecutor(
+            self.normal_plan,
+            self.household_id,
+            self.run_id,
+            config=ExecutorConfig(mode=ExecutionMode.ACCELERATED, speed_multiplier=1000.0),
+            broadcast_callback=cb,
+            max_broadcast_rate_hz=20.0,
+            sleeper=instant_sleep,
+            time_func=mock_time,
+        )
+
+        res = await executor.run(self.client)
+        self.assertIsNotNone(res)
+        self.assertLess(called_count, 5000)
+        self.assertGreater(called_count, 1000)
+        self.assertEqual(res.published_samples, self.normal_plan.total_planned_publish_samples)
+        self.assertEqual(res.omitted_samples, self.normal_plan.total_planned_omitted_samples)
+        self.assertEqual(res.total_virtual_slots, self.normal_plan.total_virtual_slots)
+
+    async def test_broadcast_callback_exception_isolation(self):
+        """e. 콜백이 예외를 던져도 실행이 중단되지 않고 완주하며 발행 수가 계획과 일치"""
+        def failing_cb(payload):
+            raise RuntimeError("Broadcast queue broken or network down")
+
+        async def instant_sleep(d):
+            pass
+
+        executor = DeterministicScheduleExecutor(
+            self.normal_plan,
+            self.household_id,
+            self.run_id,
+            config=ExecutorConfig(mode=ExecutionMode.ACCELERATED, speed_multiplier=1000.0),
+            broadcast_callback=failing_cb,
+            sleeper=instant_sleep,
+        )
+
+        res = await executor.run(self.client)
+        self.assertIsNotNone(res)
+        self.assertEqual(res.status, "COMPLETED")
+        self.assertEqual(res.published_samples, self.normal_plan.total_planned_publish_samples)
+        self.assertEqual(res.omitted_samples, self.normal_plan.total_planned_omitted_samples)
+
+    async def test_insufficient_omitted_slots_payload_contract(self):
+        """[1]-Python: 계획 결측(ACTIVITY_INSUFFICIENT) 실행 시 결측 구간 콜백 페이로드 및 카운터 분리 검증"""
+        captured_payloads = []
+
+        def cb(payload):
+            captured_payloads.append(payload)
+
+        current_time = 0.0
+
+        def advance_time():
+            nonlocal current_time
+            current_time += 0.1
+            return current_time
+
+        async def instant_sleep(d):
+            pass
+
+        executor = DeterministicScheduleExecutor(
+            self.insufficient_plan,
+            self.household_id,
+            self.run_id,
+            config=ExecutorConfig(mode=ExecutionMode.ACCELERATED, speed_multiplier=1000.0),
+            broadcast_callback=cb,
+            max_broadcast_rate_hz=20.0,
+            sleeper=instant_sleep,
+            time_func=advance_time,
+        )
+
+        res = await executor.run(self.client)
+        self.assertIsNotNone(res)
+        self.assertEqual(res.status, "COMPLETED")
+        self.assertEqual(res.published_samples, self.insufficient_plan.total_planned_publish_samples)
+        self.assertEqual(res.omitted_samples, self.insufficient_plan.total_planned_omitted_samples)
+
+        omitted_payloads = [p for p in captured_payloads if p["measurementAvailable"] is False]
+        self.assertGreater(len(omitted_payloads), 0, "결측 슬롯에 대한 브로드캐스트 페이로드가 수집되어야 합니다.")
+
+        for op in omitted_payloads:
+            self.assertFalse(op["measurementAvailable"])
+            self.assertFalse(op["sensorFault"], "sensorFault는 명시적으로 False여야 합니다.")
+            self.assertIsNone(op["totalP"])
+            self.assertIsNone(op["totalQ"])
+            self.assertIsNone(op["apparentS"])
+            self.assertIsNone(op["pf"])
+            self.assertIsNone(op["voltage"])
+            self.assertIsNone(op["currentA"])
+            self.assertEqual(op["activeNames"], [])
+            self.assertEqual(op["source"], "E2E")
+            self.assertEqual(op["run_id"], self.run_id)
+
+        published_payloads = [p for p in captured_payloads if p["measurementAvailable"] is True]
+        self.assertGreater(len(published_payloads), 0, "정상 슬롯에 대한 브로드캐스트 페이로드가 수집되어야 합니다.")
+        first_pub = published_payloads[0]
+        self.assertTrue(first_pub["measurementAvailable"])
+        self.assertFalse(first_pub["sensorFault"])
+        self.assertIsInstance(first_pub["totalP"], (int, float))
+
 
 if __name__ == "__main__":
     unittest.main()

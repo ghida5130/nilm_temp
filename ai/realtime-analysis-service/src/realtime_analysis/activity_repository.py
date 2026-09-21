@@ -6,14 +6,17 @@ from decimal import Decimal
 from typing import AbstractSet, Protocol
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from realtime_analysis.models import (
+    AnalysisProcessingReceipt,
+    AnalysisReceiptLakeOutbox,
     ApplianceUsageSession,
     HouseholdActivityDaily,
     HouseholdObservationDaily,
 )
+from realtime_analysis.processing_receipt import ProcessingReceipt
 from realtime_analysis.schemas import (
     ApplianceState,
     ApplianceStateTransition,
@@ -43,7 +46,10 @@ class ApplianceActivityRepository(Protocol):
         states: Sequence[ApplianceState],
         transitions: Sequence[ApplianceStateTransition],
         active_appliance_types: AbstractSet[str],
+        processing_receipt: ProcessingReceipt | None = None,
     ) -> None: ...
+
+    def record_processing_outcome(self, receipt: ProcessingReceipt) -> None: ...
 
     def close_open_sessions(
         self,
@@ -120,8 +126,9 @@ class SqlAlchemyApplianceActivityRepository:
         states: Sequence[ApplianceState],
         transitions: Sequence[ApplianceStateTransition],
         active_appliance_types: AbstractSet[str],
+        processing_receipt: ProcessingReceipt | None = None,
     ) -> None:
-        if not transitions and not active_appliance_types:
+        if not transitions and not active_appliance_types and processing_receipt is None:
             return
 
         state_by_appliance = {state.appliance_type: state for state in states}
@@ -129,6 +136,8 @@ class SqlAlchemyApplianceActivityRepository:
         # 이 블록 안의 INSERT/UPDATE는 모두 같은 DB 트랜잭션에 포함된다.
         # 정상 종료하면 한 번에 COMMIT하고, 하나라도 실패하면 전부 ROLLBACK한다.
         with self._session_factory.begin() as session:
+            if processing_receipt is not None and self._success_exists(session, processing_receipt):
+                return
             # OFF → ON: 일일 관측/활동 행을 준비하고 새 사용 세션을 생성한다.
             for transition in transitions:
                 if transition.transition_type == ApplianceTransitionType.TURNED_ON:
@@ -151,6 +160,123 @@ class SqlAlchemyApplianceActivityRepository:
             for transition in transitions:
                 if transition.transition_type == ApplianceTransitionType.TURNED_OFF:
                     self._finish_session(session, transition)
+
+            if processing_receipt is not None:
+                session.flush()
+                refs = self._changed_session_refs(
+                    session, household_id, observed_at
+                )
+                self._add_receipt(session, processing_receipt, refs)
+
+    def record_processing_outcome(self, receipt: ProcessingReceipt) -> None:
+        """Persist a non-success outcome and its lake outbox idempotently."""
+
+        with self._session_factory.begin() as session:
+            if receipt.outcome.value == "SUCCEEDED" and self._success_exists(session, receipt):
+                return
+            self._add_receipt(session, receipt, [])
+
+    @staticmethod
+    def _success_exists(session: Session, receipt: ProcessingReceipt) -> bool:
+        return session.scalar(
+            select(AnalysisProcessingReceipt.receipt_id).where(
+                AnalysisProcessingReceipt.message_id == receipt.message_id,
+                AnalysisProcessingReceipt.analysis_run_id == receipt.analysis_run_id,
+                AnalysisProcessingReceipt.outcome == "SUCCEEDED",
+            )
+        ) is not None
+
+    @staticmethod
+    def _changed_session_refs(
+        session: Session,
+        household_id: str,
+        observed_at: datetime,
+    ) -> list[dict[str, object]]:
+        changed = session.scalars(
+            select(ApplianceUsageSession)
+            .join(
+                HouseholdActivityDaily,
+                HouseholdActivityDaily.id == ApplianceUsageSession.activity_daily_id,
+            )
+            .join(
+                HouseholdObservationDaily,
+                HouseholdObservationDaily.id == HouseholdActivityDaily.observation_daily_id,
+            )
+            .where(
+                HouseholdObservationDaily.household_id == household_id,
+                ApplianceUsageSession.updated_at == observed_at,
+            )
+        ).all()
+        return [
+            {"session_id": str(item.id), "session_version": int(item.lake_version)}
+            for item in changed
+        ]
+
+    @staticmethod
+    def _add_receipt(
+        session: Session,
+        receipt: ProcessingReceipt,
+        session_change_refs: list[dict[str, object]],
+    ) -> None:
+        appliance_types = sorted(set(receipt.appliance_types))
+        attempt = int(
+            session.scalar(
+                select(func.coalesce(func.max(AnalysisProcessingReceipt.attempt), 0)).where(
+                    AnalysisProcessingReceipt.message_id == receipt.message_id,
+                    AnalysisProcessingReceipt.analysis_run_id == receipt.analysis_run_id,
+                )
+            )
+            or 0
+        ) + 1
+        row = AnalysisProcessingReceipt(
+            receipt_id=receipt.receipt_id,
+            message_id=receipt.message_id,
+            household_id=receipt.household_id,
+            device_id=receipt.device_id,
+            source_topic=receipt.source.topic,
+            source_partition=receipt.source.partition,
+            source_offset=receipt.source.offset,
+            measured_at=receipt.measured_at,
+            processed_at=receipt.processed_at,
+            analysis_run_id=receipt.analysis_run_id,
+            attempt=attempt,
+            model_version=receipt.model_version,
+            pipeline_version=receipt.pipeline_version,
+            state_epoch=receipt.state_epoch,
+            outcome=receipt.outcome.value,
+            appliance_types=appliance_types,
+            session_change_refs=session_change_refs,
+            error_type=receipt.error_type,
+        )
+        payload = {
+            "receipt_id": str(receipt.receipt_id),
+            "message_id": str(receipt.message_id),
+            "household_id": receipt.household_id,
+            "device_id": receipt.device_id,
+            "source_topic": receipt.source.topic,
+            "source_partition": receipt.source.partition,
+            "source_offset": receipt.source.offset,
+            "measured_at": receipt.measured_at.isoformat(),
+            "processed_at": receipt.processed_at.isoformat(),
+            "analysis_run_id": receipt.analysis_run_id,
+            "attempt": attempt,
+            "model_version": receipt.model_version,
+            "pipeline_version": receipt.pipeline_version,
+            "state_epoch": str(receipt.state_epoch),
+            "outcome": receipt.outcome.value,
+            "appliance_types": appliance_types,
+            "session_change_refs": session_change_refs,
+            "error_type": receipt.error_type,
+        }
+        session.add(row)
+        session.add(
+            AnalysisReceiptLakeOutbox(
+                receipt_id=receipt.receipt_id,
+                payload=payload,
+                changed_at=receipt.processed_at,
+                delivery_status="PENDING",
+            )
+        )
 
     def close_open_sessions(
         self,

@@ -82,6 +82,16 @@ import uuid
 from engine.scenario_catalog import (
     get_activity_scenario_definition,
 )
+from engine.schedule import (
+    ApplianceEvent,
+    DaySchedule,
+    ScenarioDefinition,
+    compile_schedule,
+)
+from engine.unified_catalog import (
+    UNIFIED_SCENARIO_IDS,
+    get_unified_scenario_definition,
+)
 from tools.verify_activity_normal_mqtt import (
     ACTIVITY_SCENARIO_IDS,
     BASE_DATE,
@@ -1712,6 +1722,416 @@ class TestGeneralActivityScenarios(unittest.IsolatedAsyncioTestCase):
             ref_date_arg = called_kwargs.get("reference_date") or (called_args[3] if len(called_args) > 3 else None)
             self.assertEqual(scenario_arg, "ACTIVITY_INSUFFICIENT")
             self.assertEqual(ref_date_arg, "2026-09-20")
+
+
+def make_two_day_scenario_definition() -> ScenarioDefinition:
+    day0 = DaySchedule(day_offset=0, events=())
+    day1 = DaySchedule(day_offset=1, events=())
+    return ScenarioDefinition(scenario_id="SYNTHETIC_TWO_DAY", days=(day0, day1))
+
+
+def make_multiday_payload(
+    run_id: str = "run_test_01",
+    relative_second: int = 0,
+    first_cycle: int = 1,
+    base_date: date = date(2026, 9, 16),
+    active_power: float = 142.5,
+    reactive_power: float = 41.2,
+    power_factor: float = 0.96,
+    current: float = 0.68,
+    voltage: float = 220.3,
+    apparent_power: float = 148.4,
+) -> dict:
+    start_dt = datetime(base_date.year, base_date.month, base_date.day, 0, 0, 0, tzinfo=KST)
+    dt = start_dt + timedelta(seconds=relative_second)
+    measured_at = dt.isoformat()
+    absolute_cycle = first_cycle + relative_second
+    uuid5_name = f"SCHEDULE_PUBLISHER_V1::{run_id}::{TARGET_HOUSEHOLD}::{absolute_cycle}::{measured_at}"
+    msg_id = str(uuid.uuid5(SCHEDULE_PUBLISHER_NAMESPACE, uuid5_name))
+    return {
+        "message_id": msg_id,
+        "household_id": TARGET_HOUSEHOLD,
+        "device_id": TARGET_DEVICE,
+        "measured_at": measured_at,
+        "active_power": active_power,
+        "reactive_power": reactive_power,
+        "power_factor": power_factor,
+        "current": current,
+        "house": TARGET_HOUSEHOLD,
+        "device": TARGET_DEVICE,
+        "ts": measured_at,
+        "power_w": active_power,
+        "voltage": voltage,
+        "apparent_power": apparent_power,
+    }
+
+
+class TestMultiDayVerification(unittest.IsolatedAsyncioTestCase):
+    """
+    다일(20일, 28일) 시나리오 확장 검증 테스트 스위트
+    """
+
+    def test_multiday_first_last_measured_at_preservation(self):
+        """
+        [1] 요구사항 검증:
+        2일 합성 계획에서 첫날 자정(rel_sec=0) 메시지 주입 후 둘째 날 자정(rel_sec=86400) 메시지를 주입해도
+        first_measured_at이 첫날 자정 값으로 유지되고, 마지막 슬롯(rel_sec=172799) 메시지에서만 last_measured_at이 설정됨을 단정.
+        """
+        compiled = compile_schedule(make_two_day_scenario_definition(), base_date=date(2026, 9, 16))
+        plan_2d = ExpectedSchedulePlan(
+            scenario_id="SYNTHETIC_TWO_DAY",
+            reference_date=date(2026, 9, 16),
+            reference_date_str="2026-09-16",
+            compiled_plan=compiled,
+            expected_publish_samples=compiled.total_planned_publish_samples,
+            expected_omitted_samples=compiled.total_planned_omitted_samples,
+            first_publish_second=0,
+            last_publish_second=172799,
+            first_expected_measured_at=compiled.virtual_time_at(1).isoformat(),
+            last_expected_measured_at=compiled.virtual_time_at(172800).isoformat(),
+            schedule_bitmap=bytes(b"\x01" * 172800),
+        )
+        validator = StreamMessageValidator("run_preserve_test", plan=plan_2d)
+
+        # 1. 첫날 자정 (rel_sec = 0, cycle = 1, measured_at = 2026-09-16T00:00:00+09:00)
+        day1_midnight = make_multiday_payload(
+            run_id="run_preserve_test",
+            relative_second=0,
+            first_cycle=compiled.first_cycle,
+            base_date=plan_2d.start_date,
+        )
+        res1 = validator.process_message(json.dumps(day1_midnight))
+        self.assertEqual(res1, "TARGET")
+        first_measured_expected = day1_midnight["measured_at"]
+        self.assertEqual(validator.first_measured_at, first_measured_expected)
+        self.assertIsNone(validator.last_measured_at)
+
+        # 2. 둘째 날 자정 (rel_sec = 86400, cycle = 86401, measured_at = 2026-09-17T00:00:00+09:00)
+        day2_midnight = make_multiday_payload(
+            run_id="run_preserve_test",
+            relative_second=86400,
+            first_cycle=compiled.first_cycle,
+            base_date=plan_2d.start_date,
+        )
+        res2 = validator.process_message(json.dumps(day2_midnight))
+        self.assertEqual(res2, "TARGET")
+        # first_measured_at이 둘째 날 자정으로 덮어써지지 않고 첫날 자정 값으로 유지되는지 단정
+        self.assertEqual(validator.first_measured_at, first_measured_expected)
+        self.assertNotEqual(validator.first_measured_at, day2_midnight["measured_at"])
+        self.assertIsNone(validator.last_measured_at)
+
+        # 3. 마지막 슬롯 (rel_sec = 172799, cycle = 172800, measured_at = 2026-09-17T23:59:59+09:00)
+        last_slot = make_multiday_payload(
+            run_id="run_preserve_test",
+            relative_second=172799,
+            first_cycle=compiled.first_cycle,
+            base_date=plan_2d.start_date,
+        )
+        res3 = validator.process_message(json.dumps(last_slot))
+        self.assertEqual(res3, "TARGET")
+        self.assertEqual(validator.first_measured_at, first_measured_expected)
+        self.assertEqual(validator.last_measured_at, last_slot["measured_at"])
+
+    def test_multiday_cycle_boundary_uuid5(self):
+        """
+        [3] 요구사항 검증:
+        2일 합성 계획에서:
+        - 둘째 날 00:00:00 메시지(절대 사이클 86,401, rel_sec 86,400)의 message_id가 TARGET으로 통과
+        - 첫날 마지막 슬롯(절대 사이클 86,400, rel_sec 86,399)도 TARGET으로 통과
+        - 이 두 건이 서로 다른 비트맵 인덱스(86,399와 86,400)에 기록되어 중복(DUPLICATE)으로 잡히지 않음
+        """
+        compiled = compile_schedule(make_two_day_scenario_definition(), base_date=date(2026, 9, 16))
+        plan_2d = ExpectedSchedulePlan(
+            scenario_id="SYNTHETIC_TWO_DAY",
+            reference_date=date(2026, 9, 16),
+            reference_date_str="2026-09-16",
+            compiled_plan=compiled,
+            expected_publish_samples=compiled.total_planned_publish_samples,
+            expected_omitted_samples=compiled.total_planned_omitted_samples,
+            first_publish_second=0,
+            last_publish_second=172799,
+            first_expected_measured_at=compiled.virtual_time_at(1).isoformat(),
+            last_expected_measured_at=compiled.virtual_time_at(172800).isoformat(),
+            schedule_bitmap=bytes(b"\x01" * 172800),
+        )
+        validator = StreamMessageValidator("run_boundary_test", plan=plan_2d)
+
+        # 첫날 마지막 슬롯 (rel_sec = 86,399, absolute_cycle = 86,400)
+        day1_last = make_multiday_payload(
+            run_id="run_boundary_test",
+            relative_second=86399,
+            first_cycle=compiled.first_cycle,
+            base_date=plan_2d.start_date,
+        )
+        res1 = validator.process_message(json.dumps(day1_last))
+        self.assertEqual(res1, "TARGET")
+        self.assertEqual(validator.timeline_bitmap[86399], 1)
+
+        # 둘째 날 첫 슬롯 (00:00:00, rel_sec = 86,400, absolute_cycle = 86,401)
+        day2_first = make_multiday_payload(
+            run_id="run_boundary_test",
+            relative_second=86400,
+            first_cycle=compiled.first_cycle,
+            base_date=plan_2d.start_date,
+        )
+        res2 = validator.process_message(json.dumps(day2_first))
+        self.assertEqual(res2, "TARGET")
+        self.assertEqual(validator.timeline_bitmap[86400], 1)
+
+        # 비트맵 인덱스 분리 및 중복 미발생 단정
+        self.assertEqual(validator.duplicate_deliveries, 0)
+        self.assertEqual(validator.target_unique_messages, 2)
+
+    def test_multiday_out_of_range_rejected(self):
+        """
+        다일 계획 날짜 및 범위 밖 메시지 거절 검증:
+        - 시작일 이전 날짜 (2026-09-15) -> INVALID
+        - 종료일 이후 날짜 (2026-09-18) -> INVALID
+        """
+        compiled = compile_schedule(make_two_day_scenario_definition(), base_date=date(2026, 9, 16))
+        plan_2d = ExpectedSchedulePlan(
+            scenario_id="SYNTHETIC_TWO_DAY",
+            reference_date=date(2026, 9, 16),
+            reference_date_str="2026-09-16",
+            compiled_plan=compiled,
+            expected_publish_samples=compiled.total_planned_publish_samples,
+            expected_omitted_samples=compiled.total_planned_omitted_samples,
+            first_publish_second=0,
+            last_publish_second=172799,
+            first_expected_measured_at=compiled.virtual_time_at(1).isoformat(),
+            last_expected_measured_at=compiled.virtual_time_at(172800).isoformat(),
+            schedule_bitmap=bytes(b"\x01" * 172800),
+        )
+        validator = StreamMessageValidator("run_range_test", plan=plan_2d)
+
+        # 시작일 이전 날짜 (2026-09-15)
+        before_start = make_multiday_payload(
+            run_id="run_range_test",
+            relative_second=0,
+            first_cycle=compiled.first_cycle,
+            base_date=date(2026, 9, 15),
+        )
+        res_before = validator.process_message(json.dumps(before_start))
+        self.assertEqual(res_before, "INVALID")
+        self.assertTrue(any("MEASURED_AT_DATE_MISMATCH" in r for r in validator.invalid_reasons))
+
+        # 종료일 이후 날짜 (2026-09-18)
+        after_end = make_multiday_payload(
+            run_id="run_range_test",
+            relative_second=0,
+            first_cycle=compiled.first_cycle,
+            base_date=date(2026, 9, 18),
+        )
+        res_after = validator.process_message(json.dumps(after_end))
+        self.assertEqual(res_after, "INVALID")
+        self.assertTrue(any("MEASURED_AT_DATE_MISMATCH" in r for r in validator.invalid_reasons))
+
+    def test_all_unified_scenarios_plan_derivation(self):
+        """
+        통합 카탈로그 10종 시나리오에 대한 ExpectedSchedulePlan 동적 산출 검증:
+        - 1일 6종: 86,400 슬롯
+        - 20일 1종: 1,728,000 슬롯
+        - 28일 3종: 2,419,200 슬롯
+        """
+        for sc_id in UNIFIED_SCENARIO_IDS:
+            plan = build_expected_schedule_plan(sc_id, "2026-09-16")
+            self.assertEqual(plan.scenario_id, sc_id)
+            self.assertIsNotNone(plan.first_publish_second)
+            self.assertIsNotNone(plan.last_publish_second)
+            self.assertIsNotNone(plan.first_expected_measured_at)
+            self.assertIsNotNone(plan.last_expected_measured_at)
+            self.assertEqual(len(plan.schedule_bitmap), plan.total_virtual_slots)
+
+            if sc_id.startswith("ACTIVITY_"):
+                self.assertEqual(plan.total_days, 1)
+                self.assertEqual(plan.total_virtual_slots, 86400)
+            elif sc_id == "BASELINE_MICROWAVE_20D":
+                self.assertEqual(plan.total_days, 20)
+                self.assertEqual(plan.total_virtual_slots, 1728000)
+                self.assertEqual(plan.expected_publish_samples, 1728000)
+                self.assertEqual(plan.expected_omitted_samples, 0)
+            elif sc_id.startswith("ROUTINE_CHANGED_"):
+                self.assertEqual(plan.total_days, 28)
+                self.assertEqual(plan.total_virtual_slots, 2419200)
+                self.assertEqual(plan.expected_publish_samples, 2419200)
+                self.assertEqual(plan.expected_omitted_samples, 0)
+
+    def test_timeout_auto_scaling(self):
+        """
+        다일 시나리오 슬롯 수 비례 제한시간 자동 상향 산출 공식 검증
+        """
+        # 1일: 86,400 -> max(600, 86400/500 + 300 = 472.8) -> 600.0
+        plan_1d = build_expected_schedule_plan("ACTIVITY_NORMAL", "2026-09-16")
+        timeout_1d = max(600.0, (plan_1d.total_virtual_slots / 500.0) + 300.0)
+        self.assertEqual(timeout_1d, 600.0)
+
+        # 20일: 1,728,000 -> max(600, 1728000/500 + 300 = 3756.0) -> 3756.0
+        plan_20d = build_expected_schedule_plan("BASELINE_MICROWAVE_20D", "2026-09-16")
+        timeout_20d = max(600.0, (plan_20d.total_virtual_slots / 500.0) + 300.0)
+        self.assertEqual(timeout_20d, 3756.0)
+
+        # 28일: 2,419,200 -> max(600, 2419200/500 + 300 = 5138.4) -> 5138.4
+        plan_28d = build_expected_schedule_plan("ROUTINE_CHANGED_LATER", "2026-09-16")
+        timeout_28d = max(600.0, (plan_28d.total_virtual_slots / 500.0) + 300.0)
+        self.assertAlmostEqual(timeout_28d, 5138.4, places=2)
+
+    def test_multiday_api_done_evaluation(self):
+        """
+        다일 실행 세션 스냅샷(28일)에 대한 api_done 계약 평가 검증
+        """
+        plan_28d = build_expected_schedule_plan("ROUTINE_CHANGED_LATER", "2026-09-16")
+
+        # 완료 스냅샷 (28일 전량 충족)
+        completed_snap = {
+            "overall_status": "COMPLETED",
+            "overall_state": "COMPLETED",
+            "households": [
+                {
+                    "household_id": "H001",
+                    "state": "COMPLETED",
+                    "runner_virtual_slots": 2419200,
+                    "settled_virtual_slots": 2419200,
+                    "published_samples": 2419200,
+                    "planned_publish_samples": 2419200,
+                    "omitted_samples": 0,
+                    "completed_days": 28,
+                    "total_days": 28,
+                    "last_error": None,
+                }
+            ],
+        }
+
+        h001 = completed_snap["households"][0]
+        api_done = (
+            completed_snap.get("overall_status") == "COMPLETED"
+            and completed_snap.get("overall_state") == "COMPLETED"
+            and h001.get("state") == "COMPLETED"
+            and h001.get("runner_virtual_slots") == plan_28d.total_virtual_slots
+            and h001.get("settled_virtual_slots") == plan_28d.total_virtual_slots
+            and h001.get("published_samples") == plan_28d.expected_publish_samples
+            and h001.get("planned_publish_samples") == plan_28d.expected_publish_samples
+            and h001.get("omitted_samples") == plan_28d.expected_omitted_samples
+            and h001.get("completed_days") == plan_28d.total_days
+            and h001.get("total_days") == plan_28d.total_days
+            and h001.get("last_error") is None
+        )
+        self.assertTrue(api_done)
+
+        # 미완료 스냅샷 (27일 진행 중) -> api_done False
+        incomplete_snap = json.loads(json.dumps(completed_snap))
+        incomplete_snap["households"][0]["completed_days"] = 27
+        h001_incomp = incomplete_snap["households"][0]
+        api_done_incomp = (
+            incomplete_snap.get("overall_status") == "COMPLETED"
+            and incomplete_snap.get("overall_state") == "COMPLETED"
+            and h001_incomp.get("state") == "COMPLETED"
+            and h001_incomp.get("runner_virtual_slots") == plan_28d.total_virtual_slots
+            and h001_incomp.get("settled_virtual_slots") == plan_28d.total_virtual_slots
+            and h001_incomp.get("completed_days") == plan_28d.total_days
+        )
+        self.assertFalse(api_done_incomp)
+
+    def test_cli_accepts_all_unified_scenarios_and_rejects_unknown(self):
+        """
+        CLI --scenario 파싱 및 main() 진입 검증:
+        - 10종 통합 시나리오는 파싱 통과
+        - 알 수 없는 시나리오는 exit code 2 (EXIT_CLI_CONFIG_ERROR)로 거절
+        """
+        for sc_id in UNIFIED_SCENARIO_IDS:
+            args = parse_arguments(["--scenario", sc_id])
+            self.assertEqual(args.scenario, sc_id)
+
+        # 알 수 없는 시나리오 전달 시 code 2
+        exit_code = main(["--scenario", "INVALID_UNKNOWN_SCENARIO"])
+        self.assertEqual(exit_code, EXIT_CLI_CONFIG_ERROR)
+
+    def test_multiday_reference_date_aligns_with_server_rules(self):
+        """
+        [3-a, 3-b] 요구사항 검증:
+        20일 및 28일 시나리오에 대해 도구가 산출한 plan.start_date / plan.end_date가
+        서버와 같은 규칙(end == 입력한 reference_date, start == reference_date - (total_days-1))을 따르고,
+        컴파일 결과가 first_cycle, last_cycle, total_virtual_slots, start_date, end_date에서 모두 일치하는지 단정.
+        """
+        ref_date = date(2026, 9, 16)
+        test_scenarios = [
+            ("BASELINE_MICROWAVE_20D", 20),
+            ("ROUTINE_CHANGED_LATER", 28),
+            ("ROUTINE_CHANGED_EARLIER", 28),
+            ("ROUTINE_CHANGED_WITHIN_THRESHOLD", 28),
+        ]
+        for sc_id, total_days in test_scenarios:
+            plan = build_expected_schedule_plan(sc_id, "2026-09-16")
+            expected_start = ref_date - timedelta(days=total_days - 1)
+            expected_end = ref_date
+
+            # [3-a] start_date / end_date 검증
+            self.assertEqual(plan.end_date, expected_end)
+            self.assertEqual(plan.start_date, expected_start)
+            self.assertEqual(plan.reference_date, ref_date)
+
+            # [3-b] compile_schedule 직접 호출 결과와 완전 일치 검증
+            defn = get_unified_scenario_definition(sc_id)
+            server_compiled = compile_schedule(defn, base_date=expected_start)
+            self.assertEqual(plan.compiled_plan.first_cycle, server_compiled.first_cycle)
+            self.assertEqual(plan.compiled_plan.last_cycle, server_compiled.last_cycle)
+            self.assertEqual(plan.compiled_plan.total_virtual_slots, server_compiled.total_virtual_slots)
+            self.assertEqual(plan.compiled_plan.start_date, server_compiled.start_date)
+            self.assertEqual(plan.compiled_plan.end_date, server_compiled.end_date)
+
+    def test_single_day_scenarios_start_date_equals_end_date_regression(self):
+        """
+        [3-c] 요구사항 검증 (회귀):
+        단일 일자 6개 시나리오에서 start_date == end_date == reference_date 임을 단정.
+        """
+        ref_date = date(2026, 9, 16)
+        activity_scenarios = [
+            "ACTIVITY_NORMAL",
+            "ACTIVITY_LOW",
+            "ACTIVITY_NONE",
+            "ACTIVITY_INSUFFICIENT",
+            "ACTIVITY_SESSION_MERGE",
+            "ACTIVITY_DURATION_CAP",
+        ]
+        for sc_id in activity_scenarios:
+            plan = build_expected_schedule_plan(sc_id, "2026-09-16")
+            self.assertEqual(plan.start_date, ref_date)
+            self.assertEqual(plan.end_date, ref_date)
+            self.assertEqual(plan.reference_date, ref_date)
+
+    def test_baseline_20d_first_and_last_publish_timestamps(self):
+        """
+        [3-d] 요구사항 검증:
+        20일 계획(BASELINE_MICROWAVE_20D)의 첫 발행이 2026-08-28T00:00:00+09:00,
+        마지막 발행이 2026-09-16T23:59:59+09:00 인지 단정 (입력 reference_date 2026-09-16 기준).
+        """
+        plan = build_expected_schedule_plan("BASELINE_MICROWAVE_20D", "2026-09-16")
+        self.assertEqual(plan.first_expected_measured_at, "2026-08-28T00:00:00+09:00")
+        self.assertEqual(plan.last_expected_measured_at, "2026-09-16T23:59:59+09:00")
+        self.assertEqual(plan.start_date, date(2026, 8, 28))
+        self.assertEqual(plan.end_date, date(2026, 9, 16))
+
+    def test_resolve_base_date_unit(self):
+        """
+        [2] 순수 함수 resolve_base_date 단위 계약 검증:
+        - 1일: reference_date 그대로 반환
+        - 20일: reference_date - 19일 반환
+        - 28일: reference_date - 27일 반환
+        - total_days < 1 또는 유효하지 않은 타입 시 ScheduleError 발생
+        """
+        from engine.schedule import ScheduleError, resolve_base_date
+        d = date(2026, 9, 16)
+        self.assertEqual(resolve_base_date(d, 1), d)
+        self.assertEqual(resolve_base_date(d, 20), date(2026, 8, 28))
+        self.assertEqual(resolve_base_date(d, 28), date(2026, 8, 20))
+
+        with self.assertRaises(ScheduleError):
+            resolve_base_date(d, 0)
+        with self.assertRaises(ScheduleError):
+            resolve_base_date(d, -5)
+        with self.assertRaises(ScheduleError):
+            resolve_base_date(d, True)
+        with self.assertRaises(ScheduleError):
+            resolve_base_date("2026-09-16", 10)
 
 
 if __name__ == "__main__":

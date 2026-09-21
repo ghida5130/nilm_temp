@@ -488,6 +488,50 @@ class TestSensorFaultCliRunner(unittest.TestCase):
 
         self.assertEqual(len(published), 20)
 
+    def test_cli_sensor_fault_fixes_base_dt_when_unspecified(self):
+        """--date / --start-time 미지정 시 base_dt 1회 고정, 가상 1초 증가, 고장 구간 0건"""
+        args = simulator.parse_args([
+            "--scenario", "sensor_fault",
+            "--houses", "1",
+            "--interval", "0.0001",
+            "--count", "140",
+        ])
+
+        published_timestamps = []
+
+        async def mock_pub(client, house, now_iso=None, qos=1, allow_random=False, metrics=None, **kwargs):
+            published_timestamps.append(now_iso)
+            return {"house": house, "power": 55.0, "devices": []}
+
+        with patch("simulator.publish_house_power", side_effect=mock_pub), \
+             patch("aiomqtt.Client"):
+            asyncio.run(simulator.run_simulator(args))
+
+        # 총 20건 발행 (10 정상 + 10 복구)
+        self.assertEqual(len(published_timestamps), 20)
+
+        # 정상 구간 10개: 1초 간격 증가
+        before_fault = published_timestamps[:10]
+        for i in range(1, len(before_fault)):
+            dt_prev = datetime.fromisoformat(before_fault[i - 1].replace("Z", "+00:00"))
+            dt_curr = datetime.fromisoformat(before_fault[i].replace("Z", "+00:00"))
+            diff = (dt_curr - dt_prev).total_seconds()
+            self.assertEqual(diff, 1.0, f"정상 구간 cycle {i}: 1초 간격이어야 함 (실제: {diff}초)")
+
+        # 복구 구간 10개: 역시 1초 간격
+        after_fault = published_timestamps[10:]
+        for i in range(1, len(after_fault)):
+            dt_prev = datetime.fromisoformat(after_fault[i - 1].replace("Z", "+00:00"))
+            dt_curr = datetime.fromisoformat(after_fault[i].replace("Z", "+00:00"))
+            diff = (dt_curr - dt_prev).total_seconds()
+            self.assertEqual(diff, 1.0, f"복구 구간 cycle {i}: 1초 간격이어야 함 (실제: {diff}초)")
+
+        # cycle 10과 cycle 131 사이 시각 차이 = 121초 (가상 시각 기준)
+        dt_c10 = datetime.fromisoformat(before_fault[-1].replace("Z", "+00:00"))
+        dt_c131 = datetime.fromisoformat(after_fault[0].replace("Z", "+00:00"))
+        gap_diff = (dt_c131 - dt_c10).total_seconds()
+        self.assertEqual(gap_diff, 121.0, f"고장 구간 measured_at 차이 121초 (실제: {gap_diff}초)")
+
 
 class TestSensorFaultConfigurableDuration(unittest.TestCase):
     """7. D=30 및 D=180 가변 결측 시간 및 타임라인 경계값 / 발행 검증"""

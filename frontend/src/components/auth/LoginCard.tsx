@@ -1,0 +1,93 @@
+import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
+import Brand from "../common/Brand";
+import Icon from "../common/Icon";
+
+type LoginCardProps = {
+  role: "staff" | "user";
+  busy: boolean;
+  error: string;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+};
+
+export default function LoginCard({ role, busy, error, onSubmit }: LoginCardProps) {
+  return (
+    <section
+      className={
+        role === "user"
+          ? "user-card w-full max-w-md"
+          : "w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 shadow-xl md:p-9"
+      }
+    >
+      <Brand />
+      <p className="mt-10 text-sm font-bold text-brand-700">일상을 잇는 안심 돌봄</p>
+      <h1 className="mt-2 text-3xl font-extrabold text-stone-800">
+        {role === "staff" ? "복지담당자" : "복지대상자"} 로그인
+      </h1>
+      <p className="mt-2 text-stone-500">등록된 계정으로 로그인해 주세요.</p>
+      <form
+        className="mt-8 grid gap-5"
+        name={`${role}-login`}
+        action="/api/auth/login"
+        method="post"
+        autoComplete="on"
+        onSubmit={onSubmit}
+      >
+        <label className="grid gap-2 font-semibold text-stone-700" htmlFor={`${role}-email`}>
+          이메일
+          <input
+            id={`${role}-email`}
+            className="h-13 rounded-xl border border-stone-300 px-4 outline-none focus:border-brand-500 focus:ring-3 focus:ring-brand-100"
+            name="email"
+            type="email"
+            inputMode="email"
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            required
+          />
+        </label>
+        <label className="grid gap-2 font-semibold text-stone-700" htmlFor={`${role}-password`}>
+          비밀번호
+          <input
+            id={`${role}-password`}
+            className="h-13 rounded-xl border border-stone-300 px-4 outline-none focus:border-brand-500 focus:ring-3 focus:ring-brand-100"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+          />
+        </label>
+        <label
+          className="flex min-h-12 cursor-pointer items-center gap-3 font-semibold text-stone-700"
+          htmlFor={`${role}-keep-signed-in`}
+        >
+          <input
+            id={`${role}-keep-signed-in`}
+            className="h-5 w-5 shrink-0 accent-brand-500"
+            name="keepSignedIn"
+            type="checkbox"
+            value="true"
+          />
+          로그인 상태 유지
+        </label>
+        {error && (
+          <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700" role="alert">
+            {error}
+          </p>
+        )}
+        <button
+          className="flex h-13 items-center justify-center gap-2 rounded-xl bg-brand-500 font-bold text-brand-900 transition hover:bg-brand-400 disabled:bg-stone-300"
+          type="submit"
+          disabled={busy}
+        >
+          {busy ? "로그인 중…" : "로그인하기"}
+          <Icon name="arrow" />
+        </button>
+      </form>
+      <Link className="mt-6 block text-center font-semibold text-brand-700 hover:underline" to="/">
+        서비스 선택으로 돌아가기
+      </Link>
+    </section>
+  );
+}

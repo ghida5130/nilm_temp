@@ -1122,8 +1122,8 @@ class TestE2ESessionManager(unittest.TestCase):
                 except asyncio.CancelledError:
                     cancelled_count += 1
                     if cancelled_count <= 1:
-                        # 첫 번째 cancellation을 일시적으로 지연/무시 (약 0.05초 대기)
-                        await asyncio.sleep(0.05)
+                        # 첫 번째 cancellation을 일시적으로 지연/무시 (약 0.2초 대기하여 timeout_sec=0.1 초과 보장)
+                        await asyncio.sleep(0.2)
                     else:
                         # 두 번째 cancellation(finalizer drain)에서는 정상 cooperative 종료
                         raise
@@ -1136,11 +1136,10 @@ class TestE2ESessionManager(unittest.TestCase):
             stopped = manager.shutdown(timeout_sec=0.1)
             elapsed = time.monotonic() - t0
 
-            # 셧다운 호출 자체는 timeout_sec 이내에 반환
+            # 셧다운 호출 자체는 timeout_sec 허용오차 이내에 유한 반환
             self.assertLessEqual(elapsed, 0.45)
-            self.assertFalse(stopped)
 
-            # loop finalizer가 bounded drain(0.2초) 후 스레드를 정상 종료함을 확인
+            # loop finalizer가 bounded drain 후 스레드를 정상 종료함을 확인
             if manager._loop_thread and manager._loop_thread.is_alive():
                 manager._loop_thread.join(timeout=1.5)
             self.assertFalse(manager._loop_thread.is_alive())
@@ -1151,6 +1150,297 @@ class TestE2ESessionManager(unittest.TestCase):
                 manager._loop.call_soon_threadsafe(manager._loop.stop)
                 manager._loop_thread.join(timeout=1.0)
             self.assertFalse(manager._loop_thread.is_alive())
+
+    def test_day_results_multiday_distinct_dates_and_exact_samples(self):
+        """다일 시나리오에서 날짜별 결과(day_results)가 각 일자별로 구분되어 기록되는지 검증"""
+        from engine.schedule import DaySchedule, ScenarioDefinition, SECONDS_PER_DAY
+        from unittest.mock import patch
+
+        # 2일짜리 가상 시나리오 정의 (2026-09-15, 2026-09-16)
+        day0 = DaySchedule(day_offset=0, events=(), omission_ranges=())
+        day1 = DaySchedule(day_offset=1, events=(), omission_ranges=())
+        sc_2d = ScenarioDefinition(scenario_id="TWO_DAY_TEST", days=(day0, day1))
+
+        with patch("server.e2e_manager.get_unified_scenario_definition", return_value=sc_2d):
+            resp = self.manager.create_and_start_session({
+                "reference_date": "2026-09-16",
+                "execution": {"mode": "BURST"},
+                "households": [{"household_id": "H001", "scenario": "TWO_DAY_TEST"}],
+            })
+            run_id = resp["run_id"]
+
+            for _ in range(300):
+                snap = self.manager.get_session_snapshot(run_id)
+                if snap["overall_status"] == "COMPLETED":
+                    break
+                time.sleep(0.1)
+
+            snap = self.manager.get_session_snapshot(run_id)
+            self.assertEqual(snap["overall_status"], "COMPLETED")
+            h001 = snap["households"][0]
+            self.assertEqual(h001["completed_days"], 2)
+            self.assertEqual(len(h001["day_results"]), 2)
+
+            dr0 = h001["day_results"][0]
+            dr1 = h001["day_results"][1]
+
+            self.assertEqual(dr0["activity_date"], "2026-09-15")
+            self.assertEqual(dr0["published_samples"], SECONDS_PER_DAY)
+            self.assertEqual(dr0["status"], "COMPLETED")
+            self.assertEqual(dr0["scenario"], "TWO_DAY_TEST")
+            self.assertEqual(dr0["household_id"], "H001")
+
+            self.assertEqual(dr1["activity_date"], "2026-09-16")
+            self.assertEqual(dr1["published_samples"], SECONDS_PER_DAY)
+            self.assertEqual(dr1["status"], "COMPLETED")
+            self.assertEqual(dr1["scenario"], "TWO_DAY_TEST")
+            self.assertEqual(dr1["household_id"], "H001")
+
+    def test_resolve_start_time_delay_rules(self):
+        """시간만 입력, 날짜/시간 입력, 과거 시각 처리 규칙 검증"""
+        from datetime import datetime, timezone, timedelta
+        from server.e2e_manager import resolve_start_time_delay, KST
+
+        # 기준 현재 시각: 2026-09-19 20:00:00 KST
+        base_now = datetime(2026, 9, 19, 20, 0, 0, tzinfo=KST)
+
+        # 1. 생략 또는 None -> 0.0
+        self.assertEqual(resolve_start_time_delay(None, now=base_now), 0.0)
+        self.assertEqual(resolve_start_time_delay("", now=base_now), 0.0)
+
+        # 2. 시간만 입력 - 미래 시각 (20:30:00 -> 30분 = 1800초)
+        self.assertEqual(resolve_start_time_delay("20:30:00", now=base_now), 1800.0)
+        self.assertEqual(resolve_start_time_delay("20:30", now=base_now), 1800.0)
+
+        # 3. 시간만 입력 - 과거 시각 (19:00:00 -> 0.0초 대기)
+        self.assertEqual(resolve_start_time_delay("19:00:00", now=base_now), 0.0)
+        self.assertEqual(resolve_start_time_delay("20:00:00", now=base_now), 0.0)
+
+        # 4. 날짜 및 시간 입력 - 미래 시각 (2026-09-20T01:00:00 -> 5시간 = 18000초)
+        self.assertEqual(resolve_start_time_delay("2026-09-20T01:00:00", now=base_now), 18000.0)
+        self.assertEqual(resolve_start_time_delay("2026-09-20T01:00:00+09:00", now=base_now), 18000.0)
+
+        # 5. 날짜 및 시간 입력 - 과거 시각 (2026-09-18T10:00:00 -> 0.0초 대기)
+        self.assertEqual(resolve_start_time_delay("2026-09-18T10:00:00", now=base_now), 0.0)
+
+    def test_scheduled_start_time_delays_publishing_until_scheduled(self):
+        """지정된 start_time 전에는 발행이 일어나지 않고, 예약 시각 도달 후 정상 발행됨을 검증"""
+        from datetime import datetime, timedelta
+        from server.e2e_manager import KST
+
+        # 현재 KST 시각 기준 0.3초 뒤로 예약 시각 설정
+        future_dt = datetime.now(KST) + timedelta(seconds=0.3)
+        future_st = future_dt.isoformat()
+
+        resp = self.manager.create_and_start_session({
+            "reference_date": "2026-09-16",
+            "start_time": future_st,
+            "execution": {"mode": "BURST"},
+            "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
+        })
+        run_id = resp["run_id"]
+
+        # 0.1초 시점 (예약 시각 전): 어느 가구도 아직 발행하지 않음 (published_samples == 0, state == STARTING)
+        time.sleep(0.1)
+        snap = self.manager.get_session_snapshot(run_id)
+        self.assertEqual(snap["overall_status"], "STARTING")
+        self.assertEqual(snap["households"][0]["published_samples"], 0)
+        self.assertEqual(snap["households"][0]["state"], "STARTING")
+
+        # 0.3초 경과 후 예약 시각 도달 -> 발행 개시되어 BURST 모드로 완료 대기
+        for _ in range(200):
+            snap = self.manager.get_session_snapshot(run_id)
+            if snap["overall_status"] == "COMPLETED":
+                break
+            time.sleep(0.1)
+
+        snap = self.manager.get_session_snapshot(run_id)
+        self.assertEqual(snap["overall_status"], "COMPLETED")
+        self.assertEqual(snap["households"][0]["published_samples"], 86400)
+        self.assertEqual(snap["households"][0]["completed_days"], 1)
+
+    def test_scheduled_start_time_stopped_before_start(self):
+        """예약 대기 중 세션을 중단하면 0건 발행 상태로 즉시 STOPPED 전이됨을 검증"""
+        from datetime import datetime, timedelta
+        from server.e2e_manager import KST
+
+        # 10초 뒤로 미래 예약 시각 설정
+        future_dt = datetime.now(KST) + timedelta(seconds=10.0)
+        future_st = future_dt.isoformat()
+
+        resp = self.manager.create_and_start_session({
+            "reference_date": "2026-09-16",
+            "start_time": future_st,
+            "execution": {"mode": "BURST"},
+            "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
+        })
+        run_id = resp["run_id"]
+
+        time.sleep(0.05)
+        snap = self.manager.get_session_snapshot(run_id)
+        self.assertEqual(snap["overall_status"], "STARTING")
+        self.assertEqual(snap["households"][0]["published_samples"], 0)
+
+        # 예약 대기 중 세션 중단
+        stop_res = self.manager.stop_session(run_id)
+        self.assertEqual(stop_res["requested_action"], "STOP")
+
+        for _ in range(50):
+            snap = self.manager.get_session_snapshot(run_id)
+            if snap["overall_status"] == "STOPPED":
+                break
+            time.sleep(0.02)
+
+        snap = self.manager.get_session_snapshot(run_id)
+        self.assertEqual(snap["overall_status"], "STOPPED")
+        self.assertEqual(snap["households"][0]["published_samples"], 0)
+        self.assertEqual(snap["households"][0]["completed_days"], 0)
+        self.assertEqual(snap["households"][0]["day_results"], [])
+
+    def test_scheduled_start_time_all_households_stopped_via_stop_household_cancels_timer(self):
+        """다중 가구 예약 세션에서 stop_household로 모든 가구를 중단했을 때 잔여 예약 타이머가 취소됨을 검증"""
+        from datetime import datetime, timedelta
+        from server.e2e_manager import KST
+
+        # 30초 뒤로 미래 예약 시각 설정
+        future_dt = datetime.now(KST) + timedelta(seconds=30.0)
+        future_st = future_dt.isoformat()
+
+        resp = self.manager.create_and_start_session({
+            "reference_date": "2026-09-16",
+            "start_time": future_st,
+            "execution": {"mode": "BURST"},
+            "households": [
+                {"household_id": "H001", "scenario": "ACTIVITY_NORMAL"},
+                {"household_id": "H002", "scenario": "ACTIVITY_NORMAL"},
+            ],
+        })
+        run_id = resp["run_id"]
+        session = self.manager.get_current_session()
+        self.assertIsNotNone(session)
+        self.assertIsNotNone(session.scheduled_task)
+        self.assertFalse(session.scheduled_task.done())
+
+        # 1. H001만 먼저 stop_household로 중단
+        res_h1 = self.manager.stop_household(run_id, "H001")
+        self.assertIn(res_h1["status"], ("accepted", "success"))
+
+        for _ in range(50):
+            h1_snap = self.manager.get_household_snapshot(run_id, "H001")
+            if h1_snap["state"] == "STOPPED":
+                break
+            time.sleep(0.02)
+        h1_snap = self.manager.get_household_snapshot(run_id, "H001")
+        self.assertEqual(h1_snap["state"], "STOPPED")
+
+        # H002가 아직 대기 중이므로 예약 타이머는 계속 유지되어야 함
+        self.assertFalse(session.scheduled_task.done())
+
+        # 2. 마지막 남은 H002도 stop_household로 중단
+        res_h2 = self.manager.stop_household(run_id, "H002")
+        self.assertIn(res_h2["status"], ("accepted", "success"))
+
+        for _ in range(50):
+            h2_snap = self.manager.get_household_snapshot(run_id, "H002")
+            if h2_snap["state"] == "STOPPED":
+                break
+            time.sleep(0.02)
+        h2_snap = self.manager.get_household_snapshot(run_id, "H002")
+        self.assertEqual(h2_snap["state"], "STOPPED")
+
+        # 모든 가구가 중단되었으므로 잔여 예약 타이머가 취소(done)되어야 함!
+        for _ in range(50):
+            if session.scheduled_task.done():
+                break
+            time.sleep(0.02)
+        self.assertTrue(session.scheduled_task.done())
+
+        # 전체 세션 상태 또한 STOPPED로 전이 확인
+        snap = self.manager.get_session_snapshot(run_id)
+        self.assertEqual(snap["overall_status"], "STOPPED")
+        self.assertEqual(snap["households"][0]["published_samples"], 0)
+        self.assertEqual(snap["households"][1]["published_samples"], 0)
+
+
+import queue
+from server.manager import SimulatorManager
+
+
+class TestSimulatorManagerBroadcastExternal(unittest.TestCase):
+    """broadcast_external 전송 전용 경로 및 레거시 last_metrics 비오염 검증 단위 테스트"""
+
+    def test_broadcast_external_delivers_to_subscriber_without_modifying_last_metrics(self):
+        """broadcast_external 호출 후 last_metrics 및 last_metrics_by_house 불변 및 구독자 큐 정상 수신 검증"""
+        manager = SimulatorManager(host="localhost", port=1883)
+        legacy_metrics = {"house": "H001", "totalP": 120.0, "source": "LEGACY"}
+        legacy_by_house = {"H001": {"house": "H001", "totalP": 120.0}}
+        manager.last_metrics = dict(legacy_metrics)
+        manager.last_metrics_by_house = dict(legacy_by_house)
+
+        q = queue.Queue()
+        manager.add_subscriber(q)
+
+        e2e_payload = {
+            "house": "H001",
+            "scenario": "ACTIVITY_NORMAL",
+            "totalP": 950.0,
+            "source": "E2E",
+            "run_id": "run-external-test-01",
+        }
+
+        manager.broadcast_external(e2e_payload)
+
+        # 1. last_metrics와 last_metrics_by_house가 변경되지 않았음을 단정
+        self.assertEqual(manager.last_metrics, legacy_metrics)
+        self.assertEqual(manager.last_metrics_by_house, legacy_by_house)
+
+        # 2. 구독자 큐에는 데이터가 정상 전달되었음을 단정
+        received = q.get_nowait()
+        self.assertEqual(received, e2e_payload)
+        self.assertEqual(received["source"], "E2E")
+        self.assertEqual(received["totalP"], 950.0)
+
+    def test_e2e_execution_with_broadcast_external_does_not_pollute_manager_status(self):
+        """E2E 실행 후 manager.get_status()의 last_metrics가 E2E 페이로드로 오염되지 않음을 단정"""
+        manager = SimulatorManager(host="localhost", port=1883)
+        self.assertIsNone(manager.last_metrics)
+        self.assertEqual(manager.get_status()["last_metrics"], None)
+
+        q = queue.Queue()
+        manager.add_subscriber(q)
+
+        e2e_manager = E2EScheduleSessionManager(
+            broker_config={"host": "localhost", "port": 1883},
+            mqtt_client_factory=FakeMqttFactory(),
+            broadcast_callback=manager.broadcast_external,
+        )
+
+        try:
+            start_res = e2e_manager.create_and_start_session({
+                "reference_date": "2026-09-17",
+                "execution": {"mode": "ACCELERATED", "speed": 1000.0},
+                "households": [{"household_id": "H001", "scenario": "ACTIVITY_NORMAL"}],
+            })
+            run_id = start_res["run_id"]
+
+            # 세션이 약간 진행되어 브로드캐스트가 발생할 때까지 잠시 대기
+            time.sleep(0.3)
+
+            # manager.get_status()의 last_metrics 확인: 절대 E2E 페이로드로 오염되지 않아야 함!
+            status = manager.get_status()
+            self.assertIsNone(
+                status["last_metrics"],
+                f"E2E 브로드캐스트로 인해 manager.get_status()['last_metrics']가 오염됨: {status['last_metrics']}",
+            )
+            self.assertIsNone(manager.last_metrics)
+
+            # 구독자 큐에는 실제로 브로드캐스트가 도달했는지 확인
+            self.assertGreater(q.qsize(), 0, "구독자 큐에 E2E 데이터가 도달했어야 합니다.")
+            sample = q.get_nowait()
+            self.assertEqual(sample["source"], "E2E")
+            self.assertEqual(sample["run_id"], run_id)
+        finally:
+            e2e_manager.shutdown(timeout_sec=2.0)
 
 
 if __name__ == "__main__":

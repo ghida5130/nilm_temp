@@ -22,8 +22,13 @@ from realtime_analysis.models import (
     HouseholdActivityDaily,
     HouseholdObservationDaily,
 )
+from realtime_analysis.outing_repository import SqlAlchemyOutingStateRepository
 from realtime_analysis.policy import SqlAlchemyPolicyRepository
-from realtime_analysis.schemas import AnalysisPolicyDefinition, RoutineBaseline
+from realtime_analysis.schemas import (
+    AnalysisPolicyDefinition,
+    OutingEvent,
+    RoutineBaseline,
+)
 
 
 @pytest.fixture
@@ -32,6 +37,7 @@ def session_factory() -> sessionmaker[Session]:
     for table_name in (
         "analysis_policy",
         "analysis_event_emission",
+        "household_outing_state",
         "household_observation_daily",
         "household_activity_daily",
         "appliance_usage_session",
@@ -56,9 +62,13 @@ def policies(session_factory: sessionmaker[Session]) -> SqlAlchemyPolicyReposito
             ),
             AnalysisPolicyDefinition(
                 policy_code="PROLONGED_INACTIVITY_DEFAULT",
-                algorithm_type="LAST_ACTIVITY_ELAPSED",
+                algorithm_type="AWAKE_INACTIVITY_ELAPSED",
                 parameters={
-                    "inactivity_hours": 12,
+                    "inactivity_hours": 6,
+                    "sleep_window": {
+                        "start": "23:00",
+                        "end": "07:00",
+                    },
                     "evaluation_interval_seconds": 60,
                 },
                 event_type="PROLONGED_INACTIVITY",
@@ -91,6 +101,7 @@ def detector(
         policy_repository=policies(session_factory),
         timezone_name="Asia/Seoul",
         emission_repository=SqlAlchemyEventEmissionRepository(session_factory),
+        outing_state_provider=SqlAlchemyOutingStateRepository(session_factory),
         metrics=metrics or AnalysisMetrics(CollectorRegistry()),
     )
 
@@ -152,6 +163,25 @@ def add_usage(
     session.add(usage)
     session.flush()
     return usage
+
+
+def apply_outing_event(
+    session_factory: sessionmaker[Session],
+    event_id: UUID,
+    event_type: str,
+    occurred_at: datetime,
+) -> None:
+    SqlAlchemyOutingStateRepository(session_factory).apply_event(
+        OutingEvent.model_validate(
+            {
+                "event_id": event_id,
+                "household_id": "H001",
+                "event_type": event_type,
+                "occurred_at": occurred_at,
+            }
+        ),
+        updated_at=occurred_at,
+    )
 
 
 def test_routine_missed_is_restart_stable_and_emitted_once(
@@ -235,11 +265,55 @@ def test_routine_missed_uses_persisted_session_before_deadline(
     ) == []
 
 
+def test_routine_missed_excludes_only_appliance_whose_window_overlaps_outing(
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_at = datetime.fromisoformat("2026-09-17T09:10:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+    apply_outing_event(
+        session_factory,
+        UUID("da898d82-3183-4d12-ae7c-0e3a9df9772c"),
+        "OUTING_STARTED",
+        datetime.fromisoformat("2026-09-17T08:30:00+09:00"),
+    )
+    apply_outing_event(
+        session_factory,
+        UUID("160a931f-f59d-403d-8157-fccdeeb88dbe"),
+        "OUTING_ENDED",
+        datetime.fromisoformat("2026-09-17T08:45:00+09:00"),
+    )
+    microwave = baseline()
+    kettle = RoutineBaseline(
+        id=UUID("786b1748-2e0a-4f22-aa72-146ee39e6148"),
+        household_id="H001",
+        appliance_type="KETTLE",
+        expected_until="09:00",
+        normal_days=12,
+        window_days=14,
+    )
+
+    events = detector(session_factory).detect(
+        "H001",
+        observed_at,
+        [microwave, kettle],
+    )
+
+    routine_missed = [
+        item.event
+        for item in events
+        if item.event.event_type == "ROUTINE_MISSED"
+    ]
+    assert [event.reason["appliance_type"] for event in routine_missed] == [
+        "MICROWAVE"
+    ]
+
+
 def test_prolonged_inactivity_uses_last_completed_activity(
     session_factory: sessionmaker[Session],
 ) -> None:
-    observed_at = datetime.fromisoformat("2026-09-17T09:00:00+09:00")
-    ended_at = observed_at - timedelta(hours=13)
+    ended_at = datetime.fromisoformat("2026-09-16T20:00:00+09:00")
+    observed_at = datetime.fromisoformat("2026-09-17T10:00:00+09:00")
     with session_factory.begin() as session:
         add_observation(session, observed_at.date())
         old_observation = add_observation(session, ended_at.date())
@@ -257,7 +331,149 @@ def test_prolonged_inactivity_uses_last_completed_activity(
     assert [item.event.event_type for item in events] == [
         "PROLONGED_INACTIVITY"
     ]
-    assert events[0].event.reason["threshold_hours"] == 12.0
+    assert events[0].event.occurred_at == observed_at.astimezone(timezone.utc)
+    assert events[0].event.reason["threshold_hours"] == 6.0
+    assert events[0].event.reason["sleep_window"] == {
+        "start": "23:00",
+        "end": "07:00",
+    }
+
+
+def test_prolonged_inactivity_does_not_count_sleep_window(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ended_at = datetime.fromisoformat("2026-09-16T20:00:00+09:00")
+    observed_at = datetime.fromisoformat("2026-09-17T09:59:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+        old_observation = add_observation(session, ended_at.date())
+        add_usage(
+            session,
+            old_observation,
+            "MICROWAVE",
+            ended_at - timedelta(minutes=5),
+            ended_at,
+        )
+
+    assert detector(session_factory).detect("H001", observed_at, []) == []
+
+
+def test_prolonged_inactivity_starts_counting_after_sleep_for_night_activity(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ended_at = datetime.fromisoformat("2026-09-17T01:00:00+09:00")
+    observed_at = datetime.fromisoformat("2026-09-17T13:00:00+09:00")
+    with session_factory.begin() as session:
+        observation = add_observation(session, observed_at.date())
+        add_usage(
+            session,
+            observation,
+            "MICROWAVE",
+            ended_at - timedelta(minutes=5),
+            ended_at,
+        )
+
+    events = detector(session_factory).detect("H001", observed_at, [])
+
+    assert [item.event.event_type for item in events] == [
+        "PROLONGED_INACTIVITY"
+    ]
+    assert events[0].event.occurred_at == observed_at.astimezone(timezone.utc)
+
+
+def test_prolonged_inactivity_is_suspended_while_household_is_outing(
+    session_factory: sessionmaker[Session],
+) -> None:
+    ended_at = datetime.fromisoformat("2026-09-16T20:00:00+09:00")
+    observed_at = datetime.fromisoformat("2026-09-17T15:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+        old_observation = add_observation(session, ended_at.date())
+        add_usage(
+            session,
+            old_observation,
+            "MICROWAVE",
+            ended_at - timedelta(minutes=5),
+            ended_at,
+        )
+    apply_outing_event(
+        session_factory,
+        UUID("71aa1792-16cb-45aa-83ae-a1a3f182ac43"),
+        "OUTING_STARTED",
+        datetime.fromisoformat("2026-09-17T08:00:00+09:00"),
+    )
+
+    assert detector(session_factory).detect("H001", observed_at, []) == []
+
+
+def test_prolonged_inactivity_restarts_at_return_and_excludes_sleep(
+    session_factory: sessionmaker[Session],
+) -> None:
+    last_activity_at = datetime.fromisoformat("2026-09-16T20:00:00+09:00")
+    returned_at = datetime.fromisoformat("2026-09-16T22:00:00+09:00")
+    before_threshold = datetime.fromisoformat("2026-09-17T11:59:00+09:00")
+    at_threshold = datetime.fromisoformat("2026-09-17T12:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, at_threshold.date())
+        old_observation = add_observation(session, last_activity_at.date())
+        add_usage(
+            session,
+            old_observation,
+            "MICROWAVE",
+            last_activity_at - timedelta(minutes=5),
+            last_activity_at,
+        )
+    apply_outing_event(
+        session_factory,
+        UUID("28cd358d-31f8-446a-9a6a-e8d69d729a53"),
+        "OUTING_ENDED",
+        returned_at,
+    )
+
+    active_detector = detector(session_factory)
+    assert active_detector.detect("H001", before_threshold, []) == []
+
+    events = active_detector.detect("H001", at_threshold, [])
+
+    assert [item.event.event_type for item in events] == [
+        "PROLONGED_INACTIVITY"
+    ]
+    event = events[0].event
+    assert event.occurred_at == at_threshold.astimezone(timezone.utc)
+    assert event.reason["last_activity_at"] == last_activity_at.astimezone(
+        timezone.utc
+    ).isoformat()
+    assert event.reason["last_returned_at"] == returned_at.astimezone(
+        timezone.utc
+    ).isoformat()
+    assert event.reason["inactivity_started_at"] == returned_at.astimezone(
+        timezone.utc
+    ).isoformat()
+
+
+def test_prolonged_inactivity_can_start_from_return_without_prior_activity(
+    session_factory: sessionmaker[Session],
+) -> None:
+    returned_at = datetime.fromisoformat("2026-09-17T08:00:00+09:00")
+    observed_at = datetime.fromisoformat("2026-09-17T14:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+    apply_outing_event(
+        session_factory,
+        UUID("12efcaa0-5aae-47d6-8088-a8cbfd62df0c"),
+        "OUTING_ENDED",
+        returned_at,
+    )
+
+    events = detector(session_factory).detect("H001", observed_at, [])
+
+    assert [item.event.event_type for item in events] == [
+        "PROLONGED_INACTIVITY"
+    ]
+    assert events[0].event.reason["last_activity_at"] is None
+    assert events[0].event.reason["inactivity_started_at"] == (
+        returned_at.astimezone(timezone.utc).isoformat()
+    )
 
 
 def test_prolonged_appliance_use_is_emitted_once_per_open_session(
@@ -336,6 +552,30 @@ def test_same_event_id_reprocessing_does_not_duplicate_emission(
         observed_at,
         [baseline()],
     ) == []
+
+
+def test_reset_allows_household_pattern_evaluation_to_resume(
+    session_factory: sessionmaker[Session],
+) -> None:
+    observed_at = datetime.fromisoformat("2026-09-17T09:00:00+09:00")
+    with session_factory.begin() as session:
+        add_observation(session, observed_at.date())
+    active_detector = detector(session_factory)
+
+    assert active_detector.detect("H001", observed_at, [baseline()])
+    assert active_detector.detect(
+        "H001",
+        observed_at + timedelta(seconds=1),
+        [baseline()],
+    ) == []
+
+    active_detector.reset("H001")
+
+    assert active_detector.detect(
+        "H001",
+        observed_at + timedelta(seconds=1),
+        [baseline()],
+    )
 
 
 def test_realtime_detector_records_each_pattern_evaluation(

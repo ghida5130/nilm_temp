@@ -9,6 +9,7 @@ config = json.loads(subprocess.check_output(
     ["docker", "compose", "--project-directory", "/opt/nilm", "config", "--format", "json"]))
 kc = config["services"]["keycloak"]["environment"]
 gateway = config["services"]["api-gateway"]["environment"]
+device = config["services"]["iot-device-service"]["environment"]
 origin = kc["FRONTEND_ORIGIN"].rstrip("/")
 issuer = kc["KC_HOSTNAME"].rstrip("/") + "/realms/nilm"
 # Same switch the Spring services read. "true" means every /api call needs a Keycloak JWT.
@@ -49,5 +50,25 @@ token = json.loads(request(issuer + "/protocol/openid-connect/token", data=body)
 for route in ROUTES:
     request(origin + route, headers={"Authorization": "Bearer " + token})
 
+# The backend client carries signup and login. A realm that never received the
+# client, or a deploy that forgot its secret, leaves every check above green.
+body = urllib.parse.urlencode({
+    "grant_type": "client_credentials", "client_id": "nilm-backend",
+    "client_secret": device["NILM_BACKEND_CLIENT_SECRET"]}).encode()
+request(issuer + "/protocol/openid-connect/token", data=body)
+
+# Rejected credentials must come back as 400 from the domain handler. A 5xx means
+# device-service never reached Keycloak — it once pointed at its own localhost.
+try:
+    request(origin + "/api/auth/login",
+            data=json.dumps({"email": "smoke-probe@nilm.invalid",
+                             "password": "wrong-on-purpose"}).encode(),
+            headers={"Content-Type": "application/json"})
+except urllib.error.HTTPError as error:
+    if error.code != 400:
+        raise SystemExit(f"Login returned HTTP {error.code}, expected 400")
+else:
+    raise SystemExit("Login with a nonexistent account unexpectedly succeeded")
+
 mode = "JWT required" if security_enabled else "security disabled (APP_SECURITY_ENABLED=false)"
-print(f"PASS: frontend, authentication, Gateway -> device/monitoring [{mode}]")
+print(f"PASS: frontend, authentication, Gateway -> device/monitoring, account APIs [{mode}]")

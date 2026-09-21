@@ -37,6 +37,26 @@ class PowerMeasurement(BaseModel):
         return value
 
 
+class AnalysisProcessingOutcome(StrEnum):
+    """Terminal result for one validated power input."""
+
+    SUCCEEDED = "SUCCEEDED"
+    SKIPPED_WARMUP = "SKIPPED_WARMUP"
+    SKIPPED_QUALITY_GATE = "SKIPPED_QUALITY_GATE"
+    FAILED_INFERENCE = "FAILED_INFERENCE"
+    FAILED_PERSISTENCE = "FAILED_PERSISTENCE"
+
+
+class ProcessingSource(BaseModel):
+    """Stable source position used to connect a receipt to Kafka input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str | None = None
+    partition: int | None = None
+    offset: int | None = None
+
+
 class AppliancePrediction(BaseModel):  # AI 모델이 직접 반환한 원본 결과 
     """One appliance ON probability returned by a Predictor."""
 
@@ -251,6 +271,27 @@ class DataQualityEvent(BaseModel):
     @field_validator("occurred_at")
     @classmethod
     def data_quality_time_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("occurred_at must include a timezone")
+        return value
+
+
+class OutingEvent(BaseModel):
+    """Household outing contract consumed from monitoring."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+
+    event_id: UUID
+    household_id: str = Field(min_length=1, max_length=50)
+    event_type: Literal["OUTING_STARTED", "OUTING_ENDED"]
+    occurred_at: datetime
+
+    @field_validator("occurred_at")
+    @classmethod
+    def outing_time_must_include_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("occurred_at must include a timezone")
         return value

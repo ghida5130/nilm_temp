@@ -1,5 +1,104 @@
 # Realtime Analysis Service
 
+## 로컬 실행 방법 (Windows CMD)
+
+아래 명령은 저장소를 `C:\Users\SSAFY\Desktop\D201\S15P21D201`에 받은 경우의
+예시입니다. 다른 위치에 받았다면 경로만 바꿉니다. Docker Desktop이 실행 중이고
+`infrastructure\local\.env` 설정이 끝난 상태를 기준으로 합니다.
+
+### 1. 전체 서비스와 Consumer 1개 실행
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\infrastructure\local
+docker compose up -d --build --scale realtime-analysis-service=1
+docker compose ps realtime-analysis-service aggregation-service
+```
+
+코드를 수정한 뒤 분석 서비스만 다시 빌드하려면 다음 명령을 사용합니다.
+
+```bat
+docker compose up -d --build --force-recreate --scale realtime-analysis-service=1 realtime-analysis-service
+```
+
+기동 로그는 다음과 같이 확인합니다. `Ctrl+C`는 로그 보기만 종료하며 컨테이너는
+계속 실행됩니다.
+
+```bat
+docker compose logs -f realtime-analysis-service
+```
+
+### 2. 여러 가구 데이터 발생
+
+새 CMD 창을 열고 시뮬레이터를 실행합니다. 최초 한 번은 의존성을 설치해야 합니다.
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\infrastructure\mqtt\simulator
+pip install -r requirements.txt
+python simulator.py --scenario random --houses 20 --hz 1 --count 0 --quiet
+```
+
+- `--houses 20`: `H001`부터 `H020`까지 사용하여 여러 Kafka 파티션에 데이터를 보냅니다.
+- `--hz 1`: 가구마다 초당 1개를 보냅니다.
+- `--count 0`: 자동 종료하지 않고 계속 실행합니다. 종료할 때는 `Ctrl+C`를 누릅니다.
+- 성능 비교 시 `--hz`를 높일 수 있지만 Consumer 1·2·4개 테스트에서 같은 값을 사용해야 합니다.
+
+### 3. Consumer를 2개, 4개로 증설
+
+다중 Consumer 테스트에서는 `compose.scale.yaml`을 함께 사용합니다. 로컬에서는
+static membership을 끄고 cooperative-sticky 할당만 사용하며,
+`aggregation-service`는 항상 1개로 유지합니다.
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\infrastructure\local
+
+docker compose -f compose.yaml -f compose.scale.yaml up -d --scale realtime-analysis-service=2 --no-recreate realtime-analysis-service
+docker compose -f compose.yaml -f compose.scale.yaml ps realtime-analysis-service aggregation-service
+
+docker compose -f compose.yaml -f compose.scale.yaml up -d --scale realtime-analysis-service=4 --no-recreate realtime-analysis-service
+docker compose -f compose.yaml -f compose.scale.yaml ps realtime-analysis-service aggregation-service
+```
+
+`--no-recreate`는 이미 실행 중인 Consumer를 불필요하게 다시 만들지 않고 새 replica만
+추가하도록 합니다. 따라서 cooperative-sticky 리밸런싱과 유지된 파티션의 상태 보존을
+확인하기 쉽습니다.
+
+### 4. 리밸런싱과 상태 확인
+
+```bat
+docker compose -f compose.yaml -f compose.scale.yaml logs --since=5m realtime-analysis-service | findstr /I /C:"partitions assigned" /C:"partitions revoked" /C:"partitions lost" /C:"ILLEGAL_GENERATION" /C:"Offset store skipped"
+```
+
+- Prometheus: <http://localhost:19090>
+- Prometheus Targets: <http://localhost:19090/targets>
+- Grafana: <http://localhost:13001> (`admin / admin`)
+
+Prometheus에서 다음 쿼리를 차례로 확인합니다.
+
+```promql
+count(up{job="ai-analysis"} == 1)
+sum(nilm_analysis_consumer_assigned_partitions{job="ai-analysis"})
+sum(nilm_analysis_warmup_households{job="ai-analysis"})
+sum(nilm_analysis_consumer_lag_messages{job="ai-analysis"})
+sum(rate(nilm_analysis_messages_total{job="ai-analysis",status="processed"}[1m]))
+```
+
+정상이라면 Consumer 수는 지정한 `1`, `2`, `4`와 같고, 할당 파티션 합은 `24`입니다.
+리밸런싱 직후 이동한 가구만 warm-up에 들어갔다가 299개를 다시 모으면 빠지며,
+입력이 멈춘 뒤 lag는 최종적으로 `0`이 됩니다.
+
+### 5. 테스트 종료 후 Consumer 1개로 복구
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\infrastructure\local
+docker compose -f compose.yaml -f compose.scale.yaml up -d --scale realtime-analysis-service=1 --no-recreate realtime-analysis-service
+docker compose -f compose.yaml -f compose.scale.yaml ps realtime-analysis-service aggregation-service
+```
+
+DB와 Kafka 데이터를 유지하려면 테스트 종료 시 `docker compose down -v`는 실행하지
+않습니다. 리밸런싱 문제와 검증 기록은
+[Kafka 다중 Consumer 리밸런싱 트러블슈팅](../../docs/진행상황/최보경/20260920_Kafka_다중_Consumer_리밸런싱_트러블슈팅.md)을
+참고합니다.
+
 Kafka 전력 데이터를 검증하고, 가구별 입력 버퍼와 MVP용 가전 ON/OFF 예측을 거쳐
 위험 이벤트와 생활 패턴 변화 이벤트를 `analysis.event.v1`로 발행합니다.
 
@@ -31,7 +130,7 @@ VACUUM_CLEANER
 ```
 
 잘못된 입력은 `dlq.analysis`로 발행합니다. Kafka offset은 정상 처리 또는 DLQ 전송이
-완료된 뒤에만 수동으로 commit합니다.
+완료된 뒤에만 로컬에 저장하고, Consumer가 안정 상태일 때 자동 commit합니다.
 
 ## 실시간 Snapshot 수신 담당자 전달 사항
 
@@ -207,13 +306,18 @@ Kafka Key: H001
 | 이벤트 | 분류 | 판단 기준 | `reason` 주요 필드 |
 | --- | --- | --- | --- |
 | `ROUTINE_MISSED` | 위험 | 기대 시각 전까지 해당 가전 사용 없음 | `appliance_type`, `expected_until`, `normal_days`, `window_days` |
-| `PROLONGED_INACTIVITY` | 위험 | 전체 가전의 마지막 사용 종료 후 기본 12시간 경과 | `last_activity_at`, `threshold_hours` |
+| `PROLONGED_INACTIVITY` | 위험 | 예상 수면 구간을 제외한 미활동 시간이 기본 6시간 경과 | `last_activity_at`, `threshold_hours`, `sleep_window` |
 | `PROLONGED_APPLIANCE_USE` | 위험 | 위험 가전의 열린 세션이 허용 시간 초과 | `appliance_type`, `started_at`, `allowed_duration_minutes` |
 | `ROUTINE_CHANGED` | 정보 | 최근 7일 첫 사용 중앙시각이 이전 21일보다 기본 120분 이상 이동 | `appliance_type`, `previous_time`, `recent_time`, `shift_minutes` |
 
 세 위험 이벤트는 측정 시각을 기준으로 가구별 기본 60초마다 평가합니다.
 `ROUTINE_CHANGED`는 전날 관측 마감 후 하루 한 번 평가하며 위험 점수에 직접 반영하지
 않습니다. 임계값은 `analysis_policy`의 `parameters`에서 읽습니다.
+
+`PROLONGED_INACTIVITY`는 기본 예상 수면 구간인 `23:00~07:00`과 겹치는 시간을
+미활동 누적에서 제외합니다. 예를 들어 마지막 사용이 21:00에 끝났다면 21:00~23:00의
+2시간과 다음 날 07:00~11:00의 4시간을 합쳐 11:00에 6시간 임계치에 도달합니다.
+수면 구간에 실제 사용이 감지되면 해당 세션의 종료 시각부터 다시 계산합니다.
 
 ```text
 최근 14일 중 12일 동안 08:10 이전에 확인된 활동이 오늘은 감지되지 않았습니다.
@@ -629,7 +733,7 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 `time.perf_counter_ns()`로 측정합니다.
 
 ```json
-{"event":"pipeline_timing","status":"processed","message_id":"8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6","household_id":"H001","kafka":{"topic":"power.raw.v1","partition":3,"offset":42},"processing_total_ns":1842000,"stage_durations_ns":{"activity_db":310000,"buffer_append":12000,"deserialize_validate":82000,"inference":1500000,"offset_commit":73000,"preprocess":21000,"snapshot_publish_ack":260000,"state_decision_transition":31000},"stage_counts":{"activity_db":1,"buffer_append":1,"deserialize_validate":1,"inference":1,"offset_commit":1,"preprocess":1,"snapshot_publish_ack":1,"state_decision_transition":1},"sensor_to_log_ns":2185000,"clock_skew_detected":false}
+{"event":"pipeline_timing","status":"processed","message_id":"8f3b2a19-4d6e-4c72-9b12-a1b2c3d4e5f6","household_id":"H001","kafka":{"topic":"power.raw.v1","partition":3,"offset":42},"processing_total_ns":1842000,"stage_durations_ns":{"activity_db":310000,"buffer_append":12000,"deserialize_validate":82000,"inference":1500000,"offset_store":73000,"preprocess":21000,"snapshot_publish_ack":260000,"state_decision_transition":31000},"stage_counts":{"activity_db":1,"buffer_append":1,"deserialize_validate":1,"inference":1,"offset_store":1,"preprocess":1,"snapshot_publish_ack":1,"state_decision_transition":1},"sensor_to_log_ns":2185000,"clock_skew_detected":false}
 ```
 
 주요 구간 이름은 다음과 같습니다.
@@ -647,7 +751,7 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 | `snapshot_publish_ack` | Snapshot Produce부터 Broker ACK까지 |
 | `anomaly_detection` | 기준선 조회와 이상 후보 판정 |
 | `event_publish_ack` | 이상 Event Produce부터 Broker ACK까지 |
-| `offset_commit` | 입력 Offset 동기 Commit |
+| `offset_store` | 처리 완료 Offset를 로컬 저장(안정 상태에서 자동 Commit) |
 | `dlq_publish_ack` | 잘못된 입력의 DLQ Broker ACK |
 
 같은 구간이 메시지 한 건에서 여러 번 실행되면 `stage_durations_ns`에는 합계,
@@ -668,4 +772,147 @@ Kafka 메시지 한 건을 처리할 때 `realtime_analysis.pipeline_timing` 로
 - 재시작하면 299개 버퍼와 당일 활동·발행 상태가 초기화됩니다.
 - 완전히 데이터가 들어오지 않은 가구의 `SENSOR_GAP` 판정에는 별도 가구 목록 기반 마감
   스케줄러가 추가로 필요합니다.
+- 외출 정보는 `household_outing_state` 한 행에 최근 외출 구간만 보관하므로, 완료된
+  과거 외출 여러 건을 조회하는 용도로는 사용하지 않습니다.
 - HTTP API는 포함하지 않습니다.
+
+## 외출 연동 패턴 Kafka 검증
+
+외출 메시지를 저장하는 것만으로 패턴 감지가 실행되지는 않습니다. 패턴 감지는
+`power.raw.v1` 처리 시 실행되므로 각 확인 시각에 같은 가구의 정상 전력 입력이 필요합니다.
+
+### 준비
+
+```powershell
+docker exec nilm-kafka /opt/kafka/bin/kafka-topics.sh `
+  --bootstrap-server localhost:19092 `
+  --create --if-not-exists `
+  --topic monitoring.household-presence.v1 `
+  --partitions 24 `
+  --replication-factor 1
+
+docker compose up -d --build realtime-analysis-service
+docker compose --profile tools up -d kafka-ui
+```
+
+Kafka UI는 `http://localhost:8091`에서 열고, 외출 메시지의 key는 `household_id`와 같은
+값을 사용합니다. 적용된 Alembic revision은 `20260919_09`이어야 합니다.
+
+```powershell
+docker exec nilm-postgres psql -U nilm_admin -d analysis_db `
+  -c "SELECT version_num FROM alembic_version;"
+```
+
+### ROUTINE_MISSED 외출 구간 겹침
+
+결정적 입력:
+
+```text
+가구: H001
+전자레인지 expected_until: 08:10
+외출: 07:30~08:00
+전자레인지 사용: 없음
+```
+
+Kafka UI의 `monitoring.household-presence.v1`에 key `H001`로 차례대로 발행합니다.
+
+```json
+{
+  "event_id": "da898d82-3183-4d12-ae7c-0e3a9df9772c",
+  "household_id": "H001",
+  "event_type": "OUTING_STARTED",
+  "occurred_at": "2026-09-17T07:30:00+09:00"
+}
+```
+
+```json
+{
+  "event_id": "160a931f-f59d-403d-8157-fccdeeb88dbe",
+  "household_id": "H001",
+  "event_type": "OUTING_ENDED",
+  "occurred_at": "2026-09-17T08:00:00+09:00"
+}
+```
+
+DB의 단일 상태 행에 최근 외출 시작·종료 시각이 남았는지 확인합니다.
+
+```powershell
+docker exec nilm-postgres psql -U nilm_admin -d analysis_db -c `
+  "SELECT household_id, is_outing, outing_started_at, last_returned_at FROM household_outing_state WHERE household_id='H001';"
+```
+
+시뮬레이터 기준 날짜를 `2026-09-17`로 설정하고 H001에서 전자레인지를 사용하지 않는
+입력을 `08:10` 이후까지 발행합니다. `analysis.event.v1`에
+`H001 + MICROWAVE + ROUTINE_MISSED`가 없어야 성공입니다. 외출과 겹치지 않는 다른
+가전의 판단은 계속 수행됩니다.
+
+### PROLONGED_INACTIVITY 외출 보류와 귀가 후 재계산
+
+결정적 입력:
+
+```text
+2026-09-16 10:00 마지막 가전 사용 종료
+2026-09-16 17:00 OUTING_STARTED
+2026-09-16 21:00 원천 입력: 외출 중이므로 감지 보류
+2026-09-16 22:00 OUTING_ENDED
+2026-09-16 22:00~23:00 깨어 있는 미활동 1시간
+2026-09-16 23:00~2026-09-17 07:00 수면 제외
+2026-09-17 07:00~11:59 누적 5시간 59분: 이벤트 없음
+2026-09-17 12:00 누적 6시간: 이벤트 한 번 발행
+```
+
+외출 시작과 귀가 메시지는 다음과 같습니다.
+
+```json
+{
+  "event_id": "c88be83b-2ac8-47d1-b644-193874289a79",
+  "household_id": "H001",
+  "event_type": "OUTING_STARTED",
+  "occurred_at": "2026-09-16T17:00:00+09:00"
+}
+```
+
+```json
+{
+  "event_id": "3dd2e0c8-2832-4dcb-b71d-73007d834827",
+  "household_id": "H001",
+  "event_type": "OUTING_ENDED",
+  "occurred_at": "2026-09-16T22:00:00+09:00"
+}
+```
+
+각 메시지 발행 후 상태를 확인한 다음 시뮬레이터의 가상 시각을 진행합니다.
+
+```powershell
+docker exec nilm-postgres psql -U nilm_admin -d analysis_db -c `
+  "SELECT household_id, is_outing, outing_started_at, last_returned_at FROM household_outing_state WHERE household_id='H001';"
+```
+
+기대 이벤트의 핵심 값은 다음과 같습니다.
+
+```json
+{
+  "household_id": "H001",
+  "event_type": "PROLONGED_INACTIVITY",
+  "occurred_at": "2026-09-17T03:00:00+00:00",
+  "reason": {
+    "last_returned_at": "2026-09-16T13:00:00+00:00",
+    "inactivity_started_at": "2026-09-16T13:00:00+00:00",
+    "threshold_hours": 6.0,
+    "sleep_window": {"start": "23:00", "end": "07:00"}
+  }
+}
+```
+
+Consumer offset과 lag는 다음 명령으로 확인합니다.
+
+```powershell
+docker exec nilm-kafka /opt/kafka/bin/kafka-consumer-groups.sh `
+  --bootstrap-server localhost:19092 `
+  --describe `
+  --group realtime-analysis-service-outing-v1
+```
+
+정상 메시지 처리 후 해당 파티션의 lag가 0이어야 합니다. 잘못된 `event_type`이나 타임존
+없는 `occurred_at`을 보내면 상태는 바뀌지 않고 `dlq.analysis`에
+`VALIDATION_ERROR`가 생성되어야 합니다.

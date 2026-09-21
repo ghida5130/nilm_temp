@@ -1,28 +1,64 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
-@import 'tailwindcss';
+@import "tailwindcss";
 
 @theme {
-  --font-sans: 'Noto Sans KR', system-ui, sans-serif;
-  --color-brand-50: #fff8f1;
-  --color-brand-100: #ffead8;
-  --color-brand-200: #f8d2b2;
-  --color-brand-300: #edb181;
-  --color-brand-400: #e18e54;
-  --color-brand-500: #d97e3f;
-  --color-brand-600: #c8682d;
-  --color-brand-700: #a74f22;
-  --color-brand-800: #863f20;
-  --color-brand-900: #6c361e;
+  --font-sans: "SUIT Variable", SUIT, system-ui, sans-serif;
+  --color-brand-50: #fff7f0;
+  --color-brand-100: #ffe9d8;
+  --color-brand-200: #ffd2ad;
+  --color-brand-300: #ffb477;
+  --color-brand-400: #fa9146;
+  --color-brand-500: #f37929;
+  --color-brand-600: #d95e12;
+  --color-brand-700: #b8490d;
+  --color-brand-800: #933c12;
+  --color-brand-900: #773314;
 }
 
 @layer base {
-  * { box-sizing: border-box; }
-  html { min-width: 320px; scroll-behavior: smooth; }
-  body { min-width: 320px; min-height: 100vh; margin: 0; background: #f5f5f4; font-family: var(--font-sans); font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
-  button, a, summary { -webkit-tap-highlight-color: transparent; }
-  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid #a74f22; outline-offset: 3px; }
+  * {
+    box-sizing: border-box;
+  }
+  html {
+    min-width: 320px;
+    scroll-behavior: smooth;
+  }
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    background: #f5f5f4;
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+  button,
+  a,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible {
+    outline: 3px solid #b8490d;
+    outline-offset: 3px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

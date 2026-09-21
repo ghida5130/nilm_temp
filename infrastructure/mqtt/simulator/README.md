@@ -2,6 +2,8 @@
 
 스마트홈 메인 분전반(Smart Meter)의 초 단위 전력 계측 환경을 모사하여 Mosquitto MQTT 브로커로 실시간 스트리밍하는 고성능 시뮬레이션 패키지입니다.
 
+> **AI 패턴 감지 검증용 결정적 시나리오 10종을 실행하려면 [E2E_GUIDE.md](E2E_GUIDE.md)를 보세요.** 시나리오 목록, `POST /api/e2e/runs` 규격, 실행 모드 선택 기준, 완료 판정, 알려진 제약을 정리한 운영 문서입니다. 아래 본문은 물리 엔진과 레거시 시연 모드의 상세 설명입니다.
+
 ---
 
 ## 1. 개요 및 목적
@@ -55,6 +57,9 @@
 * **전자레인지 (`microwave`)**: 마그네트론/변압기 자화 돌입전류 1.35배 기동 피크 (850 ~ 1,150W, PF 0.88~0.94)
 * **헤어드라이기 (`hair_dryer`)**: 열선 및 소형 팬모터 기동 피크 1.20배 (800 ~ 1,200W, PF 0.94~0.98)
 * **진공청소기 (`vacuum_cleaner`)**: 고속 직권 모터 강한 기동 돌입 1.50배 및 강한 지상 무효전력 (700 ~ 950W, PF 0.75~0.85)
+
+> **듀티 사이클 적용 범위**: 위 인덕션·전기다리미의 가열↔휴지 듀티 사이클은 **확률 기반 레거시 경로(`/api/start`, `engine/power_model.py`)에만** 적용됩니다.
+> 결정적 E2E 경로(`POST /api/e2e/runs`, `engine/schedule_runtime.py`)에서는 시나리오가 선언한 ON 구간이 곧 "사람이 가전을 사용한 구간"이므로 내부 휴지 없이 **연속 가동**합니다. 휴지를 넣으면 AI가 한 번의 사용을 수십 개 세션으로 쪼개고 사용시간 합계가 선언값보다 짧아지기 때문입니다. 자세한 내용은 [E2E_GUIDE.md](E2E_GUIDE.md) 10절을 보세요.
 
 ### (4) H001 정상 일상 (`normal_routine`) 결정론적 타임라인
 발표 시연용 `normal_routine` 시나리오는 H001 가구를 대상으로 아침 08:10 이전의 정상 일상 전력 패턴을 1초 단위로 정밀 생성합니다:
@@ -710,9 +715,9 @@ python visualize_waveform.py --random --seconds 600
 
 ---
 
-## 9. 일일 활동 시나리오 시뮬레이터 원천 MQTT 발행 검증 (`tools/verify_activity_normal_mqtt.py`)
+## 9. E2E 통합 시나리오(일일 활동·20일 기준선·28일 루틴 변화) 시뮬레이터 원천 MQTT 발행 검증 (`tools/verify_activity_normal_mqtt.py`)
 
-외부 서비스(Kafka, PostgreSQL, AI 추론)에 연결하지 않고, Mosquitto MQTT 브로커와 시뮬레이터 HTTP API만을 활용하여 H001 가구의 6개 일일 활동 시나리오(`ACTIVITY_NORMAL`, `ACTIVITY_LOW`, `ACTIVITY_NONE`, `ACTIVITY_INSUFFICIENT`, `ACTIVITY_SESSION_MERGE`, `ACTIVITY_DURATION_CAP`) 1일치 원천 데이터가 QoS 1로 계획 결측을 제외하고 결측 없이 정확히 발행되는지 독립적으로 검증하는 스트리밍 검증 도구입니다.
+외부 서비스(Kafka, PostgreSQL, AI 추론)에 연결하지 않고, Mosquitto MQTT 브로커와 시뮬레이터 HTTP API만을 활용하여 H001 가구의 통합 카탈로그 10개 시나리오(1일 활동 6종, 20일 기준선 1종, 28일 루틴 변화 3종) 전체 타임라인 원천 데이터가 QoS 1로 계획 결측을 제외하고 결측 없이 정확히 발행되는지 독립적으로 검증하는 스트리밍 검증 도구입니다.
 
 ### 9.1 모듈 실행 방법
 시뮬레이터 루트 디렉터리(`infrastructure/mqtt/simulator`)에서 모듈로 실행합니다:
@@ -725,6 +730,12 @@ python -m tools.verify_activity_normal_mqtt \
 # 특정 시나리오 및 기준 일자 지정 실행 예시 (결측 시나리오 검증)
 python -m tools.verify_activity_normal_mqtt \
   --scenario ACTIVITY_INSUFFICIENT \
+  --reference-date 2026-09-16 \
+  --api-url http://127.0.0.1:8085
+
+# 28일 루틴 변화 시나리오 실행 예시 (기준일자 2026-09-16은 마지막 날을 의미하며, 2026-08-20~2026-09-16 28일간 검증)
+python -m tools.verify_activity_normal_mqtt \
+  --scenario ROUTINE_CHANGED_LATER \
   --reference-date 2026-09-16 \
   --api-url http://127.0.0.1:8085
 ```
@@ -771,8 +782,8 @@ python -m tools.verify_activity_normal_mqtt `
 ### 9.2 지원 옵션 및 타임아웃 기본값
 | CLI 옵션 | 기본값 | 설명 |
 |---|---|---|
-| `--scenario` | `ACTIVITY_NORMAL` | 일일 활동 시나리오 ID (6종 허용: `ACTIVITY_NORMAL`, `ACTIVITY_LOW`, `ACTIVITY_NONE`, `ACTIVITY_INSUFFICIENT`, `ACTIVITY_SESSION_MERGE`, `ACTIVITY_DURATION_CAP`) |
-| `--reference-date` | `2026-09-16` | 시뮬레이션 기준 일자 (YYYY-MM-DD) |
+| `--scenario` | `ACTIVITY_NORMAL` | 검증 대상 시나리오 ID (통합 카탈로그 10종 허용)<br>• **단일 일자(1일, 86,400 슬롯)** 6종: `ACTIVITY_NORMAL`, `ACTIVITY_LOW`, `ACTIVITY_NONE`, `ACTIVITY_INSUFFICIENT`, `ACTIVITY_SESSION_MERGE`, `ACTIVITY_DURATION_CAP`<br>• **20일 기준선(1,728,000 슬롯)** 1종: `BASELINE_MICROWAVE_20D`<br>• **28일 루틴 변화(2,419,200 슬롯)** 3종: `ROUTINE_CHANGED_LATER`, `ROUTINE_CHANGED_EARLIER`, `ROUTINE_CHANGED_WITHIN_THRESHOLD` |
+| `--reference-date` | `2026-09-16` | 시뮬레이션 기준 일자 (YYYY-MM-DD). 단일 일자 시나리오에서는 해당 일자를, 다일(20일, 28일) 시나리오에서는 전체 일정의 마지막 날(종료일)을 의미하며 시작일은 `reference_date - (total_days - 1)`로 자동 역산됩니다. |
 | `--broker-host` | `localhost` / `MQTT_HOST` | MQTT 브로커 호스트명 |
 | `--broker-port` | `1883` (평문) / `8883` (TLS) | MQTT 브로커 포트 번호 (`resolve_mqtt_port` 규칙) |
 | `--broker-user` | `MQTT_USER` | MQTT 브로커 인증 계정 |
@@ -783,13 +794,24 @@ python -m tools.verify_activity_normal_mqtt `
 | `--subscribe-timeout`| `10.0`초 | `v1/power/sim/H001/main` SUBACK 수신 대기시간 |
 | `--http-timeout` | `15.0`초 | 시뮬레이터 API (`POST /runs`, `GET /runs/{id}`) 요청 제한시간 |
 | `--idle-timeout` | `30.0`초 | 타겟 신규 메시지 미수신 시 유휴 타임아웃 |
-| `--overall-timeout` | `600.0`초 | 전체 검증 최대 허용 시간 |
+| `--overall-timeout` | `600.0`초 | 전체 검증 최대 허용 시간 (다일 시나리오의 경우 슬롯 수에 비례하여 자동 상향됨) |
 | `--poll-interval` | `0.5`초 | 시뮬레이터 완료 상태 폴링 주기 |
 
+> **다일 시나리오 제한시간 자동 상향 및 예상 소요 시간**:
+> - 다일 시나리오 검증 시 전체 슬롯 수에 비례하여 `overall-timeout`이 자동으로 상향 계산됩니다:
+>   $$\text{effective\_overall\_timeout} = \max\left(\text{CLI overall\_timeout},\; \max\left(600.0,\; \frac{\text{total\_virtual\_slots}}{500.0} + 300.0\right)\right)$$
+> - **예상 소요 시간**:
+>   - 1일 활동 시나리오(86,400 슬롯): BURST 약 60~90초 (타임아웃 기본 600초 유지)
+>   - 20일 기준선 시나리오(1,728,000 슬롯): BURST 약 20분 (타임아웃 약 3,756초로 자동 상향)
+>   - 28일 루틴 시나리오(2,419,200 슬롯): BURST 약 30분 (타임아웃 약 5,138.4초로 자동 상향)
+
 ### 9.3 메모리 복잡도 및 비트맵 검증
-- **메모리 복잡도**: $O(\text{SECONDS\_PER\_DAY})$
-- **메모리 점유**: 1일(86,400초) 기준 `bytearray(86400)` 약 **86KB**
-- 86,400개의 JSON payload 전체 목록을 메모리에 저장하지 않고, 실시간으로 타임스탬프의 `second_of_day` (0~86,399)를 인덱스로 비트맵에 마킹합니다.
+- **메모리 복잡도**: $O(\text{total\_virtual\_slots})$
+- **메모리 점유**:
+  - 1일(86,400 슬롯): `bytearray(86,400)` 약 **86KB**
+  - 20일(1,728,000 슬롯): `bytearray(1,728,000)` 약 **1.7MB**
+  - 28일(2,419,200 슬롯): `bytearray(2,419,200)` 약 **2.4MB**
+- 수백만 개의 JSON payload 전체 목록을 메모리에 저장하지 않고, 실시간으로 타임스탬프의 전체 타임라인 상대 초 `relative_second`를 인덱스로 비트맵에 마킹합니다.
 - `run_id` 기반 실시간 기대 UUID5와 대조하여 `target_unique_messages`, `duplicate_deliveries`, `foreign_run_messages`를 엄격히 분리 집계합니다.
 
 ### 9.4 다운스트림 AI 팀 연동 명세 (Handoff Specification)
@@ -843,3 +865,65 @@ appliance_schedule_summary:
     absolute_cycle_range: [75601, 75720]
 expected_physical_on_seconds: 2160
 ```
+
+## 10. 결정적 시나리오(E2E) 웹 대시보드 제어 패널 (`waveform_viewer.html`)
+
+웹 인터페이스(`waveform_viewer.html`) 내에 결정적 시나리오 실행 및 모니터링을 위한 전용 제어 패널이 추가되었습니다.
+
+### 10.1 주요 기능 및 인터페이스 구성
+- **시나리오 및 가구 선택**: 백엔드 REST API(`GET /api/e2e/scenarios`)로부터 10종 시나리오 메타데이터(일수, 발행 슬롯 수)를 동적으로 로드하여 드롭다운 구성.
+- **실행 모드 제어**:
+  - `BURST`: 지연 없는 최대 속도 배치 발행 (`speed` 파라미터 제외)
+  - `REALTIME`: 1.0초 가상 시간 동기화
+  - `ACCELERATED`: 사용자 지정 배속(0 초과 양수) 적용. 패널에서는 배속 입력이 필수이며, `POST /api/e2e/runs`에서 `speed`를 생략하면 가구 수 기반 안전 배속이 자동 산출됩니다 ([E2E_GUIDE.md](E2E_GUIDE.md) 6절)
+- **기존 실행 연결 (`e2eBtnAttach`)**: 명령줄 검증 도구 등으로 이미 시작된 실행이 있을 때 `run_id`를 직접 입력하여 실시간 모니터링에 연결.
+- **409 충돌 안내**: 이미 실행 중인 E2E 세션이 있을 경우 명확한 안내 문구 노출.
+- **가구별 상태 기반 제어**: 개별 가구의 상태(`RUNNING`, `PAUSED`, `PAUSING`, `STOPPING` 등)에 따라 일시정지, 재개, 중지 버튼을 정밀 제어.
+- **정산 슬롯 기준 진행률 표기**: 진행률 분모를 `planned_virtual_slots`로 고정하여 결측 시나리오(`ACTIVITY_INSUFFICIENT`)에서도 100% 한도를 엄격히 준수하며, 발행 수(`published_samples / planned_publish_samples`)를 별도 열로 명확히 분리 표기.
+
+### 10.2 결정적 시나리오(E2E) 파형 실시간 스트리밍 및 결측 렌더링 계약
+- **실시간 파형 렌더링**: `REALTIME` 및 `ACCELERATED` 모드에서 실제 물리 계측값(`totalP`, `apparentS`, `totalQ`, `currentA`, `voltage`, `pf`, `devices`)을 `manager.broadcast_external()` 전송 전용 경로를 통해 SSE로 수신하여 대시보드 차트(`chartMain`, `chartSecondary`)에 표시합니다.
+- **BURST 모드 완전 제외**: `execution_mode == BURST`일 때는 화면 전송 콜백을 단 1회도 호출하지 않아 전속력 배치 발행 성능을 100% 보존합니다.
+- **초당 20회(20Hz) 전송 상한**: `ACCELERATED` 등 고배속 실행 시에도 화면 전송은 초당 최대 20회로 제한되며, 상한을 초과하는 틱은 화면 전송만 스킵하고 MQTT 발행 및 `published_samples`/`omitted_samples` 카운터는 전량 유지됩니다.
+- **레거시 상태 오염 방지 (`source="E2E"`)**:
+  - `manager.broadcast_external()`은 구독자 SSE 큐에만 데이터를 전달하고 레거시 호환용 `last_metrics`와 `last_metrics_by_house`를 절대 수정하지 않습니다.
+  - 웹 화면에서 `source === "E2E"`로 분기하여 레거시 상태 배지(`badgeStatus`), 안내 문구(`timelineNotice`), 레거시 가구 테이블 행을 일절 변경하지 않습니다.
+- **계획 결측 슬롯 렌더링 계약**:
+  - 결측 구간은 `measurementAvailable: false`, `sensorFault: false`, 계측치 `null`로 발행됩니다.
+  - 파형 차트에 `null`을 넣어 선이 자연스럽게 끊기도록 렌더링하며(0으로 채우지 않음), 전력 메트릭 카드는 "—"로 표시하여 이전 값으로 인한 오해를 방지합니다. 정상 틱 재개 시 차트는 다시 정상 연결됩니다.
+
+---
+
+## DATA_GAP 감지: 실제 수신 중단과 측정 시각 공백
+
+분석 서비스(`realtime-analysis-service`)는 두 가지 경로로 전력 데이터 공백(DATA_GAP)을 감지합니다.
+
+### 1. 수신 중단 감지 (watchdog, `source: "watchdog"`)
+
+| 항목 | 내용 |
+|------|------|
+| 감지 주체 | `DataQualityWatchdog` 스레드 (주기적 `detect_gaps()` 호출) |
+| 기준 시각 | 마지막 Kafka 메시지의 **실제 수신 시각** (`received_at`) |
+| 감지 조건 | 현재 실시간 시각 − 마지막 수신 시각 ≥ 임계값 (기본 120초) |
+| 발생 시점 | 메시지가 전혀 오지 않아도 watchdog 폴링 주기마다 검사 |
+| 용도 | 시뮬레이터가 멈추거나 네트워크가 단절된 경우 |
+
+### 2. 측정 시각 공백 감지 (`source: "measured_at"`)
+
+| 항목 | 내용 |
+|------|------|
+| 감지 주체 | `DataQualityMonitor.observe()` (Kafka 메시지 수신 시 호출) |
+| 기준 시각 | 연속된 두 유효 **측정 시각** (`measured_at`)의 차이 |
+| 감지 조건 | (`새 measured_at` − `직전 measured_at` − 1초) ≥ 임계값 |
+| 발생 시점 | 고장 후 **첫 복구 샘플이 도착했을 때** GAP을 발견 |
+| 용도 | 배속 실행 시 실제 수신 간격은 짧지만 가상 시각에 공백이 있는 경우 |
+
+### 배속 실행 시 이벤트 발생 시점
+
+`sensor_fault` 시나리오를 10×배속으로 실행하면:
+
+1. **고장 구간 중**: MQTT 메시지 0건 발행. 실제 12초만 대기하므로 watchdog(120초 임계값)은 감지 불가.
+2. **복구 첫 샘플 도착 시**: `observe()`가 `measured_at` 간격(121초)에서 예상 간격(1초)을 뺀 120초가 임계값 이상임을 발견 → `DATA_GAP(source="measured_at")` 발행.
+3. **복구 확인 완료 시**: 설정된 `recovery_confirmation_samples` 충족 후 → `DATA_RECOVERED(source="measured_at")` 발행.
+
+> **참고**: CLI `sensor_fault`는 `--date`·`--start-time` 미지정 시 루프 시작 전 UTC 시각을 한 번 고정하여 배속과 무관하게 `measured_at`이 가상 1초씩 증가합니다. 웹 시뮬레이터는 기존과 동일하게 `base_dt + cycle` 방식을 사용합니다.

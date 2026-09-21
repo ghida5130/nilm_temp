@@ -29,7 +29,7 @@ public class AuthController {
 
     @Operation(summary = "회원가입",
             description = "Keycloak 계정 생성 + 서비스 프로필 저장. organization을 입력하면 "
-                    + "기관 담당자 가입으로 간주되어 PENDING(승인 대기) 상태가 된다.")
+                    + "기관 담당자 가입으로 간주되어 모니터링의 담당자 명단에 등록된다.")
     @PostMapping("/signup")
     @ResponseStatus(HttpStatus.CREATED)
     public AuthDtos.ProfileResponse signup(@Valid @RequestBody AuthDtos.SignupRequest request) {
