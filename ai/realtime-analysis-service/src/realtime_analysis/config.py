@@ -43,6 +43,18 @@ class Settings(BaseSettings):
     database_password: str = "change-me-local"
 
     model_window_size: int = Field(default=299, ge=1)
+    model_backend: Literal["fake", "selected_scene"] = "fake"
+    model_asset_root: str = ""
+    model_household_id: str | None = Field(default=None, min_length=1, max_length=50)
+    scene_events_enabled: bool = False
+    scene_risk_threshold_seconds: int | None = Field(default=None, ge=1)
+    scene_test_household_id: str | None = None
+    scene_policy_id: str = Field(default='selected-test-v1', min_length=1, max_length=100)
+    model_appliance: str = "kettle"
+    model_device: str = "cpu"
+    model_dtype: Literal["float32", "bfloat16"] = "float32"
+    model_threads: int = Field(default=1, ge=1)
+    kafka_scene_snapshot_topic: str = "analysis.scene.v2"
     model_manifest_file: str = "config/model_manifest.json"
     fake_on_appliances: str = ""
     baseline_file: str = "config/baselines.json"
@@ -127,6 +139,20 @@ class Settings(BaseSettings):
             stripped = value.strip()
             return stripped or None
         return value
+
+    @model_validator(mode="after")
+    def selected_scene_requires_isolated_configuration(self) -> "Settings":
+        if self.scene_risk_threshold_seconds is not None:
+            if not self.scene_events_enabled or not self.scene_test_household_id or self.scene_test_household_id != self.model_household_id:
+                raise ValueError('Scene risk requires enabled events and an explicit matching test household')
+        if self.model_backend == "selected_scene":
+            if not self.model_asset_root or self.analysis_run_id == "realtime-v1":
+                raise ValueError("Selected scene requires MODEL_ASSET_ROOT and a dedicated ANALYSIS_RUN_ID")
+            if self.kafka_input_topic == "power.raw.v1" or self.kafka_group_id == "realtime-analysis-service-v1":
+                raise ValueError("Selected scene requires dedicated input topic and consumer group")
+            if self.kafka_scene_snapshot_topic == self.kafka_analysis_snapshot_topic:
+                raise ValueError("Selected scene output must not use the legacy snapshot topic")
+        return self
 
     @model_validator(mode="after")
     def baseline_sample_days_must_fit_window(self) -> "Settings":
