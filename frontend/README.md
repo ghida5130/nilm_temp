@@ -12,6 +12,12 @@ npm run dev
 
 개발 서버는 `/api` 요청을 `http://localhost:8080`으로 전달합니다.
 
+Web Push를 사용하려면 백엔드의 `WEB_PUSH_VAPID_PUBLIC_KEY`와 같은 공개키를 프론트엔드 빌드 환경에 설정합니다.
+
+```text
+VITE_WEB_PUSH_VAPID_PUBLIC_KEY=공개키
+```
+
 ## src 구조
 
 ```text

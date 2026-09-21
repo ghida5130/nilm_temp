@@ -2,7 +2,7 @@ import MockAdapter from 'axios-mock-adapter'
 import { afterEach, describe, expect, it } from 'vitest'
 import { login } from '../src/api/auth'
 import { authApi, publicApi } from '../src/api/client'
-import { answerNotification, getMyDashboard, getPowerUsage, getSubjectEvents, getSubjects, registerSubject, updateAwayMode } from '../src/api/monitoring'
+import { answerNotification, getMyDashboard, getPowerUsage, getSubjectEvents, getSubjects, registerPushSubscription, registerSubject, updateAwayMode } from '../src/api/monitoring'
 
 const authMock = new MockAdapter(authApi)
 const publicMock = new MockAdapter(publicApi)
@@ -44,5 +44,15 @@ describe('도메인 API 서비스', () => {
     await expect(answerNotification('10', 'yes')).resolves.toBeUndefined()
     await expect(getSubjectEvents('1', 'next')).resolves.toMatchObject({ events: [] })
     await expect(getPowerUsage('1', '2026-09-18')).resolves.toMatchObject({ date: '2026-09-18' })
+  })
+
+  it('Web Push 구독 정보를 전송한다', async () => {
+    const subscription = {
+      endpoint: 'https://push.example.com/subscription',
+      expirationTime: null,
+      keys: { p256dh: 'public-key', auth: 'auth-secret' },
+    }
+    authMock.onPost('/monitoring/push-subscriptions', subscription).reply(204)
+    await expect(registerPushSubscription(subscription)).resolves.toBeUndefined()
   })
 })
