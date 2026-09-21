@@ -1,4 +1,4 @@
-# R3 실제 모델 Predictor — 첫 단계
+# R3 실제 모델 Predictor 및 선택 장면 통합
 
 `SelectedScenePredictor`는 고정 R3 체크포인트를 실제로 forward한다. 원본 모델 코드는
 `real_models/models.py`에 그대로 보존했고, 서비스에 포함한 reviewer lock으로 자산 해시를
@@ -31,14 +31,26 @@ $env:R3_TEST_ASSET_ROOT = (Resolve-Path ../../../artifacts/nilm_r2_demo).Path
 
 ## 현재 통합 범위
 
-이 단계는 실제 Predictor 및 로컬 panel 실행기다. 기존 `realtime-analysis` Kafka 진입점은
-아직 FakePredictor를 사용한다. 기존의 299행/6기기 bool handler에 선택 기기 한 개를
-강제로 끼우면 미추론을 OFF로 만들게 되므로 자동 전환하지 않는다.
+`MODEL_BACKEND=selected_scene`이면 `realtime-analysis` 진입점이 실제 Predictor와
+`SceneHandler`를 사용한다. `fake` 기본값은 기존 배포와 호환된다. 선택 모드는 별도
+input topic, consumer group, run ID, asset root를 필수로 요구한다.
 
-다음 통합에서는 versioned selected-scene 입력/출력, run/profile/source_index,
-UNKNOWN 저장·조회 규약을 추가하고 `__main__.py`에서 명시적 모드로 새 Predictor를
-선택한다. decoder는 한 번만 적용하고 DB 실패 복원과 partition revoke 처리를 보존한다.
-실제 MQTT/Kafka·DB/API 시험은 그 변경 이후에 수행한다.
+입력은 run_id/profile_id/source_index/valid/context를 보존한다. context는 prefix 표시가
+아닌 추론 유효성 마스크이며, 결측 행은 참조 norm의 mean으로 채워 정규화 후 0이 된다.
+시간은 source index와 함께 정확히 1초씩 진행한다. 각 회차는 고정 prefix 첫 행부터 시작한다.
+
+각 행의 스냅샷과 255행 입력 창·decoder 상태를 `selected_scene_evidence`에 원자적으로
+저장한 뒤 Kafka `analysis.scene.v2`로 발행한다. 발행 실패/재전송 시 저장된 동일 payload를
+재발행하며 중복 입력을 창에 다시 넣지 않는다. 재시작·partition 소유권 이전도 DB에서 복구한다.
+같은 회차에서 다른 runtime이나 같은 source index의 다른 입력은 거부한다.
+
+monitoring은 `APP_SCENE_DEMO_ENABLED=true`일 때 선택 장면 consumer와 관리용 조회 API를
+활성화한다. `selected_scene_snapshots`는 여섯 항목의 확률/UNKNOWN/null을 그대로 저장한다.
+run/profile별 조회로 회차를 분리하며 기존 가전 bool 상태·위험 평가·알림 경로를 호출하지 않는다.
+보안이 활성화된 환경에서는 기존 `/api/monitoring/admin/**`의 ADMIN 정책이 적용된다.
+
+실제 MQTT 발행과 별도 로컬 스택 실행은
+[R3 시연 실행 안내](../../../infrastructure/r3-demo/README.md)를 참고한다.
 
 검증 기준은 R3 C03/C04 및 TEST_MATRIX다. 단순 forward 성공은 긴 prefix·OFF 대조,
 주동작 종료 검수 또는 실제 백엔드 연동 완료를 뜻하지 않는다.
@@ -56,4 +68,27 @@ UNKNOWN 저장·조회 규약을 추가하고 `__main__.py`에서 명시적 모�
   잘못된 길이·비유한 입력·해시 불일치·마스크·미추론 UNKNOWN을 검증했다.
 
 수치 평가는 이 kettle 선택 구간에 한정한다. 긴 prefix·OFF 대조 및 실제 transport,
-DB/API 검수는 아직 수행하지 않았다.
+  검수는 별도이며 아래 후속 결과를 참고한다.
+
+후속 통합 검증: Python 140개 통과, PostgreSQL 전용 8개 제외. Java 전체 194개 중
+190개 통과/4개 기존 비활성 테스트 제외. 실제 Python kettle 출력 592건을 Java consumer
+코드에 넣어 Flyway V17/H2 DB 저장과 MockMvc API readback을 검증했다. 이는 실제 broker
+전송 검증과 별개다. Windows Gradle의 한글 경로 argfile 오류는 동일 소스의 ASCII 임시
+사본에서 테스트해 우회했다. 기존 고정 날짜 기반 프로필 테스트는 현재 날짜 기준으로 수정했다.
+
+## 실제 broker / PostgreSQL / HTTP 검증
+
+`nilm-r3-demo` 스택에서 실제 MQTT로 300행을 보낸 뒤 analysis만 재시작하고 나머지
+292행을 전송했다. 입력 창을 DB에서 복구해 592행/338 ready scores를 처리했다.
+monitoring PostgreSQL의 모든 payload와 원본 CSV 네 feature가 정확히 같았고,
+H200 참조 상태 및 ON/OFF source index도 모두 일치했다. 최대 점수 차이는
+0.0082429051이며 선택 구간 TP 38 / TN 300 / FP·FN·UNKNOWN 0이다.
+
+같은 592행을 다시 MQTT로 전송한 뒤 두 DB 모두 592행을 유지했다. 입력/출력 Kafka
+consumer offset은 각각 1184/1184, lag 0이었다. 최신 행과 ON(2490791), OFF(2490829)
+행을 실제 HTTP 관리 API에서 조회해 PostgreSQL payload와 일치함을 확인했다.
+
+분석/브리지는 저장소 Dockerfile로 빌드했다. monitoring은 현재 소스와 해시가 동일한
+ASCII 경로 사본에서 전체 테스트·bootJar를 완료하고 JRE 런타임 이미지에 넣었다.
+표준 monitoring Dockerfile 안의 Gradle 재다운로드는 느려 중단했으므로, 그 Dockerfile의
+전체 빌드까지 완료했다고 간주하지 않는다. 저장소의 표준 빌드 설정은 유지했다.

@@ -10,7 +10,7 @@ class MigrationUpgradeTest {
         String url = "jdbc:h2:mem:migration_upgrade;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
         Flyway.configure().dataSource(url, "sa", "").target("2").load().migrate();
         var flyway = Flyway.configure().dataSource(url, "sa", "").load();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(14);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(15);
         flyway.validate();
         try (var connection = DriverManager.getConnection(url, "sa", "");
              var statement = connection.createStatement();
@@ -36,6 +36,7 @@ class MigrationUpgradeTest {
                 "household_observations",
                 "household_daily_appliance_usage",
                 "appliance_usage_episodes",
+                "selected_scene_snapshots",
                 "risk_assessments"}) {
             try (var connection = DriverManager.getConnection(url, "sa", "");
                  var statement = connection.createStatement();
