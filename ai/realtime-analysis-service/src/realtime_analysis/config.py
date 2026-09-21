@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     model_backend: Literal["fake", "selected_scene"] = "fake"
     model_asset_root: str = ""
     model_household_id: str | None = Field(default=None, min_length=1, max_length=50)
+    scene_events_enabled: bool = False
+    scene_risk_threshold_seconds: int | None = Field(default=None, ge=1)
+    scene_test_household_id: str | None = None
+    scene_policy_id: str = Field(default='selected-test-v1', min_length=1, max_length=100)
     model_appliance: str = "kettle"
     model_device: str = "cpu"
     model_dtype: Literal["float32", "bfloat16"] = "float32"
@@ -138,6 +142,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def selected_scene_requires_isolated_configuration(self) -> "Settings":
+        if self.scene_risk_threshold_seconds is not None:
+            if not self.scene_events_enabled or not self.scene_test_household_id or self.scene_test_household_id != self.model_household_id:
+                raise ValueError('Scene risk requires enabled events and an explicit matching test household')
         if self.model_backend == "selected_scene":
             if not self.model_asset_root or self.analysis_run_id == "realtime-v1":
                 raise ValueError("Selected scene requires MODEL_ASSET_ROOT and a dedicated ANALYSIS_RUN_ID")

@@ -34,8 +34,19 @@ class SceneEvidence(Base):
 
 
 class SceneRepository:
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, projector=None, event_publisher=None, final_index=None):
         self._sessions = session_factory
+        self.projector, self.event_publisher, self.final_index = projector, event_publisher, final_index
+
+    @property
+    def projection_config(self):
+        return self.projector.config if self.projector else None
+
+    def flush_events(self, measurement):
+        if self.projector is not None:
+            from realtime_analysis.scene_events import flush_outbox
+            flush_outbox(self._sessions, self.event_publisher, measurement.household_id,
+                         measurement.run_id, measurement.profile_id)
 
     def get(self, measurement):
         with self._sessions() as session:
@@ -60,6 +71,8 @@ class SceneRepository:
                 run_id=measurement.run_id, profile_id=measurement.profile_id,
                 source_index=measurement.source_index, input_sha256=digest,
                 payload=payload, checkpoint=checkpoint))
+            if self.projector is not None:
+                self.projector.apply(session, payload, self.final_index)
 
 
 class SceneHandler:
@@ -88,7 +101,11 @@ class SceneHandler:
         if existing:
             if existing[0] != digest:
                 raise ValueError("Conflicting duplicate source_index")
+            previous = self.repository.latest(measurement)
+            if existing[1]['runtime'] != self.predictor.runtime or previous.get('projection_config') != self.repository.projection_config:
+                raise ValueError('Runtime or event policy changed; use a new run_id')
             self.publisher.publish(existing[1])
+            self.repository.flush_events(measurement)
             return
         previous = self.repository.latest(measurement)
         if previous:
@@ -98,6 +115,8 @@ class SceneHandler:
                 raise ValueError("Scene measurement time must advance exactly one second")
             if previous["runtime"] != self.predictor.runtime:
                 raise ValueError("Runtime changed; use a new run_id")
+            if previous.get('projection_config') != self.repository.projection_config:
+                raise ValueError('Event policy changed; use a new run_id')
             window = list(previous["window"])
         else:
             if measurement.source_index != profile["source_prefix_start_index"]:
@@ -138,8 +157,10 @@ class SceneHandler:
         checkpoint = {"source_index": measurement.source_index,
             "measured_at": measurement.measured_at.isoformat(), "window": window,
             "state": decision.state, "runtime": self.predictor.runtime}
+        checkpoint['projection_config'] = self.repository.projection_config
         self.repository.save(measurement, digest, payload, checkpoint)
         self.publisher.publish(payload)
+        self.repository.flush_events(measurement)
 
 
 def run_selected_scene(settings, stop_event):
@@ -159,20 +180,33 @@ def run_selected_scene(settings, stop_event):
     publisher = AnalysisSnapshotPublisher(settings, topic=settings.kafka_scene_snapshot_topic)
     if not settings.model_household_id:
         raise ValueError("MODEL_HOUSEHOLD_ID is required for a deployed selected-scene worker")
-    handler = SceneHandler(predictor, SceneRepository(sessions), publisher, settings.analysis_run_id,
+    from realtime_analysis.scene_events import SceneProjector, SceneEventPublisher, flush_outbox
+    projector = (SceneProjector(settings.scene_risk_threshold_seconds, settings.scene_test_household_id,
+                                settings.scene_policy_id) if settings.scene_events_enabled else None)
+    event_publisher = SceneEventPublisher(settings) if projector else None
+    repository = SceneRepository(sessions, projector, event_publisher, predictor.profile['source_clip_end_exclusive'] - 1)
+    handler = SceneHandler(predictor, repository, publisher, settings.analysis_run_id,
                            settings.model_household_id)
     admin = AdminClient({"bootstrap.servers": settings.kafka_bootstrap_servers})
-    readiness = ReadinessProbe({
+    checks = {
         "model": lambda: predictor is not None,
         "database": database_readiness_check(sessions),
         "kafka_input": kafka_readiness_check(admin, settings.kafka_input_topic, settings.readiness_timeout_seconds),
         "kafka_scene_output": kafka_readiness_check(admin, settings.kafka_scene_snapshot_topic, settings.readiness_timeout_seconds),
-    })
+    }
+    if projector:
+        from realtime_analysis.scene_events import SESSION_TOPIC, RISK_TOPIC
+        checks['kafka_sessions'] = kafka_readiness_check(admin, SESSION_TOPIC, settings.readiness_timeout_seconds)
+        checks['kafka_risks'] = kafka_readiness_check(admin, RISK_TOPIC, settings.readiness_timeout_seconds)
+    readiness = ReadinessProbe(checks)
     health = ObservabilityServer(settings.http_host, settings.http_port, readiness)
     consumer = AnalysisConsumer(settings, DlqPublisher(settings), handler)
     from realtime_analysis.scene_lease import household_lease
     with household_lease(sessions, settings.model_household_id) as check_alive:
         handler.lease_check = check_alive
+        if projector:
+            flush_outbox(sessions, event_publisher, settings.model_household_id, settings.analysis_run_id,
+                         predictor.profile['profile_id'])
         health.start()
         try:
             consumer.run(stop_event)
