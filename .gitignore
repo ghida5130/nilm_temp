@@ -495,3 +495,6 @@ infrastructure/**/certs/
 
 **/bin/
 bin/
+
+# Local AI consumer performance reports
+ai/realtime-analysis-service/load-test-results/

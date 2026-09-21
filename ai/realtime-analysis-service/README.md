@@ -6,6 +6,48 @@
 예시입니다. 다른 위치에 받았다면 경로만 바꿉니다. Docker Desktop이 실행 중이고
 `infrastructure\local\.env` 설정이 끝난 상태를 기준으로 합니다.
 
+### 정식 성능 비교 자동 실행
+
+로컬 전체 Compose와 Prometheus를 먼저 실행한 뒤 다음 명령을 사용하면 Consumer
+`1 → 2 → 4` 비교를 자동으로 수행합니다.
+
+```bat
+cd /d C:\Users\SSAFY\Desktop\D201\S15P21D201\ai\realtime-analysis-service
+python -m pip install -r ..\..\infrastructure\mqtt\simulator\requirements.txt
+python tools\consumer_load_test.py --consumers 1,2,4 --houses 40 --hz 1 --duration 300
+```
+
+실행기는 각 Consumer 수마다 다음 작업을 수행합니다.
+
+1. 첫 실행 이미지를 빌드하고 Consumer를 지정한 수로 조정
+2. Prometheus에서 Consumer 수와 할당 파티션 합계 `24` 확인
+3. 여러 가구 시뮬레이터 실행
+4. 가구당 299개 입력 처리와 warm-up `0` 대기
+5. 안정 구간에서 처리량, lag, 단계별 평균·p95, E2E p95, 오류, DLQ, CPU, 메모리 측정
+6. 시뮬레이터 중단 후 lag가 `0`으로 복구되는 시간 측정
+7. 다음 Consumer 수로 이동하고 전체 완료 또는 실패 시 Consumer 1개로 복구
+
+결과는 `load-test-results\<실행시각>` 아래에 생성되며 Git에는 포함되지 않습니다.
+
+| 파일 | 내용 |
+| --- | --- |
+| `report.md` | 처리량 향상률·효율·자동 판정과 단계별 p95 비교표 |
+| `summary.csv` | Excel 등에서 비교할 수 있는 전체 핵심 수치 |
+| `results.json` | 전체 원본 측정 결과 |
+| `metadata.json` | 입력 부하와 측정 설정 |
+| `simulator-consumers-*.log` | Consumer 수별 시뮬레이터 로그 |
+
+기본 `40가구 × 1Hz`에서 Consumer 1개의 lag도 계속 `0`이면 `--hz 2`처럼 부하를
+높입니다. 모든 Consumer에서 lag가 과도하게 쌓이면 가구 수나 Hz를 낮춥니다. 비교 시에는
+모든 Consumer 수에 동일한 값을 사용해야 합니다. 반복 실행에서 기존 이미지를 그대로
+사용하려면 `--skip-build`를 추가할 수 있습니다.
+
+전체 옵션은 다음 명령으로 확인합니다.
+
+```bat
+python tools\consumer_load_test.py --help
+```
+
 ### 1. 전체 서비스와 Consumer 1개 실행
 
 ```bat
