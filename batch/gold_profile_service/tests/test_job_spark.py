@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
+import gold_profile.job as job_module
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -39,7 +40,12 @@ def _publish_input_day(spark, storage, session_factory, target_date, *, used):
     )
     if used:
         start = datetime.combine(target_date, datetime.min.time(), timezone(timedelta(hours=9))).astimezone(timezone.utc) + timedelta(minutes=15)
-        slice_rows = [("session-1", 1, "H001", "KETTLE", start, start + timedelta(minutes=1), False)]
+        # One session id per date: the same id with different content across
+        # dates is a conflicting revision and is rejected by the logical-use step.
+        slice_rows = [(
+            f"session-{target_date.isoformat()}", 1, "H001", "KETTLE",
+            start, start + timedelta(minutes=1), False,
+        )]
     else:
         slice_rows = []
     slices = spark.createDataFrame(
@@ -114,6 +120,101 @@ def test_job_publishes_one_atomic_shadow_profile(spark, tmp_path):
     assert repeated.reused_run_id == result.run_id
     with session_factory() as session:
         assert session.query(GoldProfileDeliveryOutbox).count() == 1
+
+
+@pytest.mark.spark
+def test_shadow_run_is_rebuilt_as_a_new_active_revision(spark, tmp_path):
+    storage = LocalLakeStorage(tmp_path / "lake")
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'analysis.db'}")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    as_of = date(2026, 9, 19)
+    for day in (as_of - timedelta(days=1), as_of):
+        _publish_input_day(spark, storage, session_factory, day, used=True)
+    shadow_settings = GoldProfileSettings(
+        lake_local_root=str(tmp_path / "lake"), profile_window_days=2,
+        profile_minimum_sample_days=1, profile_minimum_weekday_sample_days=1,
+        profile_delivery_mode="SHADOW", spark_master="local[2]",
+    )
+
+    shadow = run_gold_profile(
+        shadow_settings, as_of, storage=storage,
+        session_factory=session_factory, spark=spark,
+        now=datetime(2026, 9, 20, 0, 30, tzinfo=timezone.utc),
+    )
+    with session_factory.begin() as session:
+        shadow_delivery = session.query(GoldProfileDeliveryOutbox).one()
+        shadow_delivery.status = "PUBLISHED"
+        shadow_delivery.published_at = datetime(2026, 9, 20, 0, 31, tzinfo=timezone.utc)
+
+    active_settings = shadow_settings.model_copy(
+        update={"profile_delivery_mode": "ACTIVE"}
+    )
+    active = run_gold_profile(
+        active_settings, as_of, storage=storage,
+        session_factory=session_factory, spark=spark,
+        now=datetime(2026, 9, 20, 1, 0, tzinfo=timezone.utc),
+    )
+    retried = run_gold_profile(
+        active_settings, as_of, storage=storage,
+        session_factory=session_factory, spark=spark,
+    )
+
+    assert shadow.run_id is not None
+    assert active.run_id is not None
+    assert active.run_id != shadow.run_id
+    assert retried.reused_run_id == active.run_id
+    with session_factory() as session:
+        deliveries = session.query(GoldProfileDeliveryOutbox).order_by(
+            GoldProfileDeliveryOutbox.profile_revision
+        ).all()
+        assert [(row.delivery_mode, row.profile_revision, row.status) for row in deliveries] == [
+            ("SHADOW", 1, "PUBLISHED"),
+            ("ACTIVE", 2, "PENDING"),
+        ]
+        assert deliveries[0].profile_version == shadow.run_id
+        assert deliveries[1].profile_version == active.run_id
+
+
+@pytest.mark.spark
+def test_failed_activation_and_outbox_transaction_is_repaired(spark, tmp_path, monkeypatch):
+    storage = LocalLakeStorage(tmp_path / "lake")
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'analysis.db'}")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    as_of = date(2026, 9, 19)
+    for day in (as_of - timedelta(days=1), as_of):
+        _publish_input_day(spark, storage, session_factory, day, used=True)
+    settings = GoldProfileSettings(
+        lake_local_root=str(tmp_path / "lake"), profile_window_days=2,
+        profile_minimum_sample_days=1, profile_minimum_weekday_sample_days=1,
+        profile_delivery_mode="ACTIVE", spark_master="local[2]",
+    )
+    original_enqueue = job_module.enqueue_payloads
+
+    def fail_enqueue(*_args, **_kwargs):
+        raise RuntimeError("simulated outbox failure")
+
+    monkeypatch.setattr(job_module, "enqueue_payloads", fail_enqueue)
+    with pytest.raises(RuntimeError, match="simulated outbox failure"):
+        run_gold_profile(
+            settings, as_of, storage=storage,
+            session_factory=session_factory, spark=spark,
+        )
+    with session_factory() as session:
+        assert session.query(GoldProfileDeliveryOutbox).count() == 0
+
+    monkeypatch.setattr(job_module, "enqueue_payloads", original_enqueue)
+    repaired = run_gold_profile(
+        settings, as_of, storage=storage,
+        session_factory=session_factory, spark=spark,
+    )
+
+    assert repaired.reused_run_id is not None
+    with session_factory() as session:
+        delivery = session.query(GoldProfileDeliveryOutbox).one()
+        assert delivery.profile_version == repaired.reused_run_id
+        assert delivery.delivery_mode == "ACTIVE"
 
 
 @pytest.mark.spark

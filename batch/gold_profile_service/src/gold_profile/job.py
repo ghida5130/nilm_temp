@@ -86,6 +86,9 @@ def config_version_of(settings) -> str:
         "bucket_minutes": settings.profile_time_bucket_minutes,
         "offset": settings.business_utc_offset_seconds,
         "statistic_rule_version": settings.profile_statistic_rule_version,
+        # Delivery intent is part of the run identity.  A SHADOW result must
+        # never satisfy an ACTIVE request, even when every data input is equal.
+        "delivery_mode": settings.profile_delivery_mode,
     }
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     return f"gold-profile-config@{digest[:16]}"
@@ -129,13 +132,21 @@ def _repair_reused_delivery(
     if baseline_ref.run_id != run_id or statistic_ref.run_id != run_id:
         raise RuntimeError("active Gold components do not match the reused run")
     manifest = json.loads(storage.read_bytes(baseline_ref.manifest_path))
+    manifest_delivery_mode = manifest.get("delivery_mode", "SHADOW")
+    if manifest_delivery_mode != settings.profile_delivery_mode:
+        raise RuntimeError(
+            "reused Gold run delivery mode does not match the requested mode: "
+            f"manifest={manifest_delivery_mode}, requested={settings.profile_delivery_mode}"
+        )
     effective_from = datetime.fromisoformat(manifest["effective_from"])
     baseline = spark.read.parquet(storage.uri(baseline_ref.output_path))
     statistics = spark.read.parquet(storage.uri(statistic_ref.output_path))
     payloads = build_household_messages(
         baseline, statistics,
         profile_version=str(run_id), profile_revision=_revision_of(session_factory, run_id),
-        delivery_mode=manifest.get("delivery_mode", "SHADOW"),
+        # Provenance and content come from the immutable manifest.  Delivery
+        # policy comes from the current request after the equality guard above.
+        delivery_mode=settings.profile_delivery_mode,
         as_of_date=as_of_date,
         window_start_date=date.fromisoformat(manifest["input"]["window_start_date"]),
         effective_from=effective_from, published_at=effective_from,

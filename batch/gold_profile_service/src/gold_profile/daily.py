@@ -40,6 +40,7 @@ from power_silver.constants import (
     DATASET_SESSION_SLICES,
     RUN_SKIPPED,
     RUN_SUCCEEDED,
+    RUN_WAITING_INPUT,
 )
 from power_silver.job import run_daily
 from power_silver.targets import load_targets
@@ -82,6 +83,10 @@ class PipelineStopped(RuntimeError):
     def __init__(self, status: str):
         super().__init__(status)
         self.status = status
+
+
+class InputNotReady(RuntimeError):
+    """The upstream manifest boundary has not made the target date final yet."""
 
 
 @dataclass
@@ -137,6 +142,10 @@ def run_daily_pipeline(
                     "%s 실패 (%s/%s): %s", name, number, attempts, stage.error
                 )
                 if number >= attempts:
+                    if isinstance(error, InputNotReady):
+                        stage.status = STATUS_PARTIAL
+                        stage.detail["status"] = RUN_WAITING_INPUT
+                        raise PipelineStopped(RUN_INPUT_INCOMPLETE) from error
                     raise StageFailed(f"{name}: {stage.error}") from error
                 sleep(retry_seconds)
                 continue
@@ -149,6 +158,8 @@ def run_daily_pipeline(
         status = stages.power_silver(as_of_date)
         # SKIPPED는 다른 작성자가 그 날짜를 맡았다는 뜻이라 실패가 아니다.
         # WAITING_INPUT은 입력이 아직 안 왔다는 뜻이므로 다시 시도한다.
+        if status == RUN_WAITING_INPUT:
+            raise InputNotReady(f"status={status}")
         if status not in (RUN_SUCCEEDED, RUN_SKIPPED):
             raise RuntimeError(f"status={status}")
         return status
@@ -397,7 +408,9 @@ class SparkDailyStages:
             as_of_date, result.status, result.run_id,
             result.reused_run_id, result.incomplete,
         )
-        return result.status
+        # The orchestrator needs the run/reuse/incomplete fields as well as the
+        # status to produce its result contract and decide whether to publish.
+        return result
 
     def publish(self) -> tuple[int, int]:
         if self._publisher is None:

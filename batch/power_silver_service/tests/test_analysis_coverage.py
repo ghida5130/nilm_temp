@@ -97,4 +97,5 @@ def test_latest_revision_and_delete_restore_the_past_session_state(spark) -> Non
     assert [(row.session_id, row.session_version) for row in restored] == [
         ("updated", 2)
     ]
-    assert restored[0].ended_at == start + timedelta(seconds=30)
+    # Spark hands timestamps back as naive UTC (session time zone is UTC).
+    assert restored[0].ended_at.replace(tzinfo=timezone.utc) == start + timedelta(seconds=30)

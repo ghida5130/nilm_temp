@@ -5,6 +5,7 @@ import threading
 from types import SimpleNamespace
 from uuid import uuid4
 
+import gold_profile.daily as daily_module
 from gold_profile.daily import (
     ALIGN_INPUT_MISSING,
     ALIGN_SNAPSHOT_MOVING,
@@ -17,6 +18,7 @@ from gold_profile.daily import (
     STATUS_SUCCEEDED,
     RUN_INPUT_INCOMPLETE,
     RUN_PUBLISH_PENDING,
+    SparkDailyStages,
     run_daily_pipeline,
 )
 from gold_profile.delivery import drain_outbox
@@ -25,6 +27,83 @@ from gold_profile.session_snapshot import inspect_session_snapshot
 
 AS_OF = date(2026, 9, 20)
 WINDOW = tuple(AS_OF - timedelta(days=offset) for offset in (2, 1, 0))
+
+
+def test_spark_daily_stage_preserves_gold_result_contract(monkeypatch):
+    expected = SimpleNamespace(
+        status="SUCCEEDED", run_id="run-1", reused_run_id=None, incomplete=False
+    )
+    monkeypatch.setattr(daily_module, "run_gold_profile", lambda *_args, **_kwargs: expected)
+    stages = object.__new__(SparkDailyStages)
+    stages._settings = SimpleNamespace()
+    stages._storage = object()
+    stages._sessions = object()
+    stages._spark = object()
+
+    assert stages.gold_profile(AS_OF) is expected
+
+
+def test_spark_daily_stages_forward_the_fixed_input_to_the_real_batches(monkeypatch):
+    """단계 구현이 고정 입력을 실제 배치 함수에 그대로 넘기는지 확인한다.
+
+    FakeStages 테스트는 순서와 재시도만 본다. 여기서는 SparkDailyStages가
+    ``run_analysis_daily``에 선택한 입력 스냅샷을, ``run_gold_profile``에 프로필 입력
+    스냅샷을 넘기고, power-silver의 상태 문자열만 돌려주는지를 본다. 이 연결이 끊기면
+    FakeStages 테스트는 모두 통과한 채 운영에서만 창이 움직인다.
+    """
+
+    calls = {}
+    selected = SimpleNamespace(session_token="t1", snapshot_id="analysis-input")
+    gold_input = SimpleNamespace(snapshot_id="gold-input")
+
+    def fake_run_daily(settings, day, **kwargs):
+        calls["power"] = (day, kwargs)
+        return SimpleNamespace(status="WAITING_INPUT", run_id=None, wait_reason="PARTITIONS_BEHIND:3")
+
+    def fake_run_analysis_daily(settings, day, **kwargs):
+        calls["usage"] = (day, kwargs)
+        return {"run_id": "analysis-run"}
+
+    def fake_run_gold_profile(settings, day, **kwargs):
+        calls["gold"] = (day, kwargs)
+        return SimpleNamespace(status="SUCCEEDED", run_id="gold-run", reused_run_id=None, incomplete=False)
+
+    monkeypatch.setattr(daily_module, "run_daily", fake_run_daily)
+    monkeypatch.setattr(daily_module, "run_analysis_daily", fake_run_analysis_daily)
+    monkeypatch.setattr(daily_module, "run_gold_profile", fake_run_gold_profile)
+    monkeypatch.setattr(
+        daily_module, "select_analysis_input_snapshot",
+        lambda settings, *, storage: calls.setdefault("select", storage) and selected,
+    )
+    stages = object.__new__(SparkDailyStages)
+    stages._settings = SimpleNamespace(profile_window_days=3)
+    stages._storage = storage = object()
+    stages._sessions = sessions = object()
+    stages._spark = spark = object()
+    stages._repository = repository = object()
+    stages._targets = targets = object()
+
+    assert stages.power_silver(AS_OF) == "WAITING_INPUT"
+    assert calls["power"][0] == AS_OF
+    assert calls["power"][1]["repository"] is repository
+    assert calls["power"][1]["targets"] is targets
+    assert calls["power"][1]["force"] is False
+
+    assert stages.select_analysis_input() is selected
+    assert calls["select"] is storage
+
+    stages.usage_daily(AS_OF - timedelta(days=1), selected)
+    day, kwargs = calls["usage"]
+    assert day == AS_OF - timedelta(days=1)
+    assert kwargs["input_snapshot"] is selected
+    assert kwargs["storage"] is storage
+    assert kwargs["session_factory"] is sessions
+    assert kwargs["spark"] is spark
+
+    result = stages.gold_profile(AS_OF, gold_input)
+    assert result.run_id == "gold-run"
+    assert calls["gold"][1]["input_snapshot"] is gold_input
+    assert calls["gold"][1]["force"] is False
 
 
 class FakeStages:
@@ -46,6 +125,7 @@ class FakeStages:
         missing_slices=None,
         missing_provenance=None,
         gold_result=None,
+        power_status="SUCCEEDED",
         window=WINDOW,
     ):
         self.tokens = dict(tokens)
@@ -61,6 +141,7 @@ class FakeStages:
             status="SUCCEEDED", incomplete=False, run_id="gold-run",
             reused_run_id=None,
         )
+        self.power_status = power_status
         self.calls = []
         self.selected = None
 
@@ -76,7 +157,7 @@ class FakeStages:
     def power_silver(self, day):
         self.calls.append(("power-silver", day))
         self._maybe_fail("power-silver")
-        return "SUCCEEDED"
+        return self.power_status
 
     def select_analysis_input(self):
         self.calls.append(("select-input", None))
@@ -162,6 +243,20 @@ def test_stages_run_in_order_and_a_matching_window_is_left_alone():
     ]
     # 이미 같은 스냅샷이다. 28일을 공연히 다시 집계하지 않는다.
     assert stage(report, STAGE_ALIGN_WINDOW)["detail"]["rebuilt_dates"] == []
+
+
+def test_waiting_power_input_is_distinct_from_code_failure():
+    stages = FakeStages(
+        tokens={day: "t2" for day in WINDOW}, power_status="WAITING_INPUT"
+    )
+
+    report = run(stages, attempts=2)
+
+    assert report["status"] == RUN_INPUT_INCOMPLETE
+    assert report["ok"] is False
+    assert report["stages"][0]["status"] == STATUS_PARTIAL
+    assert report["stages"][0]["attempts"] == 2
+    assert report["stages"][0]["detail"]["status"] == "WAITING_INPUT"
 
 
 def test_window_dates_left_on_an_older_session_snapshot_are_rebuilt_before_gold():

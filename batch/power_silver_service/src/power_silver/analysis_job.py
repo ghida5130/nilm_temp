@@ -15,7 +15,7 @@ from pyspark.sql.types import (
     StringType, StructField, StructType, TimestampType,
 )
 
-from realtime_analysis.models import APPLIANCE_TYPES
+from realtime_analysis.models import APPLIANCE_TYPES, LakeBatchRun
 from power_silver.analysis_coverage import apply_completion_policy, build_analysis_coverage
 from power_silver.appliance_usage import (
     build_appliance_usage_daily,
@@ -230,6 +230,51 @@ def select_analysis_input_snapshot(settings, *, storage) -> AnalysisInputSnapsho
     )
 
 
+ANALYSIS_DATASETS = (
+    DATASET_ANALYSIS_COVERAGE,
+    DATASET_SESSION_SLICES,
+    DATASET_APPLIANCE_USAGE_DAILY,
+)
+
+
+def analysis_policy_digest(settings) -> str:
+    """Settings that change the output but do not fit in ``config_version``.
+
+    ``config_version`` carries the receipt and session snapshot tokens and is
+    limited to 100 characters.  The completion policy is recorded on the run
+    instead, so a completed run is only reused when it was produced under the
+    same policy as the current request.
+    """
+
+    payload = {
+        "analysis_run_id": settings.analysis_run_id,
+        "minimum_coverage_ratio": settings.analysis_minimum_coverage_ratio,
+        "maximum_gap_seconds": settings.analysis_maximum_gap_seconds,
+        "quality_policy_version": settings.quality_policy_version,
+        "business_utc_offset_seconds": settings.business_utc_offset_seconds,
+        "appliance_types": list(APPLIANCE_TYPES),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()[:16]
+
+
+def _reusable_manifest(
+    storage, session_factory, catalog, target_date: date, run_id: UUID, digest: str
+) -> dict | None:
+    """The manifest of a completed run that used the same inputs and policy."""
+
+    with session_factory() as session:
+        run = session.get(LakeBatchRun, run_id)
+    if run is None or (run.details or {}).get("analysis_policy_digest") != digest:
+        return None
+    ref = catalog.active_version(DATASET_APPLIANCE_USAGE_DAILY, target_date)
+    if ref is None or ref.run_id != run_id:
+        return None
+    manifest = json.loads(storage.read_bytes(ref.manifest_path))
+    return {**manifest, "reused_run_id": str(run_id)}
+
+
 def run_analysis_daily(
     settings,
     target_date: date,
@@ -238,7 +283,17 @@ def run_analysis_daily(
     session_factory,
     spark,
     input_snapshot: AnalysisInputSnapshot | None = None,
+    force: bool = False,
 ) -> dict:
+    """Publish (or reuse) the daily coverage, slices and usage for one date.
+
+    A rerun with the same power Silver input, the same confirmed receipt and
+    session selection, the same rule and the same completion policy returns the
+    completed run's manifest (with ``reused_run_id``) instead of publishing a
+    new version.  Without this, every ``gold-profile daily`` rerun would move the
+    Gold input snapshot and produce a new profile revision from identical data.
+    """
+
     catalog = SilverCatalog(session_factory)
     power_ref = catalog.active_version(DATASET_POWER_CLEAN, target_date)
     observation_ref = catalog.active_version(DATASET_OBSERVATION, target_date)
@@ -258,6 +313,21 @@ def run_analysis_daily(
     config_version = (
         f"receipts={receipt_snapshot[:32]};sessions={selected.session_token}"
     )
+    policy_digest = analysis_policy_digest(settings)
+    if not force:
+        reusable = repository.completed_run(
+            target_date,
+            input_snapshot_id=power_ref.input_snapshot_id,
+            rule_version=settings.analysis_rule_version,
+            config_version=config_version,
+            dataset_names=ANALYSIS_DATASETS,
+        )
+        if reusable is not None:
+            manifest = _reusable_manifest(
+                storage, session_factory, catalog, target_date, reusable, policy_digest
+            )
+            if manifest is not None:
+                return manifest
     handle = repository.start(
         target_date,
         input_snapshot_id=power_ref.input_snapshot_id,
@@ -268,6 +338,7 @@ def run_analysis_daily(
             "analysis_input_snapshot_id": selected.snapshot_id,
             "receipt_snapshot": receipt_snapshot,
             "session_snapshot": session_snapshot,
+            "analysis_policy_digest": policy_digest,
         },
     )
     run_id = str(handle.run_id)
