@@ -26,3 +26,13 @@ def test_bootstrap_policy_file_contains_four_event_types() -> None:
         "start": "23:00",
         "end": "07:00",
     }
+
+    appliance_use = next(
+        policy
+        for policy in repository.policies
+        if policy.event_type == "PROLONGED_APPLIANCE_USE"
+    )
+    assert appliance_use.parameters["limits_minutes"] == {
+        "INDUCTION": 2,
+        "IRON": 2,
+    }
