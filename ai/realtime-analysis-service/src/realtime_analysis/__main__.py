@@ -74,6 +74,11 @@ def main() -> None:
     signal.signal(signal.SIGINT, request_shutdown)
     signal.signal(signal.SIGTERM, request_shutdown)
 
+    if settings.model_backend == "selected_scene":
+        from realtime_analysis.scene_pipeline import run_selected_scene
+        run_selected_scene(settings, stop_event)
+        return
+
     # 이상 탐지기 생성
     tracker = DailyActivityTracker()
     manifest = ModelManifest.from_json_file(settings.model_manifest_file)
