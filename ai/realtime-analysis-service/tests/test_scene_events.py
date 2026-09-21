@@ -121,7 +121,7 @@ def test_policy_change_within_run_rejected(db):
 @pytest.mark.parametrize('appliance,sessions_expected,risks_expected', [
     ('kettle',1,1),('induction',3,2),('iron',1,1),('microwave',1,1),('hair_dryer',1,1),('vacuum_cleaner',1,1)])
 def test_actual_model_fixture_generates_only_target_sessions(db,appliance,sessions_expected,risks_expected):
-    import torch
+    torch = pytest.importorskip('torch')
     from realtime_analysis.real_predictor import SelectedScenePredictor
     from realtime_analysis.scene_replay import measurements
     torch.set_num_threads(1)

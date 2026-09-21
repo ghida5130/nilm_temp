@@ -25,6 +25,7 @@ inference = [
     "numpy>=1.26,<3",
 ]
 dev = [
+    "aiomqtt>=2,<3",
     "pytest>=8,<9",
     "pytest-cov>=6,<7",
 ]

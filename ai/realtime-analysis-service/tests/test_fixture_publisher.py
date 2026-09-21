@@ -11,6 +11,7 @@ ASSETS = Path(__file__).resolve().parents[2] / 'assets/nilm_r3'
 
 
 def prepared():
+    if not ASSETS.exists(): pytest.skip('Fixture assets are outside the service-only build context')
     return prepare(ASSETS, 'kettle', 'test-house', 'fixture-test', datetime(2026, 9, 21, tzinfo=timezone.utc),
                    'v1/power/demo/{household_id}/main')
 

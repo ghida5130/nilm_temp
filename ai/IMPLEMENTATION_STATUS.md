@@ -9,7 +9,7 @@ develop/master 직접 push 또는 임의 배포는 하지 않는다. PR은 아�
 | 2 | feature/ai/inference-runtime | 구현, Python 144 passed / PG 전용 8 제외 |
 | 3 | feature/ai/fixture-replay | 구현, 발행기 시험 7 passed |
 | 4 | feature/ai/service-events | 구현, 세션·위험 outbox 및 중단/복구 검사 |
-| 5 | feature/ai/deployment-package | 대기 |
+| 5 | feature/ai/deployment-package | 이미지 2종 빌드, 컨테이너 실제 forward 및 기존 Docker CI 151 passed / 23 skipped |
 | 6 | feature/ai/inference-e2e | 대기 |
 
 ## 2번 구현
@@ -26,3 +26,4 @@ lock을 가구 단위로 유지하고, 각 입력 처리 전 해당 연결이 �
 
 선정 profile/window가 아닌 범용 6종 추론으로 확장하지 않는다. 원래 ai/evidence 검수 문서는
 이전 브랜치에서 실시한 기록으로 보존되며 이 브랜치에서 외부 서비스가 구현됐다는 뜻이 아니다.
+
