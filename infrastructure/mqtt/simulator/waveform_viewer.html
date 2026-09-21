@@ -1473,8 +1473,9 @@
           y: {
             grid: { color: 'rgba(51, 65, 85, 0.4)' },
             ticks: { color: '#94a3b8' },
-            suggestedMin: 0,
-            suggestedMax: 4000
+            // 데이터 범위에 맞춰 자동 스케일링 (대기전력 ~55W 구간에서도 파형이 보이도록 상한 고정 제거)
+            beginAtZero: true,
+            grace: '8%'
           }
         }
       }
