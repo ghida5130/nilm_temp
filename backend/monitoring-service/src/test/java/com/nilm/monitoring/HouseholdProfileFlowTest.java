@@ -28,8 +28,11 @@ class HouseholdProfileFlowTest {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    /** 평가 기준일. 프로필은 하루 전까지의 데이터로 만들어져 있어야 한다. */
-    private static final LocalDate TODAY = LocalDate.of(2026, 9, 20);
+    /**
+     * 평가 기준일. 프로필은 하루 전까지의 데이터로 만들어져 있어야 한다.
+     * 발효 시각(PENDING/ACTIVE) 판정은 서비스가 실제 시계로 하므로 날짜를 고정하면 안 된다.
+     */
+    private static final LocalDate TODAY = LocalDate.now(KST);
 
     private static final OffsetDateTime EVALUATION_TIME =
             TODAY.atTime(10, 0).atZone(KST).toOffsetDateTime();

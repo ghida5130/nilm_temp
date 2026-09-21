@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import logging
+import threading
 from uuid import UUID, uuid5
 
 from sqlalchemy import (
@@ -15,6 +17,8 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from realtime_analysis.database import Base
 
+
+logger = logging.getLogger(__name__)
 
 OUTBOX_NAMESPACE = UUID("db9ce0b6-276e-44db-b5e1-1df643d775a4")
 
@@ -155,3 +159,30 @@ class GoldProfilePublisher:
                 row.published_at = now
                 row.last_error = None
 
+
+
+def drain_outbox(publisher, interval_seconds: float, stop: threading.Event) -> int:
+    """아웃박스가 빌 때까지 계속 쓸어 담는다. 상주 발행자의 본체다.
+
+    한 번 실행으로 끝나는 명령만 있으면 브로커가 잠깐 죽었을 때 생긴 실패 행은
+    누가 다시 부르기 전까지 그대로 남는다. 행에 적힌 ``next_attempt_at``은
+    다시 부르는 사람이 있어야 뜻이 있다.
+
+    쓸어 담기 자체가 실패해도 루프는 죽지 않는다. DB가 잠깐 끊긴 것과 프로세스가
+    끝나는 것은 다른 일이고, 아웃박스 행은 어차피 남아 있다.
+
+    :param stop: 세워진 순간 다음 주기를 기다리지 않고 빠져나온다
+    :return: 프로세스 종료 코드
+    """
+
+    while not stop.is_set():
+        try:
+            published, failed = publisher.publish_pending()
+            if published or failed:
+                logger.info(
+                    "gold profile outbox published=%s failed=%s", published, failed
+                )
+        except Exception:
+            logger.exception("아웃박스를 쓸어 담지 못했다. 다음 주기에 다시 한다")
+        stop.wait(interval_seconds)
+    return 0

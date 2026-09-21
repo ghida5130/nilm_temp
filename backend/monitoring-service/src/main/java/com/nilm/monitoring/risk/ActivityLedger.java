@@ -44,7 +44,7 @@ public record ActivityLedger(
     /**
      * 전환 횟수만 있던 옛 입력. 마지막 활동 시각과 현재 ON 여부로 무활동만 계산한다.
      *
-     * @deprecated 통합 단계에서 {@code CurrentStateProvider}가 만든 원장으로 갈아탄다
+     * @deprecated 평가 경로는 {@code CurrentStateProvider}가 만든 원장으로 갈아탔다
      */
     @Deprecated(since = "monitoring-score-v1-MIA")
     public static ActivityLedger coarse(

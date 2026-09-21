@@ -5,28 +5,18 @@ import com.nilm.monitoring.config.EventRoutingPolicy;
 import com.nilm.monitoring.config.RiskProperties;
 import com.nilm.monitoring.config.enums.RiskLevel;
 import com.nilm.monitoring.config.enums.StateChangeTrigger;
-import com.nilm.monitoring.domain.ApplianceState;
-import com.nilm.monitoring.domain.HouseholdDailyApplianceUsage;
-import com.nilm.monitoring.domain.HouseholdObservation;
 import com.nilm.monitoring.domain.Notification;
 import com.nilm.monitoring.domain.NotificationSetting;
 import com.nilm.monitoring.domain.RiskAssessmentRecord;
 import com.nilm.monitoring.domain.Subject;
-import com.nilm.monitoring.repository.ApplianceStateRepository;
-import com.nilm.monitoring.repository.HouseholdDailyApplianceUsageRepository;
-import com.nilm.monitoring.repository.HouseholdObservationRepository;
 import com.nilm.monitoring.repository.RiskAssessmentRecordRepository;
 import com.nilm.monitoring.repository.SubjectRepository;
 import com.nilm.monitoring.risk.CurrentState;
 import com.nilm.monitoring.risk.RiskAssessment;
 import com.nilm.monitoring.risk.RiskAssessor;
 import com.nilm.monitoring.risk.RiskPolicy;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -50,14 +40,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RiskAssessmentService {
 
-    /** 영업일 경계. 프로필을 만든 배치와 같은 시간대를 쓴다. */
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
-
     private final SubjectRepository subjects;
     private final HouseholdProfileService profiles;
-    private final HouseholdObservationRepository observations;
-    private final HouseholdDailyApplianceUsageRepository dailyUsage;
-    private final ApplianceStateRepository applianceStates;
+    private final CurrentStateProvider currentStates;
     private final RiskAssessmentRecordRepository assessments;
     private final NotificationService notifications;
     private final NotificationGate notificationGate;
@@ -202,7 +187,8 @@ public class RiskAssessmentService {
         subject.syncMonitoring(now);
 
         RiskPolicy policy = riskProperties.toPolicy();
-        CurrentState state = currentState(subject, now);
+        CurrentState state =
+                currentStates.of(subject.getHouseholdId(), subject.isAwayAt(now), now);
         RiskAssessment assessment = assessor.assess(
                 profiles.resolveActive(subject.getHouseholdId(), now), state, policy);
 
@@ -329,35 +315,6 @@ public class RiskAssessmentService {
             record.linkNotification(notification.getId());
         }
         assessments.save(record);
-    }
-
-    /** 평가가 볼 "지금"의 값을 한 번에 읽어 값으로 고정한다. */
-    private CurrentState currentState(Subject subject, OffsetDateTime now) {
-        OffsetDateTime lastObservedAt = observations.findById(subject.getHouseholdId())
-                .map(HouseholdObservation::getLastObservedAt)
-                .orElse(null);
-
-        boolean anyApplianceOn = applianceStates.findByHouseholdId(subject.getHouseholdId())
-                .stream()
-                .anyMatch(ApplianceState::isOn);
-
-        LocalDate today = now.atZoneSameInstant(ZONE).toLocalDate();
-        Map<String, CurrentState.DailyUsage> todayUsage = new LinkedHashMap<>();
-        for (HouseholdDailyApplianceUsage row
-                : dailyUsage.findByHouseholdIdAndUsageDate(subject.getHouseholdId(), today)) {
-            todayUsage.put(
-                    row.getApplianceType(),
-                    new CurrentState.DailyUsage(row.getFirstOnAt(), row.getStartCount()));
-        }
-
-        return new CurrentState(
-                now,
-                subject.isAwayAt(now),
-                lastObservedAt,
-                subject.getLastActivityAt(),
-                anyApplianceOn,
-                Map.copyOf(todayUsage)
-        );
     }
 
     private String indicatorsJson(RiskAssessment assessment) {

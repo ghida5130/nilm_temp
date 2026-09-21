@@ -25,9 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 평가 한 번이 볼 "지금"을 한 번에 읽어 값으로 고정한다.
  *
- * <p>{@code RiskAssessmentService.currentState()}를 대신할 자리다. 옛 경로는 마지막 관측
- * 시각과 전환 횟수만 실어서, 관측 공백을 증명할 수도 없고 Gold의 유효 사용 정의와 같은
- * 숫자를 만들 수도 없었다. 여기서는 두 가지를 모두 싣는다.
+ * <p>{@link RiskAssessmentService}의 유일한 입력 경로다. 옛 경로는 마지막 관측 시각과
+ * 전환 횟수만 실어서, 관측 공백을 증명할 수도 없고 Gold의 유효 사용 정의와 같은 숫자를
+ * 만들 수도 없었다. 여기서는 두 가지를 모두 싣는다.
  *
  * <ul>
  *   <li><b>관측 품질</b>: 마지막 관측 시각(신선도), 끊김 없는 관측의 시작, 영업일별 실제
@@ -36,10 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
  *       마지막 사용은 조회 구간 밖이어도 반드시 한 건 싣는다.</li>
  * </ul>
  *
- * <p>통합 방법은 {@code RiskAssessmentService}에서
- * {@code CurrentState state = currentState(subject, now);}를
- * {@code CurrentState state = currentStates.of(subject.getHouseholdId(), subject.isAwayAt(now), now);}로
- * 바꾸는 것이다. 그 전까지 옛 경로는 M·A를 계산하지 않고 제외한다.
+ * <p>두 가지를 모두 실으므로 루틴 미사용(M)·무활동(I)·활동 감소(A)가 모두 계산된다.
+ * 옛 입력 계약으로는 M과 A가 제외됐다.
  */
 @Service
 @RequiredArgsConstructor

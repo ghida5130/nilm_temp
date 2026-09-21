@@ -586,6 +586,8 @@ services:
 
   # 28-day ACTIVE usage/session inputs -> versioned shadow Gold profiles.
   #   docker compose run --rm gold-profile gold-profile run --as-of 2026-09-19
+  # One business day end to end (silver -> usage -> gold -> publish):
+  #   docker compose run --rm gold-profile gold-profile daily
   gold-profile:
     build:
       context: ../../batch/gold_profile_service
@@ -615,14 +617,59 @@ services:
       PROFILE_MINIMUM_WEEKDAY_SAMPLE_DAYS: ${GOLD_PROFILE_MINIMUM_WEEKDAY_SAMPLE_DAYS:-4}
       PROFILE_MINIMUM_DAILY_USE_PROBABILITY: ${GOLD_PROFILE_MINIMUM_DAILY_USE_PROBABILITY:-0.70}
       PROFILE_TIME_BUCKET_MINUTES: ${GOLD_PROFILE_TIME_BUCKET_MINUTES:-30}
+      # 프로필 전달. SHADOW는 아웃박스에만 적고 모니터링 운영 프로필로 반영하지 않는다.
+      # 종단 검증이 끝난 뒤 ACTIVE로 올린다.
+      PROFILE_DELIVERY_MODE: ${GOLD_PROFILE_DELIVERY_MODE:-SHADOW}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      PROFILE_KAFKA_TOPIC: ${KAFKA_HOUSEHOLD_PROFILE_TOPIC:-gold.household-profile.v1}
+      PROFILE_PUBLISHER_BATCH_SIZE: ${GOLD_PROFILE_PUBLISHER_BATCH_SIZE:-100}
+      PROFILE_PUBLISHER_RETRY_SECONDS: ${GOLD_PROFILE_PUBLISHER_RETRY_SECONDS:-30}
       BUSINESS_UTC_OFFSET_SECONDS: ${BUSINESS_UTC_OFFSET_SECONDS:-32400}
       SPARK_MASTER: ${POWER_SILVER_SPARK_MASTER:-}
       SPARK_SHUFFLE_PARTITIONS: ${POWER_SILVER_SPARK_SHUFFLE_PARTITIONS:-0}
       LOG_LEVEL: ${GOLD_PROFILE_LOG_LEVEL:-INFO}
     depends_on:
+      kafka-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       realtime-analysis-service:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Drains the profile delivery outbox. The batch only writes rows; without a
+  # process calling it, a row that failed to send keeps its next_attempt_at and
+  # is never retried. Long-lived on purpose, so it is not in the batch profile.
+  gold-profile-publisher:
+    build:
+      context: ../../batch/gold_profile_service
+      additional_contexts:
+        analysis: ../../ai/realtime-analysis-service
+        silver: ../../batch/power_silver_service
+      target: runtime
+    image: nilm-gold-profile:local
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: analysis_db
+      DATABASE_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      PROFILE_KAFKA_TOPIC: ${KAFKA_HOUSEHOLD_PROFILE_TOPIC:-gold.household-profile.v1}
+      PROFILE_PUBLISHER_BATCH_SIZE: ${GOLD_PROFILE_PUBLISHER_BATCH_SIZE:-100}
+      PROFILE_PUBLISHER_RETRY_SECONDS: ${GOLD_PROFILE_PUBLISHER_RETRY_SECONDS:-30}
+      LOG_LEVEL: ${GOLD_PROFILE_LOG_LEVEL:-INFO}
+    command: ["gold-profile", "publish", "--loop"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
         condition: service_healthy
     logging:
       driver: json-file

@@ -16,6 +16,8 @@ class GoldProfileSettings(SilverSettings):
     profile_manifest_base: str = "/nilm/manifests/job=gold-profile"
     profile_staging_base: str = "/nilm/gold/.staging/job=gold-profile"
     profile_delivery_mode: str = Field(default="SHADOW", pattern="^(ACTIVE|SHADOW)$")
+    # 아웃박스를 비우는 발행자가 붙을 브로커. 이름은 분석·집계 서비스와 같은 변수를 쓴다.
+    kafka_bootstrap_servers: str = "localhost:9092"
     profile_kafka_topic: str = "gold.household-profile.v1"
     profile_publisher_batch_size: int = Field(default=100, ge=1, le=10_000)
     profile_publisher_retry_seconds: int = Field(default=30, ge=1, le=86_400)

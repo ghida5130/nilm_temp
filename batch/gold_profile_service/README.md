@@ -21,21 +21,63 @@ gold-profile dirty --as-of 2026-09-19
 gold-profile dirty --from 2026-09-01 --to 2026-09-28
 ```
 
+## Running a business day
+
+`gold-profile run` is one stage of four. `daily` runs them in order, retries each
+stage, and reports where it stopped:
+
+```console
+gold-profile daily                      # yesterday, business time
+gold-profile daily --as-of 2026-09-19
+gold-profile daily --attempts 5 --no-publish
+```
+
+1. `power-silver run` — clean power and observation days for the date
+2. `power-silver usage-daily` — analysis coverage, session slices, `appliance_usage_daily`
+3. **window alignment** — see below
+4. `gold-profile run` — the profile itself
+5. `gold-profile publish` — one outbox sweep
+
+Window alignment is why a plain "aggregate yesterday, then build Gold" sequence does
+not work. Gold refuses a window whose dates were prepared from different session
+snapshots, and sessions are corrected and deleted after the fact, so aggregating only
+yesterday leaves that one date on a newer snapshot than the other 27. Before calling
+Gold, `daily` compares each window date's session token (read from the
+`appliance_usage_daily` `config_version`) against the target date's and re-aggregates
+the ones that differ. Dates whose power Silver is missing cannot be fixed here; they
+are reported as `skipped_dates` and are a backfill's job.
+
+The command prints a JSON report and exits non-zero when a stage exhausted its
+retries. Schedule it once a day, after the previous business day's raw data has
+landed. A failed run is safe to repeat: every stage reuses a completed run with the
+same inputs instead of recomputing it.
+
+Delivery is separate and long-lived. The batch only writes outbox rows; a row whose
+send failed carries a `next_attempt_at` that means nothing unless something calls the
+publisher again:
+
+```console
+gold-profile publish            # one sweep
+gold-profile publish --loop     # how the gold-profile-publisher service runs
+```
+
 ## Message contract expected by monitoring-service
 
-This job does **not** publish to Kafka yet. The publisher and its outbox are still
-outstanding work. The contract below is owned by `monitoring-service`, which already
-consumes it, so a publisher added here must produce exactly these field names — they are
+The contract is owned by `monitoring-service`, which consumes it. The field names are
 the output column names of `routine_baseline.py` and `statistical_profile.py`.
 
 Topic `gold.household-profile.v1`, key `household_id`, one message per household and
-profile version (`profile_version` is this job's `run_id`).
+profile version (`profile_version` is this job's `run_id`). `delivery_mode` is `SHADOW`
+until an operator raises `PROFILE_DELIVERY_MODE`; a `SHADOW` message is stored as
+history and never becomes a household's operational profile.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "household_id": "house-001",
   "profile_version": "<gold run_id>",
+  "profile_revision": 1,
+  "delivery_mode": "ACTIVE | SHADOW",
   "as_of_date": "2026-09-19",
   "window_start_date": "2026-08-23",
   "window_end_date": "2026-09-19",
