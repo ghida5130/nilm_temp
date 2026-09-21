@@ -19,4 +19,10 @@ describe('tokenStorage', () => {
     expect(getRefreshToken()).toBeNull()
     expect(hasSession()).toBe(false)
   })
+
+  it('로그인 유지 선택 시 브라우저를 닫아도 남는 저장소를 사용한다', () => {
+    saveSession({ accessToken: 'access', refreshToken: 'refresh', expiresIn: 60 }, true)
+    expect(localStorage.getItem('onmaeum.accessToken')).toBe('access')
+    expect(sessionStorage.getItem('onmaeum.accessToken')).toBeNull()
+  })
 })
