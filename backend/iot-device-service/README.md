@@ -265,6 +265,25 @@ UUID가 즉시 생긴다. monitoring이 알림 수신자를 `subjects.auth_sub`�
 > `mqttPassword`는 **이 응답에서 단 한 번만** 노출된다. 서버에는 해시만 남으므로
 > 분실하면 재발급(로테이션)해야 한다.
 
+**접속 상태(LWT)** — `status`(생명주기)와 **독립**이다. `status`는 운영자가 정하고
+`connectionStatus`는 브로커가 알려 주는 사실이다. `ACTIVE`인데 `OFFLINE`이면
+정상 등록된 기기가 지금 끊겨 있다는 뜻으로, 확인이 필요한 상태다.
+
+```
+기기 접속 시  LWT 등록: v1/device/{deviceId}/status  payload "offline"  retain
+기기 접속 후  발행:     v1/device/{deviceId}/status  payload "online"   retain
+```
+
+기기가 스스로 알릴 수 없는 상황(정전·크래시)에서도 **브로커가 유언 메시지를 대신 발행**한다.
+이게 없으면 데이터가 끊긴 원인이 정전인지 네트워크 장애인지 사람이 활동을 안 하는 것인지
+구분하지 못해, Wi-Fi가 끊길 때마다 위험 알림이 가는 오경보 시스템이 된다.
+
+`app.mqtt.connection-listener.enabled=true`로 켠다. 브로커에 붙지 못해도 서비스는
+정상 기동한다 — 접속 상태는 부가 정보이고, 이것 때문에 기기 등록이 막히면 안 된다.
+
+**이력의 조작자** — `changedBy`는 **클라이언트가 보내지 않는다.** 보내게 하면 남을
+사칭할 수 있으므로 서버가 인증된 호출자(JWT subject)로 채운다.
+
 **상태 전이** — 허용되지 않은 전이는 `400 INVALID_STATE_TRANSITION`이다.
 
 ```
