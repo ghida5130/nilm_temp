@@ -3,8 +3,8 @@ package com.nilm.monitoring.scheduler;
 import com.nilm.monitoring.config.enums.StateChangeTrigger;
 import com.nilm.monitoring.service.RiskAssessmentService;
 import com.nilm.monitoring.service.RiskAssessmentService.EvaluationTarget;
+import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,9 +34,19 @@ public class RiskAssessmentScheduler {
 
     private final RiskAssessmentService service;
 
-    @Scheduled(fixedDelayString = "${app.risk.scheduler-interval-ms:60000}")
+    /** 평가 기준 시각의 출처. 테스트는 고정 시계를 넣어 유지시간·재발송 창 판정을 재현한다. */
+    private final Clock clock;
+
+    /**
+     * 기동 직후 첫 실행은 잠시 미룰 수 있다. 초기 지연이 없으면 컨텍스트가 뜨는 순간 배경에서
+     * 한 바퀴 돌기 시작해, 스케줄러를 직접 부르는 테스트와 같은 표를 놓고 경쟁한다.
+     */
+    @Scheduled(
+            fixedDelayString = "${app.risk.scheduler-interval-ms:60000}",
+            initialDelayString = "${app.risk.scheduler-initial-delay-ms:0}"
+    )
     public void evaluateAll() {
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
 
         // 목록은 식별자만 읽는다. 여기서 대상자를 통째로 읽어 두면 가구 트랜잭션이
         // 잠금을 잡기 전 상태를 들고 시작하게 된다.
