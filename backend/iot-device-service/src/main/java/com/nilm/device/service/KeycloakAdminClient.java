@@ -3,6 +3,7 @@ package com.nilm.device.service;
 import com.nilm.device.common.DuplicateResourceException;
 import com.nilm.device.common.InvalidOperationException;
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -56,24 +57,27 @@ public class KeycloakAdminClient {
     /** 사용자 생성 후 Keycloak user id 반환. 이메일이 이미 있으면 409. */
     public UUID createUser(String email, String password, String displayName) {
         String adminToken = serviceAccountToken();
+        Map<String, Object> body = new LinkedHashMap<>(Map.of(
+                "username", email,
+                "email", email,
+                "firstName", displayName,
+                // Keycloak 기본 사용자 프로필은 성·이름을 모두 필수로 요구하며
+                // 비어 있으면 로그인 시 "Account is not fully set up"으로 거부된다.
+                // 서비스의 이름 원본은 user_profiles.display_name이므로 자리만 채운다.
+                "lastName", "-",
+                "enabled", true,
+                "emailVerified", false));
+        // temporary=true는 쓰지 않는다 — UPDATE_PASSWORD 필수 조치가 걸리면
+        // password grant 로그인이 "Account is not fully set up"으로 실패한다.
+        body.put("credentials", List.of(Map.of(
+                "type", GRANT_PASSWORD,
+                "value", password,
+                "temporary", false)));
         URI location = http.post()
                 .uri("/admin/realms/{realm}/users", realm)
                 .header("Authorization", "Bearer " + adminToken)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of(
-                        "username", email,
-                        "email", email,
-                        "firstName", displayName,
-                        // Keycloak 기본 사용자 프로필은 성·이름을 모두 필수로 요구하며
-                        // 비어 있으면 로그인 시 "Account is not fully set up"으로 거부된다.
-                        // 서비스의 이름 원본은 user_profiles.display_name이므로 자리만 채운다.
-                        "lastName", "-",
-                        "enabled", true,
-                        "emailVerified", false,
-                        "credentials", List.of(Map.of(
-                                "type", GRANT_PASSWORD,
-                                "value", password,
-                                "temporary", false))))
+                .body(body)
                 .exchange((request, response) -> {
                     HttpStatusCode status = response.getStatusCode();
                     if (status.value() == 409) {
