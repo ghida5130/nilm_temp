@@ -282,9 +282,28 @@ REGISTERED ----> ACTIVE <----> SUSPENDED
 | --- | --- | --- |
 | POST | `/sync` | DB의 유효 계정을 Mosquitto passwd 파일에 반영 |
 
-DB가 원본이고 passwd 파일은 파생물이다. 동기화는 `dev_*` 네임스페이스만 관리하므로
-팀 공용 계정 라인은 보존되며, 정지·폐기된 기기는 파일에서 빠져 접속이 차단된다.
+DB가 원본이고 passwd·ACL 파일은 파생물이다. passwd 동기화는 `dev_*` 네임스페이스만
+관리하므로 팀 공용 계정 라인은 보존되며, 정지·폐기된 기기는 파일에서 빠져 접속이 차단된다.
 `app.mqtt.reload-enabled=true`면 브로커 SIGHUP까지 수행한다.
+
+**인가(ACL)도 함께 생성한다.** `mosquitto.local.conf`에 `acl_file`이 켜져 있어
+기기는 자기 가구 토픽에만 발행할 수 있다.
+
+```
+user dev_h001_clamp1
+topic write v1/power/sim/H001/#
+```
+
+mosquitto의 `acl_file`은 **파일에 없는 사용자의 모든 토픽을 막는다.** 기기가 아닌
+공용 계정(시뮬레이터 발행, 브릿지 구독)은 `device_acl`에 없으므로
+`app.mqtt.static-acl` 설정으로 주입한다. 이게 없으면 ACL을 켜는 순간 수집 파이프라인이 끊긴다.
+
+```
+app.mqtt.static-acl=simulator_user:write:v1/power/sim/#,kafka_bridge_user:read:v1/power/sim/#
+```
+
+검증: H001 기기가 `v1/power/sim/H002/main`에 발행을 시도하면 브로커가 거부한다
+(`Denied PUBLISH`). 자기 가구 토픽은 통과한다.
 
 ## 공통 오류 응답
 
