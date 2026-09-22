@@ -34,6 +34,14 @@ FROM model-runtime AS inference
 ENV MODEL_BACKEND=selected_scene MODEL_ASSET_ROOT=/assets MODEL_DEVICE=cpu MODEL_DTYPE=float32 MODEL_THREADS=1
 ENTRYPOINT ["python", "-m", "realtime_analysis.scene_entrypoint"]
 
+# Local Compose target. Unlike the fail-closed deployment targets below, this
+# target deliberately allows MODEL_BACKEND=fake|real|selected_scene so developers
+# can switch modes through infrastructure/local/.env without rebuilding a
+# different image target.
+FROM model-runtime AS local-inference
+ENV MODEL_BACKEND=real MODEL_ASSET_ROOT=/assets MODEL_WINDOW_SIZE=255 MODEL_DEVICE=cpu MODEL_DTYPE=float32 MODEL_THREADS=1
+ENTRYPOINT ["python", "-m", "realtime_analysis.configurable_entrypoint"]
+
 FROM model-runtime AS realtime-inference
 ENV MODEL_BACKEND=real MODEL_ASSET_ROOT=/assets MODEL_WINDOW_SIZE=255 MODEL_DEVICE=cpu MODEL_DTYPE=float32 MODEL_THREADS=1
 ENTRYPOINT ["python", "-m", "realtime_analysis.real_entrypoint"]

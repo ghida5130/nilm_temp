@@ -134,11 +134,12 @@ class Settings(BaseSettings):
     @field_validator(
         "kafka_group_instance_id",
         "kafka_outing_group_instance_id",
+        "model_household_id",
         mode="before",
     )
     @classmethod
-    def empty_group_instance_id_is_disabled(cls, value: object) -> object:
-        """Treat blank environment values as disabled static membership."""
+    def blank_optional_string_is_disabled(cls, value: object) -> object:
+        """Treat blank optional environment values as disabled."""
 
         if isinstance(value, str):
             stripped = value.strip()
