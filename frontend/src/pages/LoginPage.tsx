@@ -15,7 +15,7 @@ export default function LoginPage({ role }: { role: "staff" | "user" }) {
     setError("");
     const keepSignedIn = form.get("keepSignedIn") === "true";
     login(String(form.get("email")).trim(), String(form.get("password")))
-      .then((tokens) => saveSession(tokens, keepSignedIn))
+      .then((tokens) => saveSession(tokens, keepSignedIn, role))
       .catch((cause: unknown) => setError(getApiErrorMessage(cause)))
       .finally(() => setBusy(false));
   };
