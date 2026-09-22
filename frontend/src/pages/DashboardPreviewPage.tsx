@@ -92,7 +92,7 @@ export default function DashboardPreviewPage({ danger = false }: { danger?: bool
               </p>
             </div>
             <button
-              className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-3 font-bold text-brand-900 hover:bg-brand-400"
+              className="flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-3 font-bold text-white hover:bg-brand-600"
               type="button"
             >
               <Icon name="users" /> 대상자 등록

@@ -80,7 +80,7 @@ export default function LoginCard({ role, busy, error, onSubmit }: LoginCardProp
           className={
             role === "user"
               ? "flex min-h-16 w-full translate-y-0 cursor-pointer items-center justify-center gap-2.5 rounded-2xl border border-brand-600 bg-brand-500 px-4 py-3.5 text-center text-2xl leading-6 font-semibold text-white shadow-[0_4px_0_#bd4d0d,0_7px_14px_rgb(243_121_41_/_20%)] transition-[transform,box-shadow,background-color] duration-150 hover:not-disabled:bg-[#e86b1d] active:not-disabled:translate-y-[3px] active:not-disabled:bg-[#e86b1d] active:not-disabled:shadow-[0_1px_0_#bd4d0d,0_3px_6px_rgb(74_54_35_/_8%)] disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-200 disabled:text-stone-600 disabled:shadow-none"
-              : "flex h-13 items-center justify-center gap-2 rounded-xl bg-brand-500 font-bold text-brand-900 transition hover:bg-brand-400 disabled:bg-stone-300"
+              : "flex h-13 items-center justify-center gap-2 rounded-xl bg-brand-500 font-bold text-white transition hover:bg-brand-600 disabled:bg-stone-300"
           }
           type="submit"
           disabled={busy}
