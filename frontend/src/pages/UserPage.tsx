@@ -65,8 +65,8 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
     }
   };
 
-  const logout = () => {
-    pushSubscription.unsubscribe().catch(() => undefined);
+  const logout = async () => {
+    await Promise.allSettled([pushSubscription.unsubscribe()]);
     clearSession();
     navigate("/");
   };
