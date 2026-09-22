@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getApiErrorMessage } from "../api/client";
 import { clearSession } from "../api/tokenStorage";
@@ -6,9 +6,9 @@ import type { AwayDraft } from "../components/user/AwaySettings";
 import UserAwayTab from "../components/user/UserAwayTab";
 import UserHeader from "../components/user/UserHeader";
 import UserHomeTab from "../components/user/UserHomeTab";
-import UserNavigation from "../components/user/UserNavigation";
+import UserStatusBar from "../components/user/UserStatusBar";
+import type { UserStatusNotice } from "../components/user/UserStatusBar";
 import type { UserTabStatusProps } from "../components/user/UserTabStatus";
-import type { UserTab } from "../components/user/UserNavigation";
 import {
   useAwayModeMutation,
   useMyDashboardQuery,
@@ -17,25 +17,55 @@ import {
 import { usePendingNotification } from "../hooks/notifications/usePendingNotification";
 import { usePushSubscription } from "../hooks/notifications/usePushSubscription";
 
+type UserView = "home" | "away";
+
 export default function UserPage({ comparison = false }: { comparison?: boolean }) {
   const navigate = useNavigate();
   const dashboard = useMyDashboardQuery();
   const awayMutation = useAwayModeMutation();
   const responseMutation = useNotificationResponseMutation();
-  const [feedback, setFeedback] = useState("");
-  const [tab, setTab] = useState<UserTab>("home");
+  const [tab, setTab] = useState<UserView>("home");
   const [awayDraft, setAwayDraft] = useState<AwayDraft>({ duration: 60 });
+  const [statusNotice, setStatusNotice] = useState<UserStatusNotice>(null);
+  const [statusNoticeVisible, setStatusNoticeVisible] = useState(false);
+  const statusNoticeTimer = useRef<number | undefined>(undefined);
+  const statusNoticeFrame = useRef<number | undefined>(undefined);
   const { notificationId, clearNotification } = usePendingNotification();
   const pushSubscription = usePushSubscription();
   const data = dashboard.data;
   const busy = awayMutation.isPending || responseMutation.isPending;
+  const notificationPending = Boolean(notificationId);
 
-  const updateAway = async (enabled: boolean) => {
+  useEffect(
+    () => () => {
+      window.clearTimeout(statusNoticeTimer.current);
+      window.cancelAnimationFrame(statusNoticeFrame.current ?? 0);
+    },
+    [],
+  );
+
+  const showStatusNotice = (message: string, tone: "success" | "error" = "success") => {
+    window.clearTimeout(statusNoticeTimer.current);
+    window.cancelAnimationFrame(statusNoticeFrame.current ?? 0);
+    setStatusNoticeVisible(false);
+    setStatusNotice({ message, tone });
+    statusNoticeFrame.current = window.requestAnimationFrame(() => {
+      statusNoticeFrame.current = window.requestAnimationFrame(() => {
+        setStatusNoticeVisible(true);
+        statusNoticeTimer.current = window.setTimeout(
+          () => setStatusNoticeVisible(false),
+          3000,
+        );
+      });
+    });
+  };
+
+  const updateAway = async (enabled: boolean, duration = awayDraft.duration) => {
     if (
       enabled &&
-      (!Number.isInteger(awayDraft.duration) || awayDraft.duration < 1 || awayDraft.duration > 1440)
+      (!Number.isInteger(duration) || duration < 1 || duration > 1440)
     ) {
-      setFeedback("외출 시간을 1~1440분 사이로 입력해 주세요.");
+      showStatusNotice("외출 시간을 1~1440분 사이로 입력해 주세요.", "error");
       return;
     }
     try {
@@ -43,14 +73,14 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
         enabled
           ? {
               enabled,
-              endsAt: new Date(Date.now() + awayDraft.duration * 60_000).toISOString(),
+              endsAt: new Date(Date.now() + duration * 60_000).toISOString(),
             }
           : { enabled },
       );
-      setFeedback(enabled ? "외출 설정을 저장했습니다." : "외출 모드를 해제했습니다.");
+      showStatusNotice(enabled ? "외출 설정 완료" : "귀가 설정 완료");
       if (enabled) setTab("home");
     } catch (cause) {
-      setFeedback(getApiErrorMessage(cause));
+      showStatusNotice(getApiErrorMessage(cause), "error");
     }
   };
 
@@ -58,10 +88,12 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
     if (!notificationId) return;
     try {
       await responseMutation.mutateAsync({ notificationId, answer: value });
-      setFeedback(value === "yes" ? "도움 요청이 접수됐어요." : "괜찮다는 응답이 접수됐어요.");
+      showStatusNotice(
+        value === "yes" ? "도움 요청이 접수됐어요." : "괜찮다는 응답이 접수됐어요.",
+      );
       clearNotification();
     } catch (cause) {
-      setFeedback(getApiErrorMessage(cause));
+      showStatusNotice(getApiErrorMessage(cause), "error");
     }
   };
 
@@ -73,24 +105,18 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
 
   const tabStatus: UserTabStatusProps = {
     dashboardError: dashboard.isError ? getApiErrorMessage(dashboard.error) : "",
-    notificationPending: Boolean(notificationId),
-    busy,
-    dataAvailable: Boolean(data),
     pushStatus: pushSubscription.status,
     pushError: pushSubscription.error,
-    feedback,
     onRetryDashboard: () => void dashboard.refetch(),
-    onAnswerNotification: (value) => void answer(value),
     onEnablePush: () => void pushSubscription.enable(),
     onRetryPush: () => void pushSubscription.retry(),
-    onClearFeedback: () => setFeedback(""),
   };
 
   return (
     <main
-      className={`min-h-screen bg-stone-50 pb-[calc(7rem+env(safe-area-inset-bottom))] text-xl leading-[1.6] text-stone-800 [overflow-wrap:anywhere] ${comparison ? "selection:bg-brand-200" : ""}`}
+      className={`min-h-screen touch-manipulation bg-stone-50 text-xl leading-[1.6] text-stone-800 transition-[padding] duration-300 [overflow-wrap:anywhere] ${notificationPending ? "pb-[calc(15rem+env(safe-area-inset-bottom))]" : statusNoticeVisible ? "pb-[calc(11rem+env(safe-area-inset-bottom))]" : "pb-[calc(7rem+env(safe-area-inset-bottom))]"} ${comparison ? "selection:bg-brand-200" : ""}`}
     >
-      <UserHeader onLogout={logout} />
+      <UserHeader onGoHome={() => navigate("/")} onLogout={logout} />
       <div className="mx-auto grid max-w-xl gap-5 px-5">
         {tab === "home" ? (
           <UserHomeTab
@@ -104,17 +130,24 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
         ) : (
           <UserAwayTab
             draft={awayDraft}
-            mode={data?.awayMode}
             busy={busy}
             dataAvailable={Boolean(data)}
             comparison={comparison}
             status={tabStatus}
             onDraftChange={setAwayDraft}
-            onUpdateAway={(enabled) => void updateAway(enabled)}
+            onStartAway={(duration) => void updateAway(true, duration)}
+            onBack={() => setTab("home")}
           />
         )}
       </div>
-      <UserNavigation tab={tab} onChange={setTab} />
+      <UserStatusBar
+        data={data}
+        notice={statusNotice}
+        noticeVisible={statusNoticeVisible}
+        notificationPending={notificationPending}
+        notificationDisabled={busy || !data}
+        onAnswerNotification={(value) => void answer(value)}
+      />
     </main>
   );
 }

@@ -1,4 +1,5 @@
 import type { MyDashboard } from "../../types/monitoring";
+import PushNotificationCard from "./PushNotificationCard";
 import UserDashboard from "./UserDashboard";
 import UserTabStatus from "./UserTabStatus";
 import type { UserTabStatusProps } from "./UserTabStatus";
@@ -41,6 +42,12 @@ export default function UserHomeTab({
         busy={busy}
         onUpdateAway={onUpdateAway}
         onOpenAwaySettings={onOpenAwaySettings}
+      />
+      <PushNotificationCard
+        status={status.pushStatus}
+        error={status.pushError}
+        onEnable={status.onEnablePush}
+        onRetry={status.onRetryPush}
       />
     </>
   );
