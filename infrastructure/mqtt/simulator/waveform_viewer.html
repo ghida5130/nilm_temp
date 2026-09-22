@@ -23,6 +23,44 @@
     <button class="btn btn-secondary header-export" onclick="downloadCsv()">CSV 내보내기</button>
   </header>
 
+  <!-- MQTT 발행 확인까지의 흐름만 시각화한다. -->
+  <section id="powerflowPanel" class="flow-panel" data-mode="live" data-run-state="idle" data-visual-state="idle"
+    data-fault="0" data-confirmed="0" aria-label="계측 데이터 전송 흐름: 대기. MQTT 브로커 발행 확인까지 표시">
+    <div class="flow-title">계측 데이터 전송 흐름</div>
+    <div class="flow-stage" aria-hidden="true">
+      <div id="powerflowBoard" class="flow-device flow-board">
+        <svg viewBox="0 0 72 72" focusable="false">
+          <rect x="13" y="9" width="46" height="54" />
+          <path d="M22 22h28M22 48h28M22 55h18" />
+          <path class="flow-wave" d="M22 36h7l4-7 6 14 4-7h7" />
+        </svg>
+      </div>
+      <div id="powerflowMqttLane" class="flow-lane flow-mqtt-lane">
+        <span class="flow-track"></span>
+        <span class="flow-lane-origin"></span>
+        <span class="flow-lane-arrow"></span>
+        <span class="flow-lane-destination"></span>
+      </div>
+      <div id="powerflowBroker" class="flow-device flow-broker">
+        <svg viewBox="0 0 72 72" focusable="false">
+          <rect x="13" y="16" width="46" height="40" />
+          <circle cx="27" cy="36" r="4" />
+          <circle cx="45" cy="36" r="4" />
+          <path d="M31 36h10" />
+        </svg>
+      </div>
+    </div>
+    <div id="powerflowBurst" class="flow-burst" role="img" aria-label="MQTT 발행 0건 / 계획 0건">
+      <div id="powerflowBurstRing" class="flow-burst-ring"><svg viewBox="0 0 72 72" focusable="false"
+          aria-hidden="true">
+          <rect x="17" y="21" width="38" height="30" />
+          <circle cx="29" cy="36" r="3" />
+          <circle cx="43" cy="36" r="3" />
+        </svg></div>
+    </div>
+    <span id="powerflowA11yStatus" class="sr-only" role="status" aria-live="polite">대기. MQTT 브로커 발행 확인까지 표시</span>
+  </section>
+
   <!-- 결정적 시나리오(E2E) 실행 제어 패널 -->
   <div class="chart-container e2e-panel-container" id="e2eSection"
     style="background: linear-gradient(135deg, #fff7f0, #ffffff); border: 1px solid #ffd2ad; box-shadow: 0 4px 24px rgba(41, 37, 36, 0.08); margin-bottom: 24px;">
@@ -43,9 +81,9 @@
           style="font-family: monospace; font-size: 0.85rem; color: #b8490d; font-weight: 600;">—</span>
         <!-- [3] 기존 실행 연결 컨트롤 -->
         <div
-          style="display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; background: rgba(250, 250, 249, 0.6); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(243, 121, 41, 0.3);">
+          style="display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; background: rgba(250, 250, 249, 0.6); padding: 4px 8px; border-radius: 0; border: 1px solid rgba(243, 121, 41, 0.3);">
           <input type="text" id="e2eRunIdInput" placeholder="기존 run_id 입력"
-            style="background: #ffffff; color: #292524; border: 1px solid #d6d3d1; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-family: monospace; width: 160px;" />
+            style="background: #ffffff; color: #292524; border: 1px solid #d6d3d1; padding: 4px 8px; border-radius: 0; font-size: 0.8rem; font-family: monospace; width: 160px;" />
           <button type="button" id="e2eBtnAttach" class="btn btn-secondary"
             style="font-size: 0.78rem; padding: 4px 10px;" onclick="e2eAttachRun()">기존 실행 연결</button>
         </div>
@@ -55,20 +93,20 @@
     <div id="e2ePanelBody">
       <!-- 알림 및 안내 배너 영역 -->
       <div id="e2eMessageArea"
-        style="display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; font-size: 0.85rem; font-weight: 600;">
+        style="display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 0; font-size: 0.85rem; font-weight: 600;">
       </div>
       <div id="e2eNoticeBurst"
-        style="display: none; margin-bottom: 12px; padding: 8px 14px; border-radius: 8px; font-size: 0.82rem; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #92400e;">
+        style="display: none; margin-bottom: 12px; padding: 8px 14px; border-radius: 0; font-size: 0.82rem; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #92400e;">
         BURST 모드: 가상 시간 딜레이 없이 백엔드에서 즉시 전속력으로 MQTT 발행합니다. 화면 갱신보다 발행이 훨씬 빠르며 파형 그래프에는 실시간 표시되지 않습니다.
       </div>
       <div id="e2eNoticeLongRun"
-        style="display: none; margin-bottom: 12px; padding: 8px 14px; border-radius: 8px; font-size: 0.82rem; background: rgba(217, 94, 18, 0.15); border: 1px solid rgba(217, 94, 18, 0.4); color: #b8490d;">
+        style="display: none; margin-bottom: 12px; padding: 8px 14px; border-radius: 0; font-size: 0.82rem; background: rgba(217, 94, 18, 0.15); border: 1px solid rgba(217, 94, 18, 0.4); color: #b8490d;">
         장기 시나리오(20일 이상): 총 계획 슬롯 수가 큰 대용량 시나리오입니다.
       </div>
 
       <!-- 설정 입력 폼 및 제어 버튼 -->
       <div
-        style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; background: rgba(250, 250, 249, 0.5); padding: 14px 16px; border-radius: 8px; border: 1px solid rgba(243, 121, 41, 0.2);">
+        style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 16px; background: rgba(250, 250, 249, 0.5); padding: 14px 16px; border-radius: 0; border: 1px solid rgba(243, 121, 41, 0.2);">
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <label for="e2eScenarioSelect" style="font-size: 0.8rem; font-weight: 600; color: #b8490d;">시나리오:</label>
           <select id="e2eScenarioSelect" class="speed-select" style="min-width: 260px; padding: 6px 10px;"
@@ -131,7 +169,7 @@
 
       <!-- 가구별 진행 상태 및 제어 테이블 카드 -->
       <div id="e2eStatusCard"
-        style="background: rgba(250, 250, 249, 0.7); border: 1px solid rgba(243, 121, 41, 0.2); border-radius: 8px; padding: 12px; overflow-x: auto;">
+        style="background: rgba(250, 250, 249, 0.7); border: 1px solid rgba(243, 121, 41, 0.2); border-radius: 0; padding: 12px; overflow-x: auto;">
         <table style="width: 100%; border-collapse: collapse; font-size: 0.84rem;">
           <thead>
             <tr style="border-bottom: 1px solid rgba(243, 121, 41, 0.3);">
@@ -181,7 +219,7 @@
         <span style="font-size: 0.8rem; color: #78716c;">초 (가상 시간 기준, 배속 적용)</span>
       </div>
       <div class="observe-control-group"
-        style="display: inline-flex; align-items: center; gap: 6px; background: rgba(243, 121, 41, 0.1); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(243, 121, 41, 0.3);">
+        style="display: inline-flex; align-items: center; gap: 6px; background: rgba(243, 121, 41, 0.1); padding: 4px 10px; border-radius: 0; border: 1px solid rgba(243, 121, 41, 0.3);">
         <label for="observedHouseSelect" style="font-size: 0.85rem; font-weight: 700; color: #b8490d;">관찰 가구:</label>
         <select id="observedHouseSelect" class="speed-select" style="padding: 4px 8px; font-weight: bold;"
           onchange="changeObservedHouse(this.value)">
@@ -265,7 +303,7 @@
             style="font-size: 0.75rem; padding: 4px 8px;" onclick="applyPreset('all_random')">전체 랜덤 (10가구)</button>
         </div>
       </div>
-      <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+      <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 0;">
         <table style="width: 100%; border-collapse: collapse; font-size: 0.84rem;">
           <thead>
             <tr>
@@ -319,6 +357,8 @@
         <div class="sub">경과 시간: <span id="valTime">T+00s</span> / 최고: <span id="valMaxPower">0.0 W</span></div>
       </div>
     </div>
+
+
 
     <!-- 3. 실시간 가전 기동 상태 칩 패널 -->
     <div class="appliance-bar">
@@ -417,6 +457,7 @@
 
   <script src="assets/panels.js"></script>
   <script src="assets/state.js"></script>
+  <script src="assets/powerflow.js"></script>
   <script src="assets/households.js"></script>
   <script src="assets/devices.js"></script>
   <script src="assets/charts.js"></script>

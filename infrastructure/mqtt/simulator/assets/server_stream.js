@@ -114,6 +114,8 @@
           }
 
           if (isSimulationRunning) {
+            powerflowSetObservedHouse(observedHouse);
+            powerflowSetRunState(isPaused ? 'paused' : 'running');
             connectServerStream();
             setTableAndControlsEnabled(false);
             setSimulationDateInputEnabled(false);
@@ -402,6 +404,7 @@
 
       // 현재 사용자가 보고 있는 관찰 가구인 경우 화면 및 차트 실시간 갱신
       if (house === observedHouse) {
+        powerflowApplyRealtime(m);
         if (isE2E) {
           renderE2EObservedHouseMetrics(m, isFault);
         } else {
@@ -448,6 +451,7 @@
           evtSource = null;
         }
         isSimulationRunning = false;
+        powerflowSetRunState('completed');
         document.getElementById('btnPause').disabled = true;
         document.getElementById('badgeStatus').className = "badge-status status-normal";
         if (activeConfiguredHouseholds.length === 1) {
@@ -473,6 +477,10 @@
     // 관찰 대상 가구 변경 핸들러
     function changeObservedHouse(targetHouse) {
       observedHouse = targetHouse;
+      powerflowSetObservedHouse(targetHouse);
+      if (!isSimulationRunning && e2eCurrentRunId && e2eLastSnapshot && e2eLastSnapshot.run_id === e2eCurrentRunId) {
+        powerflowRenderE2E(e2eLastSnapshot);
+      }
       const badgeEl = document.getElementById('observedHouseBadge');
       if (badgeEl) badgeEl.textContent = observedHouse;
 
