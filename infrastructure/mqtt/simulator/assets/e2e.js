@@ -213,6 +213,7 @@
         const data = await resp.json().catch(() => ({}));
         if (resp.status === 202) {
           e2eCurrentRunId = data.run_id;
+          powerflowBeginRun(data.run_id);
           const runIdDisplay = document.getElementById('e2eRunIdDisplay');
           if (runIdDisplay) runIdDisplay.textContent = data.run_id;
           e2eSetOverallStatus(data.state || 'STARTING');
