@@ -18,10 +18,14 @@ export default function StaffHeader({
       <strong>{title}</strong>
       <div className="flex items-center gap-3">
         <span
-          className={`hidden items-center gap-2 text-sm sm:flex ${connected ? "text-emerald-700" : "text-amber-700"}`}
+          className="hidden size-9 items-center justify-center rounded-full bg-stone-100 sm:flex"
+          aria-label={connected ? "실시간 연결됨" : "실시간 연결 확인 중"}
+          title={connected ? "실시간 연결됨" : "실시간 연결 확인 중"}
+          role="status"
         >
-          <i className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-500"}`} />
-          {connected ? "실시간 연결됨" : "재연결 중"}
+          <i
+            className={`size-2.5 rounded-full ring-4 ${connected ? "bg-emerald-500 ring-emerald-100" : "bg-amber-500 ring-amber-100"}`}
+          />
         </span>
         <button
           className="rounded-lg border border-stone-300 px-3 py-2 text-sm font-semibold hover:bg-stone-50"

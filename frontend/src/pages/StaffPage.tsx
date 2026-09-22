@@ -14,7 +14,7 @@ import type { StaffView } from "../components/staff/staffNavigation";
 import StreamNotice from "../components/staff/StreamNotice";
 import SubjectDetail from "../components/staff/SubjectDetail";
 import SubjectList from "../components/staff/SubjectList";
-import { useSubjectsQuery } from "../hooks/api";
+import { useMeQuery, useSubjectsQuery } from "../hooks/api";
 import { useSubjectStream } from "../hooks/realtime/useSubjectStream";
 import { unsubscribeFromPush } from "../services/pushSubscription";
 
@@ -23,6 +23,7 @@ export default function StaffPage() {
   const { subjectId } = useParams();
   const [searchParams] = useSearchParams();
   const query = useSubjectsQuery();
+  const meQuery = useMeQuery();
   const stream = useSubjectStream();
   const [registering, setRegistering] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -44,7 +45,19 @@ export default function StaffPage() {
 
   return (
     <main className="min-h-screen bg-stone-100 text-stone-800 lg:grid lg:grid-cols-[250px_1fr]">
-      <StaffSidebar view={view} subjectId={subjectId} onLogout={logout} />
+      <StaffSidebar
+        view={view}
+        subjectId={subjectId}
+        manager={
+          meQuery.data
+            ? {
+                name: meQuery.data.profile.displayName,
+                email: meQuery.data.profile.email,
+              }
+            : undefined
+        }
+        onLogout={logout}
+      />
       <div className="lg:col-start-2">
         <StaffHeader
           title={title}

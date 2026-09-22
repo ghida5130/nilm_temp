@@ -42,7 +42,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
         <div className="flex flex-wrap gap-2">
           {filters.map((item) => (
             <button
-              className={`rounded-full px-4 py-2 text-sm font-bold ${filter === item.id ? "bg-brand-500 text-brand-900" : "bg-stone-100 text-stone-600"}`}
+              className={`rounded-full px-4 py-2 text-sm font-bold ${filter === item.id ? "bg-brand-500 text-white" : "bg-stone-100 text-stone-600"}`}
               key={item.id}
               aria-pressed={filter === item.id}
               onClick={() => setFilter(item.id)}
@@ -117,7 +117,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
         </p>
       )}
       <footer className="flex justify-between border-t border-stone-100 p-4 text-sm text-stone-500">
-        <span>{visible.length}명 표시</span>
+        <span>{visible.length}명</span>
         <span>
           최근 갱신{" "}
           {dataUpdatedAt ? formatDateTime(new Date(dataUpdatedAt).toISOString()) : "기록 없음"}

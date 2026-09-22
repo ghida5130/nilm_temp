@@ -90,7 +90,7 @@ export default function RegistrationForm({
           </p>
         )}
         <button
-          className="h-12 rounded-xl bg-brand-500 font-bold text-brand-900 hover:bg-brand-400 disabled:bg-stone-300"
+          className="h-12 rounded-xl bg-brand-500 font-bold text-white hover:bg-brand-600 disabled:bg-stone-300"
           disabled={registration.isPending}
         >
           {registration.isPending ? "등록 중…" : "대상자 등록"}
