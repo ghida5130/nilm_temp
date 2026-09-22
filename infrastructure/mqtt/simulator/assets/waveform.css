@@ -1,0 +1,1033 @@
+    :root {
+      --bg-page: #f5f5f4;
+      --card-bg: #ffffff;
+      --card-bg-sub: #fafaf9;
+      --border: #e7e5e4;
+      --text-main: #292524;
+      --text-muted: #78716c;
+      --accent: #b8490d;
+      --accent-secondary: #d95e12;
+      --danger: #b91c1c;
+      --warning: #b45309;
+      --success: #065f46;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", sans-serif;
+      background: var(--bg-page);
+      color: var(--text-main);
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 20px;
+    }
+
+    .legacy-controls {
+      margin-bottom: 24px;
+    }
+
+    .header-export {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .title h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .title p {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      margin-top: 4px;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .btn-peak {
+      background: #b91c1c;
+      color: #ffffff;
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    .btn-peak:hover {
+      background: #991b1b;
+      transform: translateY(-1px);
+    }
+
+    .btn-missed {
+      background: #92400e;
+      color: #ffffff;
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+
+    .btn-missed:hover {
+      background: #b45309;
+      transform: translateY(-1px);
+    }
+
+    .btn-random {
+      background: #d95e12;
+      color: #ffffff;
+      border-color: rgba(243, 121, 41, 0.4);
+    }
+
+    .btn-random:hover {
+      background: #b8490d;
+      transform: translateY(-1px);
+    }
+
+    .btn-manual {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: rgba(37, 99, 235, 0.4);
+    }
+
+    .btn-manual:hover:not(:disabled) {
+      background: #1d4ed8;
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: #ffffff;
+      color: #292524;
+      border-color: #d6d3d1;
+    }
+
+    .btn-secondary:hover {
+      background: #d6d3d1;
+    }
+
+    .speed-select {
+      background: #ffffff;
+      color: #292524;
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .speed-select:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .grid-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card .label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-card .value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-top: 6px;
+      color: #292524;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .stat-card .value small {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .stat-card .sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .stat-card.alert-card {
+      border-color: rgba(239, 68, 68, 0.4);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(239, 68, 68, 0.1));
+    }
+
+    .stat-card.alert-card .value {
+      color: #b91c1c;
+    }
+
+    .badge-status {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .status-normal {
+      background: rgba(16, 185, 129, 0.15);
+      color: #047857;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-peak {
+      background: rgba(239, 68, 68, 0.2);
+      color: #b91c1c;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      animation: pulse 1s infinite;
+    }
+
+    .status-running {
+      background: rgba(243, 121, 41, 0.15);
+      color: #b8490d;
+      border: 1px solid rgba(243, 121, 41, 0.3);
+    }
+
+    .status-missed {
+      background: rgba(245, 158, 11, 0.2);
+      color: #92400e;
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+
+    .status-fault {
+      background: rgba(239, 68, 68, 0.2);
+      color: #b91c1c;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      50% {
+        transform: scale(1.03);
+        opacity: 0.85;
+      }
+    }
+
+    .appliance-bar {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }
+
+    .appliance-bar-title {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .appliance-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .app-chip {
+      background: var(--card-bg-sub);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.25s ease;
+    }
+
+    .app-chip .name {
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .app-chip .state {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #a8a29e;
+    }
+
+    .app-chip.active {
+      border-color: #b8490d;
+      background: rgba(243, 121, 41, 0.1);
+    }
+
+    .app-chip.active .name {
+      color: #292524;
+    }
+
+    .app-chip.active .state {
+      color: #b8490d;
+    }
+
+    .app-chip.active.peak-app {
+      border-color: #b91c1c;
+      background: rgba(239, 68, 68, 0.15);
+    }
+
+    .app-chip.active.peak-app .state {
+      color: #b91c1c;
+    }
+
+    .app-chip.missed-target {
+      border-color: #b45309;
+      background: rgba(245, 158, 11, 0.15);
+    }
+
+    .app-chip.missed-target .name {
+      color: #92400e;
+    }
+
+    .app-chip.missed-target .state {
+      color: #b45309;
+      font-weight: 700;
+    }
+
+    button.app-chip {
+      font-family: inherit;
+      font-size: inherit;
+      width: 100%;
+      text-align: left;
+      outline: none;
+      user-select: none;
+      -webkit-appearance: none;
+      cursor: not-allowed;
+    }
+
+    button.app-chip:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    button.app-chip:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    button.app-chip:not(:disabled) {
+      cursor: pointer;
+    }
+
+    button.app-chip:not(:disabled):hover {
+      border-color: #a8a29e;
+      transform: translateY(-1px);
+    }
+
+    .app-chip.starting {
+      border-color: #b45309;
+      background: rgba(245, 158, 11, 0.15);
+    }
+
+    .app-chip.starting .name {
+      color: #92400e;
+    }
+
+    .app-chip.starting .state {
+      color: #92400e;
+      animation: pulse 1s infinite;
+    }
+
+    .app-chip.active.manual-hold {
+      border-color: #2563eb;
+      background: rgba(37, 99, 235, 0.18);
+    }
+
+    .app-chip.active.manual-hold .name {
+      color: #292524;
+    }
+
+    .app-chip.active.manual-hold .state {
+      color: #1d4ed8;
+    }
+
+
+    .chart-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .chart-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .chart-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    th,
+    td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      background: rgba(250, 250, 249, 0.4);
+    }
+
+    tr:hover {
+      background: #fff7f0;
+    }
+
+    .timeline-notice {
+      display: inline-block;
+      font-size: 0.85rem;
+      color: #b8490d;
+      font-weight: 600;
+      background: rgba(243, 121, 41, 0.08);
+      border: 1px dashed rgba(243, 121, 41, 0.3);
+      padding: 8px 14px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      width: 100%;
+    }
+
+    .btn-execute {
+      background: #b8490d;
+      color: #ffffff;
+      border-color: #b8490d;
+      font-weight: 700;
+    }
+
+    .btn-execute:hover:not(:disabled) {
+      background: #933c12;
+      transform: translateY(-1px);
+    }
+
+    .badge-hh {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge-hh-waiting {
+      background: #e7e5e4;
+      color: #78716c;
+    }
+
+    .badge-hh-running {
+      background: rgba(243, 121, 41, 0.2);
+      color: #b8490d;
+      border: 1px solid rgba(243, 121, 41, 0.4);
+    }
+
+    .badge-hh-completed {
+      background: rgba(34, 197, 94, 0.2);
+      color: #047857;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+
+    .badge-hh-stopped {
+      background: rgba(239, 68, 68, 0.2);
+      color: #b91c1c;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
+    .badge-hh-fault {
+      background: rgba(239, 68, 68, 0.2);
+      color: #b91c1c;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
+    /* 발표용 원클릭 시연 제어 패널 스타일 */
+    .presentation-panel {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(250, 250, 249, 0.98));
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(41, 37, 36, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .presentation-btn-normal {
+      background: #047857;
+      color: #ffffff;
+      border: 1px solid rgba(52, 211, 153, 0.6);
+      padding: 11px 22px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .presentation-btn-normal:hover:not(:disabled) {
+      background: #065f46;
+      transform: translateY(-1px);
+    }
+
+    .presentation-btn-normal:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .presentation-btn-missed {
+      background: #B8860B;
+      color: #ffffff;
+      border: 1px solid #8C6800;
+      padding: 11px 22px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .presentation-btn-missed:hover:not(:disabled) {
+      background: #b45309;
+      transform: translateY(-1px);
+    }
+
+    .presentation-btn-missed:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .presentation-btn-fault {
+      background: #b91c1c;
+      color: #ffffff;
+      border: 1px solid rgba(248, 113, 113, 0.6);
+      padding: 11px 22px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .presentation-btn-fault:hover:not(:disabled) {
+      background: #991b1b;
+      transform: translateY(-1px);
+    }
+
+    .presentation-btn-fault:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* 섹션 헤더 (제목 + 접기/펼치기 토글) */
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .section-head-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-main);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .section-head-title:hover {
+      color: var(--accent);
+    }
+
+    /* 패널 접기/펼치기 토글 버튼 */
+    .panel-toggle {
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      background: #ffffff;
+      color: #b8490d;
+      border: 1px solid #ffd2ad;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .panel-toggle:hover {
+      background: #fff7f0;
+      color: #933c12;
+    }
+
+    details.advanced-config-details summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text-muted);
+      outline: none;
+      padding: 6px 0;
+      user-select: none;
+    }
+
+    details.advanced-config-details summary:hover {
+      color: var(--accent);
+    }
+
+    /* ==========================================
+       전력 흐름 시각화 패널
+       - 얇은 경로 위로 빛(반복 그라데이션)이 이동하는 표현.
+       - 흐름 속도/밝기/두께는 JS가 --flow-* 커스텀 프로퍼티로 주입한다.
+       - 시뮬레이터가 계산하지 않는 값(태양광, 수출 전력 등)은 표현하지 않는다.
+       ========================================== */
+    .flow-panel {
+      --flow-duration: 3.2s;
+      --flow-alpha: 0.35;
+      --flow-thickness: 2px;
+      background: linear-gradient(135deg, #fffaf6, var(--card-bg));
+      border: 1px solid #f0e4da;
+      border-radius: 12px;
+      padding: 16px 20px 18px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(41, 37, 36, 0.05);
+    }
+
+    .flow-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      margin-bottom: 14px;
+    }
+
+    .flow-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .flow-title-sub {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-left: 8px;
+    }
+
+    .flow-badges {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .flow-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--card-bg-sub);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .flow-badge-mode {
+      border-color: #ffd2ad;
+      background: #fff7f0;
+      color: var(--accent);
+    }
+
+    .flow-panel[data-mode="burst"] .flow-badge-mode {
+      border-color: rgba(245, 158, 11, 0.45);
+      background: rgba(245, 158, 11, 0.14);
+      color: #92400e;
+    }
+
+    .flow-panel[data-run-state="running"] #powerflowRunBadge {
+      border-color: rgba(243, 121, 41, 0.4);
+      background: #fff7f0;
+      color: var(--accent);
+    }
+
+    /* 결측 등 상태 칩. 표시할 내용이 없으면 자리도 차지하지 않는다. */
+    .flow-chip {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(245, 158, 11, 0.45);
+      background: rgba(245, 158, 11, 0.14);
+      color: #92400e;
+      white-space: nowrap;
+    }
+
+    .flow-chip:empty {
+      display: none;
+    }
+
+    /* ---- 흐름 무대 (노드 + 연결 경로) ---- */
+    .flow-stage {
+      display: flex;
+      align-items: stretch;
+    }
+
+    .flow-node {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 11px 13px;
+      transition: border-color 0.3s ease, opacity 0.3s ease;
+    }
+
+    .flow-panel[data-run-state="running"] .flow-node {
+      border-color: #f4d6bd;
+    }
+
+    .flow-panel[data-run-state="idle"] .flow-node {
+      opacity: 0.72;
+    }
+
+    .flow-node-label {
+      font-size: 0.71rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .flow-node-value {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-main);
+      overflow-wrap: anywhere;
+    }
+
+    .flow-node-sub {
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      overflow-wrap: anywhere;
+    }
+
+    .flow-conn {
+      flex: 0 1 100px;
+      min-width: 46px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 8px;
+    }
+
+    .flow-conn-label {
+      font-size: 0.67rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .flow-line {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: var(--flow-thickness);
+      min-height: 2px;
+      border-radius: 999px;
+      background: #ead9cb;
+      overflow: hidden;
+    }
+
+    /* 이동하는 빛: 72px 주기로 반복되는 부드러운 광점이 경로를 따라 흐른다. */
+    .flow-line::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: repeating-linear-gradient(90deg,
+          rgba(243, 121, 41, 0) 0px,
+          rgba(243, 121, 41, var(--flow-alpha)) 9px,
+          rgba(243, 121, 41, 0) 20px,
+          rgba(243, 121, 41, 0) 72px);
+      background-size: 72px 100%;
+      animation: flowSlideX var(--flow-duration) linear infinite;
+    }
+
+    @keyframes flowSlideX {
+      from {
+        background-position: 0 0;
+      }
+
+      to {
+        background-position: 72px 0;
+      }
+    }
+
+    /* 실행 상태별 흐름 제어: 실행 중에만 흐르고, 일시정지는 멈추며, 초기/완료는 정지 상태로 표시 */
+    .flow-panel[data-run-state="paused"] .flow-line::after {
+      animation-play-state: paused;
+      opacity: 0.5;
+    }
+
+    .flow-panel[data-run-state="idle"] .flow-line::after,
+    .flow-panel[data-run-state="completed"] .flow-line::after {
+      animation-play-state: paused;
+      opacity: 0;
+    }
+
+    /* 계측 결측 구간: MQTT 발행이 끊긴 하류 경로를 점선 회색으로 바꾸고 빛을 끈다. */
+    .flow-panel[data-fault="1"] #flowConn2 .flow-line,
+    .flow-panel[data-fault="1"] #flowConn3 .flow-line {
+      background: repeating-linear-gradient(90deg, #d6d3d1 0 6px, transparent 6px 12px);
+    }
+
+    .flow-panel[data-fault="1"] #flowConn2 .flow-line::after,
+    .flow-panel[data-fault="1"] #flowConn3 .flow-line::after {
+      opacity: 0;
+      animation-play-state: paused;
+    }
+
+    /* ---- BURST 발행 진행 (실시간 흐름과 상호 배타) ---- */
+    .flow-panel[data-mode="live"] .flow-burst {
+      display: none;
+    }
+
+    .flow-panel[data-mode="burst"] .flow-stage {
+      display: none;
+    }
+
+    .flow-burst {
+      background: rgba(250, 250, 249, 0.7);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+
+    .flow-burst-head {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 4px 10px;
+      margin-bottom: 10px;
+    }
+
+    .flow-burst-title {
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: #92400e;
+    }
+
+    .flow-burst-note {
+      font-size: 0.74rem;
+      color: var(--text-muted);
+    }
+
+    .flow-burst-bar {
+      height: 10px;
+      border-radius: 999px;
+      background: #eee6df;
+      overflow: hidden;
+    }
+
+    .flow-burst-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #f59e0b, var(--accent-secondary));
+      transition: width 0.3s ease;
+    }
+
+    .flow-burst-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 16px;
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .flow-burst-pct {
+      font-weight: 700;
+      color: #92400e;
+    }
+
+    /* ---- 모바일: 노드를 세로로 쌓고 경로도 세로로 흐르게 한다 ---- */
+    @media (max-width: 760px) {
+      .flow-panel {
+        padding: 14px 14px 16px;
+      }
+
+      .flow-title-sub {
+        display: block;
+        margin-left: 0;
+        margin-top: 2px;
+      }
+
+      .flow-stage {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .flow-conn {
+        flex: 0 0 auto;
+        width: 100%;
+        min-width: 0;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        padding: 4px 0 4px 22px;
+      }
+
+      .flow-line {
+        width: var(--flow-thickness);
+        min-width: 2px;
+        height: 26px;
+        flex: 0 0 auto;
+      }
+
+      .flow-line::after {
+        background-image: repeating-linear-gradient(180deg,
+            rgba(243, 121, 41, 0) 0px,
+            rgba(243, 121, 41, var(--flow-alpha)) 9px,
+            rgba(243, 121, 41, 0) 20px,
+            rgba(243, 121, 41, 0) 72px);
+        background-size: 100% 72px;
+        animation-name: flowSlideY;
+      }
+
+      .flow-panel[data-fault="1"] #flowConn2 .flow-line,
+      .flow-panel[data-fault="1"] #flowConn3 .flow-line {
+        background: repeating-linear-gradient(180deg, #d6d3d1 0 6px, transparent 6px 12px);
+      }
+
+      @keyframes flowSlideY {
+        from {
+          background-position: 0 0;
+        }
+
+        to {
+          background-position: 0 72px;
+        }
+      }
+    }
+
+    /* ---- 모션 최소화 설정: 빛의 이동을 멈추고 정적인 경로만 남긴다 ---- */
+    @media (prefers-reduced-motion: reduce) {
+      .flow-line::after {
+        animation: none;
+        background-image: linear-gradient(90deg,
+            rgba(243, 121, 41, 0) 0%,
+            rgba(243, 121, 41, var(--flow-alpha)) 50%,
+            rgba(243, 121, 41, 0) 100%);
+        background-size: 100% 100%;
+      }
+
+      .flow-node,
+      .flow-burst-fill {
+        transition: none;
+      }
+    }
