@@ -14,5 +14,5 @@ def test_alembic_graph_has_one_head_and_unique_revisions() -> None:
     scripts = ScriptDirectory.from_config(config)
     revisions = list(scripts.walk_revisions())
 
-    assert scripts.get_heads() == ["20260921_17"]
+    assert scripts.get_heads() == ["20260921_18"]
     assert len({revision.revision for revision in revisions}) == len(revisions)
