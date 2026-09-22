@@ -135,6 +135,8 @@ class Settings(BaseSettings):
         "kafka_group_instance_id",
         "kafka_outing_group_instance_id",
         "model_household_id",
+        "scene_test_household_id",
+        "scene_risk_threshold_seconds",
         mode="before",
     )
     @classmethod
