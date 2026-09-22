@@ -59,7 +59,7 @@ export default function UserDashboard({
           <>
             <div className="flex items-center gap-4">
               <p className="text-2xl font-bold">
-                테스트
+                {data.manager.name}
                 <span className="text-lg font-normal"> 담당자</span>
               </p>
             </div>

@@ -24,9 +24,10 @@ export default function UserHomeTab({
     <>
       <div>
         {data ? (
-          <p className="text-center text-3xl leading-snug font-extrabold">
-            <p className="text-base font-bold">안녕하세요</p> 가나디님
-          </p>
+          <div className="text-center">
+            <p className="text-base font-bold">안녕하세요</p>
+            <p className="text-3xl leading-snug font-extrabold">{data.name}님</p>
+          </div>
         ) : (
           <p className="text-center text-4xl leading-snug font-bold">안녕하세요</p>
         )}
