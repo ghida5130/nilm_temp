@@ -1,6 +1,7 @@
 # AI 브랜치 develop 통합 검수
 
 조사 기준: 원격 develop `3fbacc5`, 원격 feature/ai 브랜치 15개.
+작업 중 갱신된 develop `77fe263`도 병합하고 변경된 백엔드 전체 시험을 다시 수행했다.
 `git rev-list --left-right --count origin/develop...<branch>`로 조사했다.
 
 미병합: `feature/ai/real-model-predictor`의 `f2c93a9`, `511190c`, `35765d7` 3개 커밋.
@@ -29,8 +30,9 @@ realtime-consumer-scaling, realtime-model-integration, service-events, sonarcube
 - 자산: 214파일 SHA256 MATCH, 6개 체크포인트.
 - Compose config 검증 통과.
 - 현재 통합 코드의 실제 kettle 592행 출력 생성 및 SQLite 저장 성공.
-- Java 전체 시험: 212개 중 207 passed / 5 skipped (4개 기존 disabled, 실제 출력 경로 미지정 1개).
-  새 실제 출력 경로를 지정해 SceneSnapshotFlowTest를 별도로 재실행해 3/3 통과(제외 0)를 확인했다.
+- 최종 Java 전체 시험: 최신 develop 반영 후 212개 중 **208 passed / 기존 disabled 4 skipped**.
+  실제 출력 592행을 사용하는 SceneSnapshotFlowTest 3/3 통과(제외 0).
+  Windows 한글 경로 문제로 ASCII 임시 폴더에서 실행했으며 모든 src 파일의 SHA256 동일함을 확인했다.
 
 기존 작업 폴더와 미추적 문서는 그대로 두고 별도 worktree에서 작업했다.
 develop 직접 push 대신 통합 브랜치의 merge request를 사용한다.
