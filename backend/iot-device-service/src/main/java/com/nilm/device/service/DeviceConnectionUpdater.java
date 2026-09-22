@@ -22,17 +22,24 @@ public class DeviceConnectionUpdater {
     private static final Logger log = LoggerFactory.getLogger(DeviceConnectionUpdater.class);
 
     private final DeviceRepository deviceRepository;
+    private final DeviceConnectionPublisher publisher;
 
-    public DeviceConnectionUpdater(DeviceRepository deviceRepository) {
+    public DeviceConnectionUpdater(DeviceRepository deviceRepository,
+                                   DeviceConnectionPublisher publisher) {
         this.deviceRepository = deviceRepository;
+        this.publisher = publisher;
     }
 
     @Transactional
     public void apply(long deviceId, Device.ConnectionStatus status) {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         deviceRepository.findById(deviceId).ifPresentOrElse(
                 device -> {
-                    if (device.updateConnection(status, OffsetDateTime.now(ZoneOffset.UTC))) {
+                    // 상태가 실제로 바뀔 때만 알린다. 같은 상태 재통지까지 흘리면
+                    // monitoring이 의미 없는 이벤트를 계속 받는다.
+                    if (device.updateConnection(status, now)) {
                         log.info("기기 접속 상태 변경: deviceId={}, {}", deviceId, status);
+                        publisher.publish(device, now);
                     }
                 },
                 () -> log.warn("등록되지 않은 기기의 상태 통지: deviceId={}", deviceId));
