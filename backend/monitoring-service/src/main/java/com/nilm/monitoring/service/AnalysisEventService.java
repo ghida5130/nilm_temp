@@ -44,6 +44,7 @@ public class AnalysisEventService {
     private final NotificationGate notificationGate;
     private final AnalysisEventNarrator narrator;
     private final EventRoutingPolicy routing;
+    private final DeviceConnectivityService deviceConnectivity;
     private final RiskProperties riskProperties;
     private final ApplicationEventPublisher publisher;
     private final ObjectMapper objectMapper;
@@ -147,6 +148,16 @@ public class AnalysisEventService {
                     message.eventId(), message.eventType());
             return;
         }
+
+        // 기기가 꺼져 있던 구간의 무활동은 사람에 대한 신호가 아니다.
+        // 구분하지 않으면 Wi-Fi가 끊길 때마다 보호자에게 위험 알림이 간다.
+        // 외출과 같은 기준으로 "사건이 일어난 시각"에 끊겨 있었는지를 본다.
+        if (routing.suppressWhileDeviceOffline(message.eventType())
+                && deviceConnectivity.wasDisconnectedAt(subject.getHouseholdId(), message.occurredAt())) {
+            log.info("기기 오프라인 구간의 이벤트라 알림을 억제: eventId={}, eventType={}, householdId={}",
+                    message.eventId(), message.eventType(), subject.getHouseholdId());
+            return;
+        }
         if (subject.getAuthSub() == null || subject.getAuthSub().isBlank()) {
             log.warn("이벤트 저장 완료, 수신자 식별자 없음: subjectId={}", subject.getId());
             return;
@@ -169,11 +180,19 @@ public class AnalysisEventService {
             return;
         }
         if (pushEnabled) {
+            log.info("이벤트 알림 생성, 웹푸시 발송 요청: notificationId={}, subjectId={}, eventId={}, "
+                            + "eventType={}, level={}",
+                    notification.getId(), subject.getId(), message.eventId(),
+                    message.eventType(), level);
             publisher.publishEvent(new NotificationReady(
                     notification.getId(),
                     "안전 확인 요청",
                     narrator.describeDetail(stored)
             ));
+        } else {
+            // 알림 행은 남았는데 폰에 아무것도 안 오는 상황의 이유를 그대로 남긴다.
+            log.info("웹푸시가 꺼져 있어 발송하지 않는다: notificationId={}, subjectId={}",
+                    notification.getId(), subject.getId());
         }
     }
 
