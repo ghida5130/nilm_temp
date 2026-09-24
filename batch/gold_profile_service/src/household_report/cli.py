@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from datetime import date
 
 from sqlalchemy import create_engine
 
@@ -23,6 +24,10 @@ def main(argv=None):
     publish = commands.add_parser("publish")
     publish.add_argument("--manifest", required=True)
     publish.add_argument("--batch-size", type=int, default=500)
+    daily = commands.add_parser("daily", help="pin committed inputs, build and publish a daily report")
+    daily.add_argument("--as-of", type=date.fromisoformat, required=True)
+    daily.add_argument("--window-days", type=int, default=90)
+    daily.add_argument("--historical-manifest", help="lake manifest produced by import-assessments")
     historical = commands.add_parser("import-assessments")
     historical.add_argument("--input-manifest", required=True)
     historical.add_argument("--output-base", required=True)
@@ -36,6 +41,24 @@ def main(argv=None):
     storage = create_storage(settings)
     spark = build_session(settings)
     try:
+        if args.command == "daily":
+            from household_report.daily import run_daily
+            from power_silver.catalog import SilverCatalog
+            from power_silver.targets import load_targets
+            from realtime_analysis.database import create_session_factory
+            database_url = os.environ.get("REPORT_DATABASE_URL")
+            if not database_url:
+                raise RuntimeError("REPORT_DATABASE_URL is required for daily reports")
+            engine = create_engine(database_url, pool_pre_ping=True)
+            try:
+                result = run_daily(engine=engine, spark=spark, storage=storage,
+                    catalog=SilverCatalog(create_session_factory(settings)),
+                    targets=load_targets(settings.observation_targets_file), end=args.as_of,
+                    window_days=args.window_days, historical_manifest=args.historical_manifest)
+                print(json.dumps(result, ensure_ascii=False))
+                return 0
+            finally:
+                engine.dispose()
         if args.command == "import-assessments":
             report_input = None
             if args.report_input:
