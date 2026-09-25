@@ -91,7 +91,7 @@
             "type": "postgres",
             "uid": "nilm-reporting-postgres"
           },
-          "rawSql": "SELECT period_end AS 보고일, assessment_mode AS 평가출처, generated_at AS 생성시각, ((now() AT TIME ZONE 'Asia/Seoul')::date - period_end) AS 보고일경과일수, completeness_scope AS 수집범위, gold_run_id, rule_version, report_id FROM reporting.v_report_index WHERE report_id=${report_id:sqlstring} AND household_id=${household:sqlstring}",
+          "rawSql": "SELECT period_end::text AS 보고일, assessment_mode AS 평가출처, generated_at AS 생성시각, ((now() AT TIME ZONE 'Asia/Seoul')::date - period_end) AS 보고일경과일수, completeness_scope AS 수집범위, gold_run_id, rule_version, report_id FROM reporting.v_report_index WHERE report_id=${report_id:sqlstring} AND household_id=${household:sqlstring}",
           "rawQuery": true,
           "editorMode": "code",
           "format": "table"
@@ -165,7 +165,7 @@
             "type": "postgres",
             "uid": "nilm-reporting-postgres"
           },
-          "rawSql": "SELECT usage_date::text AS date, max_valid_score AS \"VALID 최대점수\", max_partial_score AS \"PARTIAL 최대점수\" FROM reporting.v_household_daily WHERE report_id=${report_id:sqlstring} AND household_id=${household:sqlstring} ORDER BY usage_date",
+          "rawSql": "SELECT CASE WHEN extract(isodow FROM usage_date) = 1 THEN to_char(usage_date, 'MM-DD') ELSE repeat(' ', extract(isodow FROM usage_date)::int) END AS date, max_valid_score AS \"VALID 최대점수\", max_partial_score AS \"PARTIAL 최대점수\" FROM reporting.v_household_daily WHERE report_id=${report_id:sqlstring} AND household_id=${household:sqlstring} ORDER BY usage_date",
           "rawQuery": true,
           "editorMode": "code",
           "format": "table"
@@ -191,7 +191,8 @@
         },
         "tooltip": {
           "mode": "multi"
-        }
+        },
+        "xTickLabelSpacing": 0
       }
     },
     {
@@ -215,7 +216,7 @@
             "type": "postgres",
             "uid": "nilm-reporting-postgres"
           },
-          "rawSql": "SELECT usage_date::text AS date, recorded_count AS \"저장 평가건수\", valid_count AS \"VALID 건수\", partial_count AS \"PARTIAL 건수\" FROM reporting.v_household_daily WHERE report_id=${report_id:sqlstring} AND household_id=${household:sqlstring} ORDER BY usage_date",
+          "rawSql": "SELECT CASE WHEN extract(isodow FROM usage_date) = 1 THEN to_char(usage_date, 'MM-DD') ELSE repeat(' ', extract(isodow FROM usage_date)::int) END AS date, recorded_count AS \"저장 평가건수\", valid_count AS \"VALID 건수\", partial_count AS \"PARTIAL 건수\" FROM reporting.v_household_daily WHERE report_id=${report_id:sqlstring} AND household_id=${household:sqlstring} ORDER BY usage_date",
           "rawQuery": true,
           "editorMode": "code",
           "format": "table"
@@ -241,7 +242,8 @@
         },
         "tooltip": {
           "mode": "multi"
-        }
+        },
+        "xTickLabelSpacing": 0
       }
     },
     {

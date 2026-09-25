@@ -72,6 +72,18 @@ class HistoricalAssessmentTest {
         }
     }
 
+    @Test void publishedSchemaVersionTwoIsAccepted() {
+        var v2 = new HouseholdProfileMessage(2, "H001", "v2", 1L, "ACTIVE", START.toLocalDate().minusDays(1),
+                START.toLocalDate().minusDays(28), START.toLocalDate().minusDays(1), START, START,
+                "snapshot", "rules", "stats", "READY", List.of(), List.of());
+        assertThat(new HistoricalProfileResolver(List.of(v2)).resolve("H001", START, Duration.ofDays(3))).isPresent();
+        var v3 = new HouseholdProfileMessage(3, "H001", "v3", 1L, "ACTIVE", START.toLocalDate().minusDays(1),
+                START.toLocalDate().minusDays(28), START.toLocalDate().minusDays(1), START, START,
+                "snapshot", "rules", "stats", "READY", List.of(), List.of());
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new HistoricalProfileResolver(List.of(v3)));
+    }
+
     Path config() throws Exception {
         var json = HistoricalAssessmentCli.JSON;
         Files.writeString(directory.resolve("snapshots.jsonl"), json.writeValueAsString(snapshot(0, false)) + "\n"

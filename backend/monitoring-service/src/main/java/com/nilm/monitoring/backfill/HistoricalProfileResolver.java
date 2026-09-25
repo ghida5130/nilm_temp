@@ -8,12 +8,15 @@ import java.util.*;
 
 /** Selects archived Gold messages without changing ACTIVE database rows. */
 public final class HistoricalProfileResolver {
+    static final Set<Integer> SUPPORTED_SCHEMA_VERSIONS = Set.of(1, 2);
     private final List<HouseholdProfileMessage> profiles;
     public HistoricalProfileResolver(List<HouseholdProfileMessage> profiles) {
         this.profiles = List.copyOf(profiles);
         Set<String> versions = new HashSet<>();
         for (var p : profiles) {
-            if (!Integer.valueOf(1).equals(p.schemaVersion()) || p.householdId() == null || p.profileVersion() == null
+            // gold.household-profile.v1 carries schema_version 2 since delivery_mode was added;
+            // the live consumer ignores the field, so accept both published versions here.
+            if (!SUPPORTED_SCHEMA_VERSIONS.contains(p.schemaVersion()) || p.householdId() == null || p.profileVersion() == null
                     || p.asOfDate() == null || p.effectiveFrom() == null || p.publishedAt() == null
                     || p.profileRevision() == null || p.routineBaselines() == null || p.statistics() == null
                     || !versions.add(p.householdId() + ":" + p.profileVersion())) {

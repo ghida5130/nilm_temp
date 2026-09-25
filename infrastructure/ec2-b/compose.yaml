@@ -517,6 +517,10 @@ services:
   #   docker compose run --rm gold-profile gold-profile daily
   gold-profile:
     image: ${GOLD_PROFILE_IMAGE:?GOLD_PROFILE_IMAGE required}
+    volumes:
+      - type: bind
+        source: ${EXPERIMENTS_HOST_DIR:-/opt/nilm/experiments}
+        target: /app/experiments
     profiles:
       - batch
     restart: "no"
