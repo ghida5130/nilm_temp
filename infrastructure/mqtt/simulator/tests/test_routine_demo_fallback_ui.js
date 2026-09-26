@@ -38,16 +38,16 @@ async function fetchMock(url, options) {
   const method = options.method;
   const body = options.body ? JSON.parse(options.body) : null;
   calls.push({ method, url, body });
-  if (url === '/api/status') {
+  if (url === 'api/status') {
     statusReads += 1;
     if (statusReads < 3) return response(true, { is_running: false });
     return response(true, { active_households: { H001: { scenario: 'manual', status: 'stopped', cycle_count: 330 } } });
   }
-  if (url === '/api/start' && body.scenario === 'routine_missed_demo') {
+  if (url === 'api/start' && body.scenario === 'routine_missed_demo') {
     return response(false, { message: "지원하지 않는 시나리오입니다: 'routine_missed_demo'. 허용 목록: ['manual']" });
   }
-  if (url === '/api/start' && body.scenario === 'manual') return response(true, { status: 'started' });
-  if (url === '/api/stop') return response(true, { status: 'stopped' });
+  if (url === 'api/start' && body.scenario === 'manual') return response(true, { status: 'started' });
+  if (url === 'api/stop') return response(true, { status: 'stopped' });
   throw new Error(`예상하지 못한 요청: ${method} ${url}`);
 }
 
@@ -79,7 +79,7 @@ assert.strictEqual(element('viewRangeLabel').textContent, '08:10:05~08:12:05');
   await Promise.resolve(); // 초기 실행 상태 조회
   await element('liveStartButton').listeners.click();
 
-  const starts = calls.filter(call => call.url === '/api/start');
+  const starts = calls.filter(call => call.url === 'api/start');
   assert.deepStrictEqual(starts.map(call => call.body.scenario), ['routine_missed_demo', 'manual']);
   assert.strictEqual(starts[1].body.start_time, '08:08:30');
   assert.strictEqual(starts[1].body.interval, 0.1);
@@ -95,7 +95,7 @@ assert.strictEqual(element('viewRangeLabel').textContent, '08:10:05~08:12:05');
     await new Promise(resolve => setImmediate(resolve));
   }
 
-  assert.strictEqual(calls.filter(call => call.url === '/api/stop').length, 1);
+  assert.strictEqual(calls.filter(call => call.url === 'api/stop').length, 1);
   assert.strictEqual(element('liveCard').dataset.state, 'completed');
   assert.strictEqual(element('liveProgress').textContent, '발행 330 / 330');
   console.log('routine demo fallback UI tests passed');

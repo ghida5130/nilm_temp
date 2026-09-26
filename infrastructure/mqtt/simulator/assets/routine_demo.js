@@ -392,8 +392,8 @@
       closeStream();
       setPhase('starting', '비교 구간이 끝나 발행을 종료하는 중입니다.');
       try {
-        await requestJson('POST', '/api/stop');
-        const status = await requestJson('GET', '/api/status');
+        await requestJson('POST', 'api/stop');
+        const status = await requestJson('GET', 'api/status');
         const house = status.active_households && status.active_households[LIVE_HOUSE];
         const published = house && Number.isInteger(house.cycle_count) ? house.cycle_count : state.lastSec;
         setPhase('completed', `08:08:30~08:13:59 비교 구간을 표시했습니다. MQTT 발행 ${published}건 · 전자레인지 미사용. Kafka 적재와 AI 판정 결과는 브리지·분석 서비스에서 확인합니다.`);
@@ -407,7 +407,7 @@
     async function checkServer() {
       if (phase !== 'running') return;
       try {
-        const status = await requestJson('GET', '/api/status');
+        const status = await requestJson('GET', 'api/status');
         const house = status.active_households && status.active_households[LIVE_HOUSE];
         if (house && house.scenario === state.scenario && house.status === 'running') {
           if (state.scenario === FALLBACK_SCENARIO && house.cycle_count >= LIVE_TOTAL) await finishFallback();
@@ -447,7 +447,7 @@
 
     function openStream() {
       closeStream();
-      stream = new EventSource('/api/stream');
+      stream = new EventSource('api/stream');
       stream.onmessage = function (event) {
         let sample;
         try { sample = JSON.parse(event.data); } catch (err) { return; }
@@ -467,7 +467,7 @@
     async function start() {
       setPhase('starting', '시뮬레이터 상태를 확인하는 중입니다.');
       try {
-        const status = await requestJson('GET', '/api/status');
+        const status = await requestJson('GET', 'api/status');
         if (status.is_running) {
           const ok = window.confirm(`시뮬레이터에서 '${status.current_mode || '다른'}' 실행이 진행 중입니다.\n중지하고 H001 아침 미사용 전력 발행을 시작할까요?`);
           if (!ok) { setPhase('idle', '실행을 취소했습니다. 진행 중인 시뮬레이션은 그대로 유지됩니다.'); return; }
@@ -480,12 +480,12 @@
         const speed = Number(el.speed.value) || 1;
         const interval = Math.round(1000 / speed) / 1000;
         try {
-          await requestJson('POST', '/api/start', { house: LIVE_HOUSE, scenario: LIVE_SCENARIO, interval });
+          await requestJson('POST', 'api/start', { house: LIVE_HOUSE, scenario: LIVE_SCENARIO, interval });
           setPhase('running', '발행 시작 · 가상 시작 시각 08:08:30 KST');
         } catch (err) {
           if (!isUnsupportedDemoScenario(err)) throw err;
           state.scenario = FALLBACK_SCENARIO;
-          await requestJson('POST', '/api/start', { house: LIVE_HOUSE, scenario: FALLBACK_SCENARIO, start_time: '08:08:30', interval });
+          await requestJson('POST', 'api/start', { house: LIVE_HOUSE, scenario: FALLBACK_SCENARIO, start_time: '08:08:30', interval });
           setPhase('running', '기존 서버 호환 방식으로 08:08:30부터 대기전력을 발행 중입니다.');
         }
       } catch (err) {
@@ -498,7 +498,7 @@
       el.stop.disabled = true;
       closeStream();
       try {
-        await requestJson('POST', '/api/stop');
+        await requestJson('POST', 'api/stop');
         setPhase('stopped', `${state.lastSec}건 발행 후 중지했습니다.`);
       } catch (err) {
         setPhase('error', `중지 요청이 실패했습니다: ${err.message}`);
@@ -509,7 +509,7 @@
     // 새 시나리오 또는 같은 시작 시각의 기존 서버 호환 실행에 다시 연결한다.
     async function attachIfRunning() {
       try {
-        const status = await requestJson('GET', '/api/status');
+        const status = await requestJson('GET', 'api/status');
         const house = status.active_households && status.active_households[LIVE_HOUSE];
         if (!house || house.status !== 'running') return;
         const startClock = status.resolved_start_time ? new Date(status.resolved_start_time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour12: false }) : '';
@@ -531,7 +531,7 @@
     window.addEventListener('pagehide', function () {
       closeStream();
       if (state.scenario === FALLBACK_SCENARIO && (phase === 'running' || phase === 'starting') && navigator.sendBeacon) {
-        navigator.sendBeacon('/api/stop', new Blob(['{}'], { type: 'application/json' }));
+        navigator.sendBeacon('api/stop', new Blob(['{}'], { type: 'application/json' }));
       }
     });
     window.addEventListener('pageshow', function (event) {
