@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from "motion/react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Risk, Subject } from "../../types/monitoring";
@@ -38,9 +39,13 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
     })),
   ];
 
+  const reduceMotion = useReducedMotion();
 
   return (
-    <section
+    <motion.section
+      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
       className="overflow-hidden rounded-xl border border-stone-200/70 bg-white"
     >
       <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-6">
@@ -70,7 +75,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
           />
         </label>
       </div>
-      <div className="overflow-x-auto">
+      <motion.div layoutScroll className="overflow-x-auto">
         <table className="w-full min-w-4xl text-left">
           <thead className="bg-stone-50 text-base text-stone-500">
             <tr>
@@ -84,7 +89,14 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
           </thead>
           <tbody className="divide-y divide-stone-100">
             {visible.map((subject, index) => (
-              <tr
+              <motion.tr
+                layout={reduceMotion ? false : "position"}
+                initial={reduceMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{
+                  opacity: { duration: 0.2, delay: reduceMotion ? 0 : Math.min(index, 5) * 0.035 },
+                  layout: { type: "spring", stiffness: 120, damping: 24, mass: 1 },
+                }}
                 className="hover:bg-stone-50"
                 key={subject.subjectId}
               >
@@ -117,11 +129,11 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
                     상세보기
                   </Link>
                 </td>}
-              </tr>
+              </motion.tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </motion.div>
       {!visible.length && (
         <p className="py-12 text-center text-stone-500">
           {loading ? "대상자를 불러오는 중입니다." : "조건에 맞는 대상자가 없습니다."}
@@ -134,6 +146,6 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
           {dataUpdatedAt ? formatDateTime(new Date(dataUpdatedAt).toISOString()) : "기록 없음"}
         </span>
       </footer>
-    </section>
+    </motion.section>
   );
 }

@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from "motion/react";
 import type { Subject } from "../../types/monitoring";
 import { responseLabel, riskLabels } from "../../types/monitoring";
 import { formatDateTime, riskBadgeClass, telephoneHref } from "../../utils/format";
@@ -36,6 +37,7 @@ export function PreviewDangerAlert({ occurredAt, onClose }: { occurredAt: string
 }
 
 export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
+  const reduceMotion = useReducedMotion();
   const sortedSubjects = [...subjects].sort((a, b) => b.riskScore - a.riskScore);
 
   return (
@@ -46,7 +48,7 @@ export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
         </h2>
         <p className="mt-1 text-base text-stone-500">위험 점수가 높은 순서로 표시됩니다.</p>
       </div>
-      <div className="overflow-x-auto">
+      <motion.div layoutScroll className="overflow-x-auto">
         <table className="w-full min-w-4xl text-left">
           <thead className="bg-stone-50 text-base text-stone-500">
             <tr>
@@ -59,7 +61,9 @@ export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
           </thead>
           <tbody className="divide-y divide-stone-100">
             {sortedSubjects.map((subject, index) => (
-              <tr
+              <motion.tr
+                layout={reduceMotion ? false : "position"}
+                transition={{ layout: { type: "spring", stiffness: 120, damping: 24, mass: 1 } }}
                 className={subject.riskLevel === "DANGER" ? "bg-red-50" : "hover:bg-stone-50"}
                 key={subject.subjectId}
               >
@@ -79,11 +83,11 @@ export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
                 </td>
                 <td className="font-bold">{subject.riskScore}점</td>
                 <td>{responseLabel(subject.latestAlert?.subjectResponse)}</td>
-              </tr>
+              </motion.tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </motion.div>
       <footer className="border-t border-stone-100 p-4 text-base text-stone-500">
         총 {subjects.length}명 표시
       </footer>
