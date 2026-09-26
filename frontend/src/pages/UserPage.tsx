@@ -15,6 +15,7 @@ import {
   useNotificationResponseMutation,
 } from "../hooks/api";
 import { usePendingNotification } from "../hooks/notifications/usePendingNotification";
+import { useNotificationAction } from "../hooks/notifications/useNotificationAction";
 import { usePushSubscription } from "../hooks/notifications/usePushSubscription";
 
 type UserView = "home" | "away";
@@ -87,7 +88,7 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
   };
 
   const answer = async (value: "yes" | "no") => {
-    if (!notificationId) return;
+    if (!notificationId || busy) return;
     try {
       await responseMutation.mutateAsync({ notificationId, answer: value });
       showStatusNotice(
@@ -98,6 +99,8 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
       showStatusNotice(getApiErrorMessage(cause), "error");
     }
   };
+
+  useNotificationAction(answer, Boolean(data) && notificationPending && !busy);
 
   const logout = async () => {
     await Promise.allSettled([pushSubscription.unsubscribe()]);
