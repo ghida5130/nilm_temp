@@ -11,7 +11,7 @@ import StaffPageHeading from "../components/staff/StaffPageHeading";
 import StaffSidebar from "../components/staff/StaffSidebar";
 import { staffNavigation } from "../components/staff/staffNavigation";
 import type { StaffView } from "../components/staff/staffNavigation";
-import StreamNotice from "../components/staff/StreamNotice";
+import StaffNotifications from "../components/staff/StaffNotifications";
 import SubjectDetail from "../components/staff/SubjectDetail";
 import SubjectList from "../components/staff/SubjectList";
 import { useMeQuery, useSubjectsQuery } from "../hooks/api";
@@ -33,6 +33,7 @@ export default function StaffPage() {
     ? (requestedView as StaffView)
     : "overview";
   const selected = subjects.find((subject) => subject.subjectId === subjectId);
+  const showNotifications = !subjectId && view === "overview";
   const title = subjectId
     ? "대상자 상세"
     : staffNavigation.find((item) => item.key === view)?.label;
@@ -67,7 +68,7 @@ export default function StaffPage() {
           refreshing={query.isFetching}
           onRefresh={() => void query.refetch()}
         />
-        <div className="mx-auto grid max-w-[1440px] gap-6 p-5 md:p-8 xl:p-10">
+        <div className={`mx-auto grid max-w-[1440px] gap-6 p-5 md:p-8 xl:p-10 ${showNotifications && stream.notices.length ? "pb-32 md:pb-32 xl:pb-32" : ""}`}>
           {query.isError && (
             <p className="rounded-xl bg-red-50 p-4 text-red-700" role="alert">
               {getApiErrorMessage(query.error)}
@@ -78,16 +79,7 @@ export default function StaffPage() {
               실시간 연결이 끊겨 재연결 중입니다. {stream.error}
             </p>
           )}
-          {stream.notice && (
-            <StreamNotice
-              notice={stream.notice}
-              subjectName={
-                subjects.find((subject) => subject.subjectId === stream.notice?.subjectId)?.name ??
-                "대상자"
-              }
-              onClose={() => stream.setNotice(null)}
-            />
-          )}
+          {showNotifications && <StaffNotifications notices={stream.notices} subjects={subjects} onDismiss={stream.dismissNotice} />}
           {subjectId ? (
             <>
               <Link
@@ -124,10 +116,12 @@ export default function StaffPage() {
                 />
               )}
               {view === "overview" && (
-                <OverviewMetrics subjects={subjects} loading={query.isLoading} />
+                <>
+                  <OverviewMetrics subjects={subjects} loading={query.isLoading} />
+                </>
               )}
               {view === "alerts" ? (
-                <RecentAlerts subjects={subjects} />
+                <RecentAlerts subjects={subjects} history={stream.history} loading={query.isLoading} />
               ) : (
                 <SubjectList
                   subjects={subjects}
@@ -139,7 +133,7 @@ export default function StaffPage() {
           )}
           {feedback && (
             <p
-              className="fixed right-5 bottom-5 rounded-xl bg-stone-800 px-5 py-3 text-white shadow-lg"
+              className={`fixed right-5 rounded-xl bg-stone-800 px-5 py-3 text-white shadow-lg ${showNotifications && stream.notices.length ? "bottom-28" : "bottom-5"}`}
               role="status"
             >
               {feedback}

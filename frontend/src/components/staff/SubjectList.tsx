@@ -5,6 +5,7 @@ import type { Risk, Subject } from "../../types/monitoring";
 import { responseLabel, riskLabels } from "../../types/monitoring";
 import { formatDateTime, riskBadgeClass, telephoneHref } from "../../utils/format";
 import Icon from "../common/Icon";
+import { isHelpRequested } from "../../utils/staffNotices";
 
 type SubjectListProps = {
   subjects: Subject[];
@@ -97,14 +98,15 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
                   opacity: { duration: 0.2, delay: reduceMotion ? 0 : Math.min(index, 5) * 0.035 },
                   layout: { type: "spring", stiffness: 120, damping: 24, mass: 1 },
                 }}
-                className="hover:bg-stone-50"
+                className={`transition-colors ${subject.riskLevel === "DANGER" ? "bg-red-50/80 hover:bg-red-100/70" : "hover:bg-stone-50"}`}
                 key={subject.subjectId}
               >
-                <td className="p-4">
+                <td className={`border-l-[3px] p-4 ${subject.riskLevel === "DANGER" ? "border-l-red-500" : "border-l-transparent"}`}>
                   <strong>
                     <span className="mr-3 text-base font-medium tabular-nums text-stone-400">{index + 1}</span>
                     {subject.name} · {subject.age}세
                   </strong>
+                  {isHelpRequested(subject.latestAlert) && <span className="ml-3 inline-block whitespace-nowrap rounded-md bg-red-600 px-2.5 py-1 text-base leading-5 font-bold text-white">도움 요청</span>}
                   <small className="mt-1 block text-[0.9375rem] leading-6 text-stone-500">{subject.address || "주소 미등록"}</small>
                 </td>
                 <td>
@@ -119,7 +121,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
                     {riskLabels[subject.riskLevel]}
                   </span>
                 </td>
-                <td className="font-bold">{subject.riskScore}점</td>
+                <td className={`font-bold tabular-nums ${subject.riskLevel === "DANGER" ? "text-red-700" : ""}`}>{subject.riskScore}점</td>
                 <td>{responseLabel(subject.latestAlert?.subjectResponse)}</td>
                 {detailLinks && <td>
                   <Link
