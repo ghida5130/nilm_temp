@@ -44,7 +44,7 @@ export default function StaffPage() {
   };
 
   return (
-    <main className="min-h-screen bg-stone-100 text-stone-800 lg:grid lg:grid-cols-[250px_1fr]">
+    <main className="min-h-screen bg-[#fcfcfb] text-stone-800 lg:grid lg:grid-cols-[250px_1fr]">
       <StaffSidebar
         view={view}
         subjectId={subjectId}
@@ -57,15 +57,17 @@ export default function StaffPage() {
             : undefined
         }
         onLogout={logout}
+        profileError={meQuery.isError}
+        onRetryProfile={() => void meQuery.refetch()}
       />
-      <div className="lg:col-start-2">
+      <div className="m-3 ml-0 min-w-0 rounded-[1.75rem] border border-stone-200/80 bg-[#f5f5f4] lg:col-start-2 lg:m-6 lg:ml-0 lg:rounded-[2rem]">
         <StaffHeader
           title={title}
           connection={stream.connection}
           refreshing={query.isFetching}
           onRefresh={() => void query.refetch()}
         />
-        <div className="mx-auto grid max-w-7xl gap-5 p-5 md:p-8">
+        <div className="mx-auto grid max-w-[1440px] gap-6 p-5 md:p-8 xl:p-10">
           {query.isError && (
             <p className="rounded-xl bg-red-50 p-4 text-red-700" role="alert">
               {getApiErrorMessage(query.error)}

@@ -9,9 +9,11 @@ type SubjectListProps = {
   subjects: Subject[];
   loading: boolean;
   dataUpdatedAt: number;
+  detailLinks?: boolean;
+  basePath?: string;
 };
 
-export default function SubjectList({ subjects, loading, dataUpdatedAt }: SubjectListProps) {
+export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLinks = true, basePath = "/staff" }: SubjectListProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"ALL" | Risk>("ALL");
   const visible = useMemo(
@@ -36,13 +38,19 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
     })),
   ];
 
+
   return (
-    <section className="overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center gap-4 border-b border-stone-100 p-4">
+    <section
+      className="overflow-hidden rounded-xl border border-stone-200/70 bg-white"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-6">
+        <h2 className="text-lg font-bold tracking-tight">등록 대상자</h2>
+      </div>
+      <div className="flex flex-wrap items-center gap-4 border-b border-stone-100 p-5 md:px-6">
         <div className="flex flex-wrap gap-2">
           {filters.map((item) => (
             <button
-              className={`rounded-full px-4 py-2 text-sm font-bold ${filter === item.id ? "bg-brand-500 text-white" : "bg-stone-100 text-stone-600"}`}
+              className={`min-h-10 rounded-lg border px-5 py-2 text-sm font-semibold transition-colors ${filter === item.id ? "border-brand-500 bg-brand-500 text-white" : "border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-900"}`}
               key={item.id}
               aria-pressed={filter === item.id}
               onClick={() => setFilter(item.id)}
@@ -51,7 +59,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
             </button>
           ))}
         </div>
-        <label className="ml-auto flex min-w-64 flex-1 items-center gap-2 rounded-xl bg-stone-100 px-3 md:max-w-sm">
+        <label className="ml-auto flex min-w-64 flex-1 items-center gap-2 rounded-lg border border-stone-200/70 bg-stone-50 px-4 md:max-w-sm">
           <Icon className="text-stone-400" name="search" />
           <input
             className="h-11 min-w-0 flex-1 bg-transparent outline-none"
@@ -66,22 +74,31 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
         <table className="w-full min-w-4xl text-left">
           <thead className="bg-stone-50 text-sm text-stone-500">
             <tr>
-              <th className="p-4">대상자 정보</th>
-              <th>위험 단계</th>
-              <th>위험 점수</th>
-              <th>최근 알림 응답</th>
+              <th className="px-6 py-5">확인 순서 · 대상자</th>
               <th>전화번호</th>
-              <th>상세</th>
+              <th>위험 단계</th>
+              <th>현재 위험 점수</th>
+              <th>최근 알림 응답</th>
+              {detailLinks && <th>상세</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
-            {visible.map((subject) => (
-              <tr className="hover:bg-stone-50" key={subject.subjectId}>
+            {visible.map((subject, index) => (
+              <tr
+                className="hover:bg-stone-50"
+                key={subject.subjectId}
+              >
                 <td className="p-4">
                   <strong>
+                    <span className="mr-3 text-sm font-medium tabular-nums text-stone-400">{index + 1}</span>
                     {subject.name} · {subject.age}세
                   </strong>
-                  <small className="block text-stone-500">{subject.address}</small>
+                  <small className="mt-1 block text-sm leading-6 text-stone-500">{subject.address || "주소 미등록"}</small>
+                </td>
+                <td>
+                  {subject.phone ? (
+                    <a className="text-sm text-stone-600 hover:text-brand-700 hover:underline" href={telephoneHref(subject.phone)}>{subject.phone}</a>
+                  ) : "미등록"}
                 </td>
                 <td>
                   <span
@@ -92,19 +109,14 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
                 </td>
                 <td className="font-bold">{subject.riskScore}점</td>
                 <td>{responseLabel(subject.latestAlert?.subjectResponse)}</td>
-                <td>
-                  {subject.phone ? (
-                    <a className="text-base text-stone-600 hover:text-brand-700 hover:underline" href={telephoneHref(subject.phone)}>{subject.phone}</a>
-                  ) : "미등록"}
-                </td>
-                <td>
+                {detailLinks && <td>
                   <Link
-                    className="font-semibold text-brand-700"
-                    to={`/staff/subjects/${subject.subjectId}`}
+                    className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-stone-900"
+                    to={`${basePath}/subjects/${subject.subjectId}`}
                   >
                     상세보기
                   </Link>
-                </td>
+                </td>}
               </tr>
             ))}
           </tbody>
@@ -115,7 +127,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
           {loading ? "대상자를 불러오는 중입니다." : "조건에 맞는 대상자가 없습니다."}
         </p>
       )}
-      <footer className="flex justify-between border-t border-stone-100 p-4 text-sm text-stone-500">
+      <footer className="flex justify-between border-t border-stone-100 px-6 py-4 text-sm text-stone-500">
         <span>{visible.length}명</span>
         <span>
           최근 갱신{" "}

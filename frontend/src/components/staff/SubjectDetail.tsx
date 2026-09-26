@@ -2,9 +2,8 @@ import { useSubjectEventsQuery } from "../../hooks/api";
 import { responseLabel, riskLabels } from "../../types/monitoring";
 import type { Subject } from "../../types/monitoring";
 import { formatDateTime, riskBadgeClass, telephoneHref } from "../../utils/format";
-import Icon from "../common/Icon";
 
-const cardClass = "rounded-2xl border border-stone-200 bg-white p-6 shadow-sm";
+const cardClass = "rounded-xl border border-stone-200 bg-white p-6";
 
 function EventHistory({ subject }: { subject: Subject }) {
   const query = useSubjectEventsQuery(subject.subjectId, subject.version);
@@ -13,7 +12,6 @@ function EventHistory({ subject }: { subject: Subject }) {
     <section className={cardClass}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-xl font-bold">
-          <Icon name="history" />
           최근 7일 이상 징후 기록
         </h2>
         <button
@@ -79,7 +77,7 @@ export default function SubjectDetail({ subject }: { subject: Subject }) {
             {subject.name.slice(0, 1)}
           </span>
           <div>
-            <h1 className="text-3xl font-extrabold">
+            <h1 className="text-2xl font-bold">
               {subject.name}
               <span className="text-lg font-medium">님</span>
             </h1>
@@ -97,7 +95,6 @@ export default function SubjectDetail({ subject }: { subject: Subject }) {
       <div className="grid gap-5 lg:grid-cols-2">
         <section className={cardClass}>
           <h2 className="flex items-center gap-2 text-xl font-bold">
-            <Icon name="shield" />
             현재 상태
           </h2>
           <dl className="mt-5 divide-y divide-stone-100">
@@ -114,7 +111,6 @@ export default function SubjectDetail({ subject }: { subject: Subject }) {
         </section>
         <section className={cardClass}>
           <h2 className="flex items-center gap-2 text-xl font-bold">
-            <Icon name="phone" />
             연락 및 알림 응답
           </h2>
           <dl className="mt-5 divide-y divide-stone-100">
@@ -147,7 +143,6 @@ export default function SubjectDetail({ subject }: { subject: Subject }) {
       </div>
       <section className={cardClass}>
         <h2 className="flex items-center gap-2 text-xl font-bold">
-          <Icon name="trend" />
           일별 위험 점수 추이
         </h2>
         {scores.length ? (
