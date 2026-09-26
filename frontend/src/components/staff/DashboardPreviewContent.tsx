@@ -15,7 +15,7 @@ export function PreviewDangerAlert({ occurredAt, onClose }: { occurredAt: string
         </span>
         <div className="min-w-0 flex-1">
           <strong className="block text-red-900">박정수님의 위험 신호가 감지되었습니다.</strong>
-          <p className="mt-1 text-sm leading-6 text-stone-600">
+          <p className="mt-1 text-base leading-6 text-stone-600">
             92점 · 대상자의 안전 상태를 확인해 주세요.
           </p>
           <time className="mt-1 block text-sm text-stone-500">{formatDateTime(occurredAt)}</time>
@@ -44,11 +44,11 @@ export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
         <h2 className="flex items-center gap-2 text-xl font-bold">
           <Icon name="users" /> 등록 대상자
         </h2>
-        <p className="mt-1 text-sm text-stone-500">위험 점수가 높은 순서로 표시됩니다.</p>
+        <p className="mt-1 text-base text-stone-500">위험 점수가 높은 순서로 표시됩니다.</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-4xl text-left">
-          <thead className="bg-stone-50 text-sm text-stone-500">
+          <thead className="bg-stone-50 text-base text-stone-500">
             <tr>
               <th className="p-4">확인 순서 · 대상자</th>
               <th>전화번호</th>
@@ -64,16 +64,16 @@ export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
                 key={subject.subjectId}
               >
                 <td className="p-4">
-                  <strong><span className="mr-3 text-sm font-medium text-stone-400">{index + 1}</span>{subject.name} · {subject.age}세</strong>
-                  <small className="mt-1 block text-sm leading-6 text-stone-500">{subject.address || "주소 미등록"}</small>
+                  <strong><span className="mr-3 text-base font-medium text-stone-400">{index + 1}</span>{subject.name} · {subject.age}세</strong>
+                  <small className="mt-1 block text-[0.9375rem] leading-6 text-stone-500">{subject.address || "주소 미등록"}</small>
                 </td>
                 <td>
                   {subject.phone ? (
-                    <a className="text-sm text-stone-600 hover:text-brand-700 hover:underline" href={telephoneHref(subject.phone)}>{subject.phone}</a>
+                    <a className="text-base text-stone-600 hover:text-brand-700 hover:underline" href={telephoneHref(subject.phone)}>{subject.phone}</a>
                   ) : "미등록"}
                 </td>
                 <td>
-                  <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${riskBadgeClass(subject.riskLevel)}`}>
+                  <span className={`rounded-full px-3 py-1 text-sm font-bold ring-1 ${riskBadgeClass(subject.riskLevel)}`}>
                     {riskLabels[subject.riskLevel]}
                   </span>
                 </td>
@@ -84,7 +84,7 @@ export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
           </tbody>
         </table>
       </div>
-      <footer className="border-t border-stone-100 p-4 text-sm text-stone-500">
+      <footer className="border-t border-stone-100 p-4 text-base text-stone-500">
         총 {subjects.length}명 표시
       </footer>
     </section>

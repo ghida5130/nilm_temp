@@ -50,7 +50,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
         <div className="flex flex-wrap gap-2">
           {filters.map((item) => (
             <button
-              className={`min-h-10 rounded-lg border px-5 py-2 text-sm font-semibold transition-colors ${filter === item.id ? "border-brand-500 bg-brand-500 text-white" : "border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-900"}`}
+              className={`min-h-10 rounded-lg border px-5 py-2 text-base font-semibold transition-colors ${filter === item.id ? "border-brand-500 bg-brand-500 text-white" : "border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-900"}`}
               key={item.id}
               aria-pressed={filter === item.id}
               onClick={() => setFilter(item.id)}
@@ -72,7 +72,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-4xl text-left">
-          <thead className="bg-stone-50 text-sm text-stone-500">
+          <thead className="bg-stone-50 text-base text-stone-500">
             <tr>
               <th className="px-6 py-5">확인 순서 · 대상자</th>
               <th>전화번호</th>
@@ -90,19 +90,19 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
               >
                 <td className="p-4">
                   <strong>
-                    <span className="mr-3 text-sm font-medium tabular-nums text-stone-400">{index + 1}</span>
+                    <span className="mr-3 text-base font-medium tabular-nums text-stone-400">{index + 1}</span>
                     {subject.name} · {subject.age}세
                   </strong>
-                  <small className="mt-1 block text-sm leading-6 text-stone-500">{subject.address || "주소 미등록"}</small>
+                  <small className="mt-1 block text-[0.9375rem] leading-6 text-stone-500">{subject.address || "주소 미등록"}</small>
                 </td>
                 <td>
                   {subject.phone ? (
-                    <a className="text-sm text-stone-600 hover:text-brand-700 hover:underline" href={telephoneHref(subject.phone)}>{subject.phone}</a>
+                    <a className="text-base text-stone-600 hover:text-brand-700 hover:underline" href={telephoneHref(subject.phone)}>{subject.phone}</a>
                   ) : "미등록"}
                 </td>
                 <td>
                   <span
-                    className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${riskBadgeClass(subject.riskLevel)}`}
+                    className={`rounded-full px-3 py-1 text-sm font-bold ring-1 ${riskBadgeClass(subject.riskLevel)}`}
                   >
                     {riskLabels[subject.riskLevel]}
                   </span>
@@ -111,7 +111,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt, detailLi
                 <td>{responseLabel(subject.latestAlert?.subjectResponse)}</td>
                 {detailLinks && <td>
                   <Link
-                    className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-stone-900"
+                    className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-stone-300 bg-white px-4 py-2 text-base font-semibold text-stone-800 transition-colors hover:border-brand-400 hover:bg-brand-50 hover:text-stone-900"
                     to={`${basePath}/subjects/${subject.subjectId}`}
                   >
                     상세보기

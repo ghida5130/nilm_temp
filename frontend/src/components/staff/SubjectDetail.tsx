@@ -30,13 +30,13 @@ function EventHistory({ subject }: { subject: Subject }) {
         {events.map((event) => (
           <article className="grid gap-3 py-4 md:grid-cols-[auto_1fr]" key={event.eventId}>
             <span
-              className={`h-fit rounded-full px-3 py-1 text-xs font-bold ring-1 ${riskBadgeClass(event.riskLevel)}`}
+              className={`h-fit rounded-full px-3 py-1 text-sm font-bold ring-1 ${riskBadgeClass(event.riskLevel)}`}
             >
               {riskLabels[event.riskLevel]} · {event.riskScore}점
             </span>
             <div>
               <strong>{event.description}</strong>
-              <p className="mt-1 text-sm text-stone-500">{formatDateTime(event.occurredAt)}</p>
+              <p className="mt-1 text-base text-stone-500">{formatDateTime(event.occurredAt)}</p>
               <span className="text-sm text-stone-600">
                 {responseLabel(event.alert?.subjectResponse)}
               </span>
