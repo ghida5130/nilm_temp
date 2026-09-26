@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getApiErrorMessage } from "../api/client";
@@ -21,6 +22,7 @@ import { usePushSubscription } from "../hooks/notifications/usePushSubscription"
 type UserView = "home" | "away";
 
 export default function UserPage({ comparison = false }: { comparison?: boolean }) {
+  const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
   const dashboard = useMyDashboardQuery();
   const awayMutation = useAwayModeMutation();
@@ -122,7 +124,14 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
       className={`min-h-screen touch-manipulation bg-stone-50 text-xl leading-[1.6] text-stone-800 transition-[padding] duration-300 [overflow-wrap:anywhere] ${notificationPending ? "pb-[calc(15rem+env(safe-area-inset-bottom))]" : statusNoticeVisible ? "pb-[calc(11rem+env(safe-area-inset-bottom))]" : "pb-[calc(7rem+env(safe-area-inset-bottom))]"} ${comparison ? "selection:bg-brand-200" : ""}`}
     >
       <UserHeader onGoHome={() => navigate("/")} onLogout={logout} />
-      <div className="mx-auto grid max-w-xl gap-5 px-5">
+      <motion.div
+        key={tab}
+        initial={reduceMotion ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.18 }}
+        className="mx-auto grid max-w-xl gap-5 px-5"
+      >
+
         {tab === "home" ? (
           <UserHomeTab
             data={data}
@@ -143,7 +152,7 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
             onBack={() => setTab("home")}
           />
         )}
-      </div>
+      </motion.div>
       <UserStatusBar
         data={data}
         notice={statusNotice}

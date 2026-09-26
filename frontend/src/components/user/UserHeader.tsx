@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useRef, useState } from "react";
 import Brand from "../common/Brand";
 import userIcon from "../../assets/user/user.svg";
@@ -5,9 +6,11 @@ import userIcon from "../../assets/user/user.svg";
 type UserHeaderProps = {
   onGoHome: () => void;
   onLogout: () => void | Promise<void>;
+  onOpenTestTools?: () => void;
 };
 
-export default function UserHeader({ onGoHome, onLogout }: UserHeaderProps) {
+export default function UserHeader({ onGoHome, onLogout, onOpenTestTools }: UserHeaderProps) {
+  const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const menuId = useId();
   const menuContainer = useRef<HTMLDivElement>(null);
@@ -50,12 +53,28 @@ export default function UserHeader({ onGoHome, onLogout }: UserHeaderProps) {
           <img className="size-8" alt="" src={userIcon} aria-hidden="true" />
         </button>
         {open && (
-          <div
+          <motion.div
+            initial={reduceMotion ? false : { opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.16 }}
             className="absolute top-[calc(100%+.5rem)] right-0 z-40 w-48 overflow-hidden rounded-2xl border border-stone-200 bg-white p-2 shadow-[0_12px_32px_rgb(41_37_36_/_16%)]"
             id={menuId}
             role="menu"
             aria-label="사용자 설정"
           >
+            {onOpenTestTools && (
+              <button
+                className="w-full rounded-xl px-4 py-3 text-left text-lg font-semibold text-stone-800 transition-colors hover:bg-stone-100 focus-visible:outline-3 focus-visible:outline-brand-500"
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenTestTools();
+                }}
+              >
+                테스트 도구 열기
+              </button>
+            )}
             <button
               className="w-full rounded-xl px-4 py-3 text-left text-lg font-semibold text-stone-800 transition-colors hover:bg-stone-100 focus-visible:outline-3 focus-visible:outline-brand-500"
               type="button"
@@ -79,7 +98,7 @@ export default function UserHeader({ onGoHome, onLogout }: UserHeaderProps) {
             >
               로그아웃
             </button>
-          </div>
+          </motion.div>
         )}
       </div>
     </header>
