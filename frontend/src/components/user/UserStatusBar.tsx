@@ -15,7 +15,7 @@ type UserStatusBarProps = {
 
 export type UserStatusNotice = {
   message: string;
-  tone: "success" | "error";
+  tone: "success" | "error" | "info";
 } | null;
 
 export default function UserStatusBar({
@@ -111,7 +111,7 @@ export default function UserStatusBar({
             className={`flex items-center gap-2.5 pb-3 text-lg font-semibold ${notice?.tone === "error" ? "text-red-700" : "text-stone-800"}`}
             role={showNotice ? (notice?.tone === "error" ? "alert" : "status") : undefined}
           >
-            {notice?.tone === "error" ? (
+            {notice?.tone === "error" || notice?.tone === "info" ? (
               <Icon name="bell" />
             ) : usesAnimatedCheck ? (
               <Lottie

@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getApiErrorMessage } from "../api/client";
 import { clearSession } from "../api/tokenStorage";
@@ -18,6 +18,7 @@ import {
 import { usePendingNotification } from "../hooks/notifications/usePendingNotification";
 import { useNotificationAction } from "../hooks/notifications/useNotificationAction";
 import { usePushSubscription } from "../hooks/notifications/usePushSubscription";
+import { isUnavailableNotificationError } from "../utils/userNotifications";
 
 type UserView = "home" | "away";
 
@@ -33,7 +34,7 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
   const [statusNoticeVisible, setStatusNoticeVisible] = useState(false);
   const statusNoticeTimer = useRef<number | undefined>(undefined);
   const statusNoticeFrame = useRef<number | undefined>(undefined);
-  const { notificationId, clearNotification } = usePendingNotification();
+  const { notificationId, clearNotification, canAnswer, information } = usePendingNotification();
   const pushSubscription = usePushSubscription();
   const data = dashboard.data;
   const busy = awayMutation.isPending || responseMutation.isPending;
@@ -47,7 +48,7 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
     [],
   );
 
-  const showStatusNotice = (message: string, tone: "success" | "error" = "success") => {
+  const showStatusNotice = useCallback((message: string, tone: "success" | "error" | "info" = "success") => {
     window.clearTimeout(statusNoticeTimer.current);
     window.cancelAnimationFrame(statusNoticeFrame.current ?? 0);
     setStatusNoticeVisible(false);
@@ -57,11 +58,17 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
         setStatusNoticeVisible(true);
         statusNoticeTimer.current = window.setTimeout(
           () => setStatusNoticeVisible(false),
-          3000,
+          tone === "info" ? 6000 : 3000,
         );
       });
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!information) return;
+    const timer = window.setTimeout(() => showStatusNotice(information.message, "info"), 0);
+    return () => window.clearTimeout(timer);
+  }, [information, showStatusNotice]);
 
   const updateAway = async (enabled: boolean, duration?: number) => {
     if (busy || !data) return;
@@ -91,13 +98,18 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
 
   const answer = async (value: "yes" | "no") => {
     if (!notificationId || busy) return;
+    if (!canAnswer()) {
+      clearNotification(notificationId);
+      return;
+    }
     try {
       await responseMutation.mutateAsync({ notificationId, answer: value });
       showStatusNotice(
         value === "yes" ? "도움 요청이 접수됐어요." : "괜찮다는 응답이 접수됐어요.",
       );
-      clearNotification();
+      clearNotification(notificationId);
     } catch (cause) {
+      if (isUnavailableNotificationError(cause)) clearNotification(notificationId);
       showStatusNotice(getApiErrorMessage(cause), "error");
     }
   };
@@ -131,7 +143,6 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
         transition={{ duration: 0.18 }}
         className="mx-auto grid max-w-xl gap-5 px-5"
       >
-
         {tab === "home" ? (
           <UserHomeTab
             data={data}

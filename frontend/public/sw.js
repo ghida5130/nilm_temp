@@ -5,8 +5,8 @@ function parsePayload(event) {
 
 function responseNotification(data) {
   const notificationId = String(data.notificationId || '')
-  if (!/^\d+$/.test(notificationId)) return null
-  return { notificationId }
+  if (!/^\d+$/.test(notificationId) || typeof data.expiresAt !== 'string' || !Number.isFinite(Date.parse(data.expiresAt))) return null
+  return { notificationId, expiresAt: data.expiresAt }
 }
 
 function notificationUrl(data) {
@@ -33,7 +33,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   const data = parsePayload(event)
   const response = responseNotification(data)
-  const canAnswer = Boolean(response)
+  const canAnswer = response && Date.parse(response.expiresAt) > Date.now()
   event.waitUntil(Promise.all([
     self.registration.showNotification(data.title || 'On:마음 안심 알림', {
       body: data.body || '앱을 열어 알림을 확인해 주세요.',
@@ -66,7 +66,7 @@ self.addEventListener('notificationclick', (event) => {
     const data = event.notification.data || {}
     const target = new URL(notificationUrl(data), self.location.origin)
     const response = responseNotification(data)
-    if (response &&
+    if (response && Date.parse(response.expiresAt) > Date.now() &&
         (event.action === 'yes' || event.action === 'no')) {
       target.searchParams.set('answer', event.action)
     }
