@@ -1,3 +1,4 @@
+import LocationServiceCard from "./LocationServiceCard";
 import type { MyDashboard } from "../../types/monitoring";
 import PushNotificationCard from "./PushNotificationCard";
 import UserDashboard from "./UserDashboard";
@@ -40,6 +41,7 @@ export default function UserHomeTab({
         busy={busy}
         onUpdateAway={onUpdateAway}
       />
+      <LocationServiceCard />
       <PushNotificationCard
         status={status.pushStatus}
         error={status.pushError}
