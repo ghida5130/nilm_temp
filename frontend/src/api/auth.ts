@@ -7,5 +7,5 @@ export async function login(email: string, password: string) {
 }
 
 export function getMe() {
-  return request<MeResponse>({ url: "/me" });
+  return request<MeResponse>({ url: "/auth/me" });
 }
