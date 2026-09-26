@@ -5,6 +5,7 @@ import HomePage from "../pages/HomePage";
 import LoginPage from "../pages/LoginPage";
 import StaffPage from "../pages/StaffPage";
 import UserPage from "../pages/UserPage";
+import UserPushTestPage from "../pages/UserPushTestPage";
 import SceneDemoPage from "../pages/SceneDemoPage";
 
 export const router = createBrowserRouter(
@@ -14,6 +15,7 @@ export const router = createBrowserRouter(
       <Route path="/demo/ai" element={<SceneDemoPage />} />
       <Route path="/dashboard-preview" element={<DashboardPreviewPage />} />
       <Route path="/dashboard-preview-alert" element={<DashboardPreviewPage danger />} />
+      <Route path="/user-push-test" element={<UserPushTestPage />} />
       <Route
         path="/staff"
         element={<ProtectedRoute role="staff" fallback={<LoginPage role="staff" />} />}

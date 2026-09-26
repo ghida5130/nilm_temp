@@ -68,3 +68,13 @@ it("유효한 브라우저 응답 버튼은 같은 알림 번호와 만료 시�
   expect(target.searchParams.get("answer")).toBe("no");
 });
 
+it("테스트 서비스 워커도 안내 알림과 기한이 있는 응답 알림을 구분한다", async () => {
+  const information = worker("user-push-test-sw.js");
+  const [, infoOptions] = await information.push({ title: "생활 안내", body: "응답 불필요" });
+  expect(infoOptions.actions).toEqual([]);
+  expect(infoOptions.data.url).toBe("/user-push-test");
+  const response = worker("user-push-test-sw.js");
+  const [, responseOptions] = await response.push({ notificationId: "1", expiresAt: future });
+  expect(responseOptions.actions).toHaveLength(2);
+  expect(responseOptions.data.expiresAt).toBe(future);
+});
