@@ -7,12 +7,14 @@ import StaffPage from "../pages/StaffPage";
 import UserPage from "../pages/UserPage";
 import UserPushTestPage from "../pages/UserPushTestPage";
 import SceneDemoPage from "../pages/SceneDemoPage";
+import PriorityDemoPage from "../pages/PriorityDemoPage";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
     <>
       <Route path="/" element={<HomePage />} />
       <Route path="/demo/ai" element={<SceneDemoPage />} />
+      <Route path="/demo/priority" element={<PriorityDemoPage />} />
       <Route path="/dashboard-preview" element={<DashboardPreviewPage />} />
       <Route path="/dashboard-preview-alert" element={<DashboardPreviewPage danger />} />
       <Route path="/user-push-test" element={<UserPushTestPage />} />
