@@ -8,6 +8,7 @@ import UserPage from "../pages/UserPage";
 import UserPushTestPage from "../pages/UserPushTestPage";
 import SceneDemoPage from "../pages/SceneDemoPage";
 import PriorityDemoPage from "../pages/PriorityDemoPage";
+import DashboardDemoPage from "../pages/DashboardDemoPage";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
@@ -15,6 +16,9 @@ export const router = createBrowserRouter(
       <Route path="/" element={<HomePage />} />
       <Route path="/demo/ai" element={<SceneDemoPage />} />
       <Route path="/demo/priority" element={<PriorityDemoPage />} />
+      <Route path="/demo/dashboard" element={<DashboardDemoPage />}>
+        <Route path="subjects/:subjectId" />
+      </Route>
       <Route path="/dashboard-preview" element={<DashboardPreviewPage />} />
       <Route path="/dashboard-preview-alert" element={<DashboardPreviewPage danger />} />
       <Route path="/user-push-test" element={<UserPushTestPage />} />
