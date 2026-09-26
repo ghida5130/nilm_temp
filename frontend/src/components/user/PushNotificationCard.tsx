@@ -54,7 +54,7 @@ export default function PushNotificationCard({
         </p>
       )}
       <button
-        className="mt-4 flex min-h-16 w-full items-center justify-center rounded-full border border-stone-300 bg-[linear-gradient(180deg,#ffffff_0%,#fafaf9_58%,#f1f0ee_100%)] px-7 py-3.5 text-center text-[1.3125rem] leading-6 font-semibold text-stone-800 shadow-[inset_0_1px_0_rgb(255_255_255_/_90%),0_4px_0_#d6d3d1,0_9px_18px_rgb(15_23_42_/_10%)] transition-[transform,box-shadow,filter] duration-150 hover:brightness-[.99] active:translate-y-[3px] active:shadow-[inset_0_1px_0_rgb(255_255_255_/_70%),0_1px_0_#d6d3d1,0_4px_8px_rgb(15_23_42_/_8%)] disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-200 disabled:text-stone-600 disabled:shadow-none"
+        className="mt-4 flex min-h-16 w-full items-center justify-center rounded-full border border-[#b9c1c9] bg-[linear-gradient(180deg,#ffffff_0%,#f1f3f5_58%,#e3e7eb_100%)] px-7 py-3.5 text-center text-[1.3125rem] leading-6 font-semibold text-stone-800 shadow-[inset_0_1px_0_rgb(255_255_255_/_90%),0_5px_0_#b1bac3,0_9px_18px_rgb(15_23_42_/_10%)] transition-[transform,box-shadow,filter] duration-150 hover:brightness-[.99] active:translate-y-[3px] active:shadow-[inset_0_1px_0_rgb(255_255_255_/_70%),0_2px_0_#b1bac3,0_4px_8px_rgb(15_23_42_/_8%)] disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-200 disabled:text-stone-600 disabled:shadow-none"
         disabled={status === "syncing"}
         onClick={status === "error" || denied ? onRetry : onEnable}
       >

@@ -68,10 +68,9 @@ export default function UserStatusBar({
       >
         <div className="min-h-0 overflow-hidden">
           <section className="pb-3" aria-labelledby="response-title">
-            <h2 className="text-xl font-bold" id="response-title">
+            <h2 className="text-[1.75rem] leading-snug font-bold" id="response-title">
               지금 상태를 알려주세요
             </h2>
-            <p className="mt-1 text-base text-stone-600">선택한 응답을 담당자에게 전달해요.</p>
             <div
               className={`grid transition-[grid-template-rows,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${noticeVisible && notice?.tone === "error" ? "mt-2 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"}`}
               aria-hidden={!(noticeVisible && notice?.tone === "error")}
@@ -83,9 +82,9 @@ export default function UserStatusBar({
                 {notice?.message}
               </p>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-1 gap-3 min-[448px]:grid-cols-2">
               <button
-                className="flex min-h-14 items-center justify-center rounded-2xl border border-[#9b312c] bg-[#b33b35] px-3 py-3 text-lg leading-snug font-semibold text-white transition-colors hover:not-disabled:bg-[#96312c] disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-200 disabled:text-stone-600"
+                className="flex min-h-14 items-center justify-center whitespace-nowrap rounded-full border border-[#9b312c] bg-[linear-gradient(180deg,#c9554e_0%,#b33b35_58%,#a3322d_100%)] px-2 py-2 text-2xl leading-tight font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/25%),0_5px_0_#842722,0_7px_14px_rgb(132_39_34/16%)] transition-[transform,box-shadow,filter] duration-150 hover:not-disabled:brightness-[1.02] active:not-disabled:translate-y-[3px] active:not-disabled:brightness-[.97] active:not-disabled:shadow-[inset_0_1px_0_rgb(255_255_255/18%),0_2px_0_#842722,0_3px_6px_rgb(132_39_34/10%)] disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-none disabled:bg-stone-200 disabled:text-stone-600 disabled:shadow-none"
                 type="button"
                 disabled={notificationDisabled || !notificationPending}
                 onClick={() => onAnswerNotification("yes")}
@@ -93,7 +92,7 @@ export default function UserStatusBar({
                 도움이 필요해요
               </button>
               <button
-                className="flex min-h-14 items-center justify-center rounded-2xl border border-stone-300 bg-white px-3 py-3 text-lg leading-snug font-semibold text-stone-800 transition-colors hover:not-disabled:bg-stone-50 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-600"
+                className="flex min-h-14 items-center justify-center whitespace-nowrap rounded-full border border-[#b9c1c9] bg-[linear-gradient(180deg,#ffffff_0%,#f1f3f5_58%,#e3e7eb_100%)] px-2 py-2 text-2xl leading-tight font-semibold text-stone-800 shadow-[inset_0_1px_0_rgb(255_255_255/90%),0_5px_0_#b1bac3,0_7px_14px_rgb(15_23_42/10%)] transition-[transform,box-shadow,filter] duration-150 hover:not-disabled:brightness-[.99] active:not-disabled:translate-y-[3px] active:not-disabled:shadow-[inset_0_1px_0_rgb(255_255_255/70%),0_2px_0_#b1bac3,0_3px_6px_rgb(15_23_42/8%)] disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-none disabled:bg-stone-200 disabled:text-stone-600 disabled:shadow-none"
                 type="button"
                 disabled={notificationDisabled || !notificationPending}
                 onClick={() => onAnswerNotification("no")}
