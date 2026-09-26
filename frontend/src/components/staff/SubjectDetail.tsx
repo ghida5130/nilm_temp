@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { useSubjectEventsQuery } from "../../hooks/api";
+import SubjectAlertHistory from "./SubjectAlertHistory";
+import type { StaffNotice } from "../../utils/staffNotices";
 import { responseLabel, riskLabels } from "../../types/monitoring";
 import type { Subject } from "../../types/monitoring";
 import { formatDateTime, riskBadgeClass, telephoneHref } from "../../utils/format";
@@ -8,62 +9,7 @@ import { formatDateTime, riskBadgeClass, telephoneHref } from "../../utils/forma
 
 const cardClass = "rounded-xl border border-stone-200 bg-white p-6";
 
-function EventHistory({ subject }: { subject: Subject }) {
-  const query = useSubjectEventsQuery(subject.subjectId, subject.version);
-  const events = query.data?.pages.flatMap((page) => page.events) ?? [];
-  return (
-    <section className={cardClass}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-xl font-bold">
-          최근 7일 이상 징후 기록
-        </h2>
-        <button
-          className="rounded-lg bg-stone-100 px-3 py-2 font-semibold text-stone-700"
-          onClick={() => void query.refetch()}
-        >
-          새로고침
-        </button>
-      </div>
-      {query.isError && (
-        <p className="mt-4 rounded-xl bg-red-50 p-4 text-red-700" role="alert">
-          기록을 불러오지 못했습니다.
-        </p>
-      )}
-      <div className="mt-5 divide-y divide-stone-100">
-        {events.map((event) => (
-          <article className="grid gap-3 py-4 md:grid-cols-[auto_1fr]" key={event.eventId}>
-            <span
-              className={`h-fit rounded-full px-3 py-1 text-sm font-bold ring-1 ${riskBadgeClass(event.riskLevel)}`}
-            >
-              {riskLabels[event.riskLevel]} · {event.riskScore}점
-            </span>
-            <div>
-              <strong>{event.description}</strong>
-              <p className="mt-1 text-base text-stone-500">{formatDateTime(event.occurredAt)}</p>
-              <span className="text-sm text-stone-600">
-                {responseLabel(event.alert?.subjectResponse)}
-              </span>
-            </div>
-          </article>
-        ))}
-      </div>
-      {!events.length && !query.isLoading && (
-        <p className="py-8 text-center text-stone-500">최근 기록된 이상 징후가 없습니다.</p>
-      )}
-      {query.hasNextPage && (
-        <button
-          className="mt-4 rounded-xl border border-stone-300 px-4 py-2 font-semibold"
-          onClick={() => void query.fetchNextPage()}
-          disabled={query.isFetchingNextPage}
-        >
-          {query.isFetchingNextPage ? "조회 중…" : "기록 더 보기"}
-        </button>
-      )}
-    </section>
-  );
-}
-
-export default function SubjectDetail({ subject }: { subject: Subject }) {
+export default function SubjectDetail({ subject, history = [], demo = false }: { subject: Subject; history?: StaffNotice[]; demo?: boolean }) {
   const reduceMotion = useReducedMotion();
   const scores = subject.riskTrend?.dailyScores ?? [];
   const chart = useRef<SVGSVGElement>(null);
@@ -215,7 +161,7 @@ export default function SubjectDetail({ subject }: { subject: Subject }) {
         )}
       </section>
 
-      <EventHistory subject={subject} />
+      <SubjectAlertHistory subject={subject} history={history} demo={demo} />
     </div>
   );
 }

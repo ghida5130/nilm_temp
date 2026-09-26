@@ -8,9 +8,10 @@ export type SubjectResponse = {
 
 export type Alert = {
   alertId: string;
-  eventId: string;
+  eventId: string | null;
   subjectResponse: SubjectResponse;
   managerStatus?: string;
+  managerStatusUpdatedAt?: string | null;
 };
 
 export type Subject = {
@@ -42,10 +43,13 @@ export type Events = {
   events: {
     eventId: string;
     description: string;
+    eventType?: string;
+    applianceType?: string | null;
+    reason?: Record<string, unknown>;
     riskLevel: Risk;
     riskScore: number;
     occurredAt: string;
-    alert: { alertId: string; managerStatus: string; subjectResponse: SubjectResponse } | null;
+    alert: { alertId: string; managerStatus: string; managerStatusUpdatedAt?: string | null; subjectResponse: SubjectResponse } | null;
   }[];
   pagination: { hasNext: boolean; nextCursor: string | null };
 };

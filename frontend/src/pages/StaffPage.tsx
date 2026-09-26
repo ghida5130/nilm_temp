@@ -90,7 +90,7 @@ export default function StaffPage() {
                 대상자 목록
               </Link>
               {selected ? (
-                <SubjectDetail subject={selected} />
+                <SubjectDetail subject={selected} history={stream.history} />
               ) : (
                 <section className="rounded-2xl bg-white p-10 text-center text-stone-500">
                   {query.isLoading
