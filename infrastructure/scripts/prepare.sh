@@ -5,8 +5,8 @@ target=$1
 : "${RUNTIME_ENV:?}" "${IMAGE_TAG:?}" "${IMAGE_REPOSITORY:?}" "${RELEASE_ID:?}"
 [[ "$target" == a || "$target" == b ]] || exit 2
 # Provision this directory once with ownership assigned to the deployment agent.
-test -d /opt/nilm
-test -w /opt/nilm
+test -d /opt/nilm || { echo "Missing deployment directory: /opt/nilm" >&2; exit 1; }
+test -w /opt/nilm || { echo "Deployment directory is not writable by $(id -un): /opt/nilm" >&2; exit 1; }
 python3 infrastructure/scripts/release.py check --target "$target"
 # Check required external files before replacing active configuration.
 if [[ "$target" == a ]]; then
@@ -16,7 +16,7 @@ if [[ "$target" == a ]]; then
 else
   test -s /opt/nilm/mqtt/certs/ca.crt || { echo "Missing MQTT CA: /opt/nilm/mqtt/certs/ca.crt" >&2; exit 1; }
 fi
-test -s "$RUNTIME_ENV"
+test -s "$RUNTIME_ENV" || { echo "Runtime env credential file is missing or empty: $RUNTIME_ENV" >&2; exit 1; }
 staged_env=$(mktemp)
 trap 'rm -f -- "$staged_env"' EXIT
 python3 infrastructure/scripts/release-env.py --input "$RUNTIME_ENV" --output "$staged_env"
@@ -29,7 +29,7 @@ if [[ "$target" == "b" ]]; then
 fi
 install -m 644 release.json /opt/nilm/release.json
 if [[ "$target" == a ]]; then
-  install -d /opt/nilm/keycloak /opt/nilm/nginx /opt/nilm/mqtt /opt/nilm/observability
+  install -d /opt/nilm/keycloak /opt/nilm/nginx /opt/nilm/nginx/auth /opt/nilm/mqtt /opt/nilm/observability
   install -m 644 infrastructure/keycloak/nilm-realm.json /opt/nilm/keycloak/nilm-realm.json
   install -m 644 infrastructure/nginx/default.conf.template /opt/nilm/nginx/default.conf.template
   install -m 644 infrastructure/mqtt/config/mosquitto.production.conf /opt/nilm/mqtt/mosquitto.conf

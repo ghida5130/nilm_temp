@@ -25,6 +25,8 @@ if PARENT_DIR not in sys.path:
 
 VIEWER_ASSETS = {
     "waveform.css": "text/css; charset=utf-8",
+    "routine_demo.css": "text/css; charset=utf-8",
+    "routine_demo.js": "text/javascript; charset=utf-8",
     "panels.js": "text/javascript; charset=utf-8",
     "state.js": "text/javascript; charset=utf-8",
     "households.js": "text/javascript; charset=utf-8",
@@ -99,6 +101,21 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(content)
             except Exception as e:
                 self.send_error(500, f"HTML 파일 로드 실패: {e}")
+
+        elif url_path in ("/routine-demo", "/routine-demo.html", "/routine_demo.html"):
+            # 발표용 정상/루틴 누락 비교 페이지 제공
+            viewer_path = self.html_path or os.path.join(PARENT_DIR, "waveform_viewer.html")
+            target_html = os.path.join(os.path.dirname(viewer_path), "routine_demo.html")
+            try:
+                with open(target_html, "r", encoding="utf-8") as f:
+                    content = f.read().encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            except Exception as e:
+                self.send_error(500, f"시연 페이지 로드 실패: {e}")
 
         elif url_path.startswith("/assets/"):
             asset_name = url_path.removeprefix("/assets/")
@@ -372,11 +389,21 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if any(item["scenario"] == "normal_routine" and item["house"] != "H001" for item in normalized_households):
                     self.send_error_json(400, "BAD_REQUEST", "normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.")
                     return
+                if any(item["scenario"] == "prolonged_use" and item["house"] != "H001" for item in normalized_households):
+                    self.send_error_json(400, "BAD_REQUEST", "prolonged_use 시나리오는 H001 가구에서만 실행할 수 있습니다.")
+                    return
+                if any(item["scenario"] == "routine_missed_demo" for item in normalized_households):
+                    self.send_error_json(400, "BAD_REQUEST", "routine_missed_demo 시나리오는 단일 가구 요청에서만 실행할 수 있습니다.")
+                    return
 
                 has_normal = any(item["scenario"] == "normal_routine" for item in normalized_households)
                 has_missed = any(item["scenario"] == "routine_missed" for item in normalized_households)
                 if has_normal and has_missed:
                     self.send_error_json(400, "BAD_REQUEST", "normal_routine과 routine_missed는 동일한 다중 실행에서 함께 사용할 수 없습니다.")
+                    return
+                has_prolonged = any(item["scenario"] == "prolonged_use" for item in normalized_households)
+                if has_prolonged and (has_normal or has_missed):
+                    self.send_error_json(400, "BAD_REQUEST", "prolonged_use는 normal_routine·routine_missed와 동일한 다중 실행에서 함께 사용할 수 없습니다.")
                     return
             else:
                 house = params.get("house", "H001")
@@ -390,6 +417,12 @@ class RequestHandler(BaseHTTPRequestHandler):
                     return
                 if scenario == "normal_routine" and house != "H001":
                     self.send_error_json(400, "BAD_REQUEST", "normal_routine 시나리오는 H001 가구에서만 실행할 수 있습니다.")
+                    return
+                if scenario == "prolonged_use" and house != "H001":
+                    self.send_error_json(400, "BAD_REQUEST", "prolonged_use 시나리오는 H001 가구에서만 실행할 수 있습니다.")
+                    return
+                if scenario == "routine_missed_demo" and house != "H001":
+                    self.send_error_json(400, "BAD_REQUEST", "routine_missed_demo 시나리오는 H001 가구에서만 실행할 수 있습니다.")
                     return
 
                 normalized_households = [{"house": house, "scenario": scenario}]

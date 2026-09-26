@@ -48,6 +48,7 @@ class LoadTestConfig:
     consumers: tuple[int, ...] = (1, 2, 4)
     houses: int = 40
     hz: float = 1.0
+    seed: int | None = None
     measurement_seconds: int = 300
     model_window_size: int = 299
     warmup_timeout_seconds: int = 1800
@@ -437,6 +438,8 @@ class ConsumerLoadTest:
             "0",
             "--quiet",
         ]
+        if self.config.seed is not None:
+            command.extend(["--seed", str(self.config.seed)])
         print(f"$ {' '.join(command)}", flush=True)
         try:
             self._simulator = subprocess.Popen(
@@ -814,6 +817,7 @@ class ConsumerLoadTest:
             "consumers": self.config.consumers,
             "houses": self.config.houses,
             "hz": self.config.hz,
+            "seed": self.config.seed,
             "expected_input_rate": self.config.expected_input_rate,
             "measurement_seconds": self.config.measurement_seconds,
             "model_window_size": self.config.model_window_size,
@@ -1016,6 +1020,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--consumers", type=parse_consumers, default=(1, 2, 4))
     parser.add_argument("--houses", type=int, default=40)
     parser.add_argument("--hz", type=float, default=1.0)
+    parser.add_argument("--seed", type=int, help="simulator random seed (0..2147483647)")
     parser.add_argument("--duration", type=int, default=300, dest="measurement_seconds")
     parser.add_argument("--model-window-size", type=int, default=299)
     parser.add_argument("--warmup-timeout", type=int, default=1800)
@@ -1023,6 +1028,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--assignment-timeout", type=int, default=180)
     parser.add_argument("--poll-seconds", type=float, default=5.0)
     parser.add_argument("--prometheus-url", default="http://localhost:19090")
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        help="repository root holding infrastructure/; inferred from this file's location when omitted",
+    )
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument(
@@ -1034,8 +1044,24 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def default_repo_root(tool_path: Path | None = None) -> Path:
+    """Infer the repository root from this file's location inside the repo.
+
+    The tool lives at <repo>/ai/realtime-analysis-service/tools/, so the root is three
+    directories up. Outside that layout (e.g. copied into a container as /app/tools)
+    there is no such ancestor, so fail with a hint instead of an IndexError.
+    """
+    here = (tool_path or Path(__file__)).resolve()
+    parents = here.parents
+    if len(parents) <= 3 or not (parents[3] / "infrastructure").is_dir():
+        raise LoadTestError(
+            "cannot infer the repository root from "
+            f"{here}; pass --repo-root explicitly"
+        )
+    return parents[3]
+
+
 def config_from_args(args: argparse.Namespace) -> LoadTestConfig:
-    repo_root = Path(__file__).resolve().parents[3]
     positive_fields = {
         "houses": args.houses,
         "hz": args.hz,
@@ -1049,13 +1075,17 @@ def config_from_args(args: argparse.Namespace) -> LoadTestConfig:
     invalid = [name for name, value in positive_fields.items() if value <= 0]
     if invalid:
         raise LoadTestError(f"options must be greater than zero: {', '.join(invalid)}")
+    if args.seed is not None and not 0 <= args.seed <= 2**31 - 1:
+        raise LoadTestError("seed must be between 0 and 2147483647")
     if args.restore_consumers < 0:
         raise LoadTestError("restore-consumers must be zero or greater")
+    repo_root = args.repo_root.resolve() if args.repo_root is not None else default_repo_root()
     return LoadTestConfig(
         repo_root=repo_root,
         consumers=args.consumers,
         houses=args.houses,
         hz=args.hz,
+        seed=args.seed,
         measurement_seconds=args.measurement_seconds,
         model_window_size=args.model_window_size,
         warmup_timeout_seconds=args.warmup_timeout,
