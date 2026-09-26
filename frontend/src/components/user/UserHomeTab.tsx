@@ -10,7 +10,6 @@ type UserHomeTabProps = {
   busy: boolean;
   status: UserTabStatusProps;
   onUpdateAway: (enabled: boolean) => void;
-  onOpenAwaySettings: () => void;
 };
 
 export default function UserHomeTab({
@@ -19,7 +18,6 @@ export default function UserHomeTab({
   busy,
   status,
   onUpdateAway,
-  onOpenAwaySettings,
 }: UserHomeTabProps) {
   return (
     <>
@@ -41,7 +39,6 @@ export default function UserHomeTab({
         data={data}
         busy={busy}
         onUpdateAway={onUpdateAway}
-        onOpenAwaySettings={onOpenAwaySettings}
       />
       <PushNotificationCard
         status={status.pushStatus}

@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { Lottie } from "lottie-react";
 import checkAnimation from "../../assets/lottie/check.json";
 import type { MyDashboard } from "../../types/monitoring";
-import { formatShortDateTime } from "../../utils/format";
 import Icon from "../common/Icon";
 
 type UserStatusBarProps = {
@@ -130,21 +129,12 @@ export default function UserStatusBar({
           </div>
         </div>
       </div>
-      <div ref={statusRow} className="flex flex-col items-center gap-2">
-        <span className="flex items-center justify-center text-stone-500">
-          {isLoading && <Icon className="size-7" name="clock" />}
-        </span>
+      <div ref={statusRow} className="flex items-center justify-center py-1 text-center">
         <div className="min-w-0">
-          <p className="text-2xl mb-2 text-center leading-tight font-bold tracking-[-0.02em]">
+          <p className="text-[1.625rem] leading-tight font-bold tracking-[-0.02em]">
             {statusText}
           </p>
-          <div
-            className={`grid transition-[grid-template-rows,margin,opacity] duration-300 ease-out motion-reduce:transition-none ${isAway ? "mt-1 grid-rows-[1fr] opacity-100" : "mt-0 grid-rows-[0fr] opacity-0"}`}
-          >
-            <p className="min-h-0 overflow-hidden text-base leading-snug font-medium text-brand-700">
-              {formatShortDateTime(data?.awayMode.until)}까지
-            </p>
-          </div>
+          {!isLoading && <p className="mt-1 text-lg leading-snug text-stone-600">{isAway ? "집 밖에 계신 상태예요" : "집에 계신 상태예요"}</p>}
         </div>
       </div>
     </div>

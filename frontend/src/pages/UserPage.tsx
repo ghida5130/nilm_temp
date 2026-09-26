@@ -60,9 +60,11 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
     });
   };
 
-  const updateAway = async (enabled: boolean, duration = awayDraft.duration) => {
+  const updateAway = async (enabled: boolean, duration?: number) => {
+    if (busy || !data) return;
     if (
       enabled &&
+      duration !== undefined &&
       (!Number.isInteger(duration) || duration < 1 || duration > 1440)
     ) {
       showStatusNotice("외출 시간을 1~1440분 사이로 입력해 주세요.", "error");
@@ -70,7 +72,7 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
     }
     try {
       await awayMutation.mutateAsync(
-        enabled
+        enabled && duration !== undefined
           ? {
               enabled,
               endsAt: new Date(Date.now() + duration * 60_000).toISOString(),
@@ -125,7 +127,6 @@ export default function UserPage({ comparison = false }: { comparison?: boolean 
             busy={busy}
             status={tabStatus}
             onUpdateAway={(enabled) => void updateAway(enabled)}
-            onOpenAwaySettings={() => setTab("away")}
           />
         ) : (
           <UserAwayTab

@@ -1,23 +1,19 @@
-import homeImage from "../../assets/user/home.svg";
 import phoneImage from "../../assets/user/phone.svg";
 import walkImage from "../../assets/user/walk.svg";
 import type { MyDashboard } from "../../types/monitoring";
 import { telephoneHref } from "../../utils/format";
 import managerIcon from "../../assets/user/manager.svg";
-import alertIcon from "../../assets/user/alert.svg";
 
 type UserDashboardProps = {
   data?: MyDashboard;
   busy: boolean;
   onUpdateAway: (enabled: boolean) => void;
-  onOpenAwaySettings: () => void;
 };
 
 export default function UserDashboard({
   data,
   busy,
   onUpdateAway,
-  onOpenAwaySettings,
 }: UserDashboardProps) {
   const mode = data?.awayMode;
   const hasAwayMode = Boolean(mode?.enabled);
@@ -37,12 +33,13 @@ export default function UserDashboard({
         <button
           className="text-[32px] font-semibold flex min-h-16 w-full items-center justify-center gap-2 rounded-full border border-[#e67830] bg-[linear-gradient(180deg,#f58b40_0%,#f37929_58%,#e96e24_100%)] px-7 py-3.5 text-center text-white shadow-[inset_0_1px_0_rgb(255_255_255/32%),0_5px_0_#c96524,0_9px_18px_rgb(120_63_27/18%)] transition-[transform,box-shadow,filter] duration-150 hover:not-disabled:brightness-[1.02] active:not-disabled:translate-y-[3px] active:not-disabled:brightness-[.97] active:not-disabled:shadow-[inset_0_1px_0_rgb(255_255_255_/_18%),0_2px_0_#c96524,0_4px_8px_rgb(120_63_27_/_12%)] disabled:cursor-not-allowed disabled:border-[#c75a17] disabled:text-white disabled:brightness-[.9] disabled:shadow-none"
           disabled={!data || busy}
-          onClick={onOpenAwaySettings}
+          data-user-action="away"
+          onClick={() => onUpdateAway(true)}
         >
           <div className="size-9">
             <img src={walkImage} alt="" aria-hidden="true" />
           </div>
-          <span>외출하기</span>
+          <span>{busy ? "처리 중…" : "외출하기"}</span>
         </button>
       )}
       <section
