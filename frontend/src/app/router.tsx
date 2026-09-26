@@ -18,8 +18,10 @@ export const router = createBrowserRouter(
         path="/staff"
         element={<ProtectedRoute role="staff" fallback={<LoginPage role="staff" />} />}
       >
-        <Route index element={<StaffPage />} />
-        <Route path="subjects/:subjectId" element={<StaffPage />} />
+        <Route element={<StaffPage />}>
+          <Route index />
+          <Route path="subjects/:subjectId" />
+        </Route>
       </Route>
       <Route
         path="/user"
