@@ -1,6 +1,6 @@
 import type { Subject } from "../../types/monitoring";
 import { responseLabel, riskLabels } from "../../types/monitoring";
-import { formatDateTime, riskBadgeClass } from "../../utils/format";
+import { formatDateTime, riskBadgeClass, telephoneHref } from "../../utils/format";
 import Icon from "../common/Icon";
 
 export function PreviewDangerAlert({ occurredAt, onClose }: { occurredAt: string; onClose: () => void }) {
@@ -16,7 +16,7 @@ export function PreviewDangerAlert({ occurredAt, onClose }: { occurredAt: string
         <div className="min-w-0 flex-1">
           <strong className="block text-red-900">박정수님의 위험 신호가 감지되었습니다.</strong>
           <p className="mt-1 text-sm leading-5 text-stone-600">
-            장시간 활동이 확인되지 않았습니다. 즉시 안전 상태를 확인해 주세요.
+            92점 · 대상자의 안전 상태를 확인해 주세요.
           </p>
           <time className="mt-1 block text-xs text-stone-500">{formatDateTime(occurredAt)}</time>
         </div>
@@ -54,7 +54,7 @@ export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
               <th>위험 단계</th>
               <th>위험 점수</th>
               <th>최근 알림 응답</th>
-              <th>마지막 가전 활동</th>
+              <th>전화번호</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
@@ -75,8 +75,9 @@ export function PreviewSubjectTable({ subjects }: { subjects: Subject[] }) {
                 <td className="font-bold">{subject.riskScore}점</td>
                 <td>{responseLabel(subject.latestAlert?.subjectResponse)}</td>
                 <td>
-                  {formatDateTime(subject.lastActivity?.occurredAt)}
-                  <small className="block text-stone-500">{subject.lastActivity?.applianceType}</small>
+                  {subject.phone ? (
+                    <a className="text-base text-stone-600 hover:text-brand-700 hover:underline" href={telephoneHref(subject.phone)}>{subject.phone}</a>
+                  ) : "미등록"}
                 </td>
               </tr>
             ))}

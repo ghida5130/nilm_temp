@@ -1,8 +1,7 @@
-import { useState } from "react";
-import { usePowerUsageQuery, useSubjectEventsQuery } from "../../hooks/api";
+import { useSubjectEventsQuery } from "../../hooks/api";
 import { responseLabel, riskLabels } from "../../types/monitoring";
 import type { Subject } from "../../types/monitoring";
-import { formatDateTime, riskBadgeClass, telephoneHref, todayInSeoul } from "../../utils/format";
+import { formatDateTime, riskBadgeClass, telephoneHref } from "../../utils/format";
 import Icon from "../common/Icon";
 
 const cardClass = "rounded-2xl border border-stone-200 bg-white p-6 shadow-sm";
@@ -63,77 +62,6 @@ function EventHistory({ subject }: { subject: Subject }) {
   );
 }
 
-function PowerUsage({ subject }: { subject: Subject }) {
-  const [date, setDate] = useState(todayInSeoul);
-  const query = usePowerUsageQuery(subject.subjectId, date, subject.version);
-  const data = query.data;
-  const maximum = Math.max(1, ...(data?.hourlyUsage.map((bucket) => bucket.usage ?? 0) ?? []));
-  return (
-    <section className={cardClass}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-xl font-bold">
-          <Icon name="device" />
-          하루 전력 사용량
-        </h2>
-        <label className="flex items-center gap-2 text-sm font-semibold text-stone-600">
-          조회일
-          <input
-            className="rounded-lg border border-stone-300 px-3 py-2"
-            type="date"
-            value={date}
-            max={todayInSeoul()}
-            onChange={(event) => setDate(event.target.value)}
-          />
-        </label>
-      </div>
-      {query.isError && (
-        <p className="mt-4 rounded-xl bg-red-50 p-4 text-red-700" role="alert">
-          전력 사용량을 불러오지 못했습니다.{" "}
-          <button className="font-bold underline" onClick={() => void query.refetch()}>
-            다시 시도
-          </button>
-        </p>
-      )}
-      {data ? (
-        <>
-          <p className="mt-6 text-3xl font-extrabold text-stone-800">
-            {data.totalUsage.toLocaleString()}{" "}
-            <small className="text-base text-stone-500">{data.unit}</small>
-          </p>
-          <div
-            className="mt-6 flex h-44 items-end gap-1"
-            role="img"
-            aria-label={`${date} 시간별 전력 사용량`}
-          >
-            {data.hourlyUsage.map((bucket) => (
-              <div
-                className="flex h-full min-w-0 flex-1 flex-col justify-end gap-2"
-                key={bucket.hour}
-                title={`${bucket.hour}시: ${bucket.usage ?? "—"} ${data.unit}`}
-              >
-                <span
-                  className={`min-h-0 rounded-t ${bucket.status === "COMPLETE" ? "bg-brand-500" : bucket.status === "PARTIAL" ? "bg-brand-200" : "bg-stone-100"}`}
-                  style={{ height: `${Math.max(2, ((bucket.usage ?? 0) / maximum) * 100)}%` }}
-                />
-                <small className="text-center text-[10px] text-stone-400">
-                  {bucket.hour % 3 === 0 ? bucket.hour : ""}
-                </small>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-sm text-stone-500">
-            마지막 집계 {formatDateTime(data.updatedAt)}
-          </p>
-        </>
-      ) : (
-        !query.isError && (
-          <p className="py-8 text-center text-stone-500">전력 사용량을 불러오는 중입니다.</p>
-        )
-      )}
-    </section>
-  );
-}
-
 export default function SubjectDetail({ subject }: { subject: Subject }) {
   const scores = subject.riskTrend?.dailyScores ?? [];
   const maximum = Math.max(100, ...scores.map((point) => point.score));
@@ -175,8 +103,6 @@ export default function SubjectDetail({ subject }: { subject: Subject }) {
           <dl className="mt-5 divide-y divide-stone-100">
             {[
               ["위험 점수", `${subject.riskScore}점`],
-              ["최근 가전 활동", subject.lastActivity?.applianceType ?? "기록 없음"],
-              ["활동 시각", formatDateTime(subject.lastActivity?.occurredAt)],
               ["상태 갱신", formatDateTime(subject.updatedAt)],
             ].map(([term, value]) => (
               <div className="flex justify-between gap-4 py-3" key={term}>
@@ -256,7 +182,6 @@ export default function SubjectDetail({ subject }: { subject: Subject }) {
           <p className="mt-5 text-stone-500">아직 기록된 점수 추이가 없습니다.</p>
         )}
       </section>
-      <PowerUsage subject={subject} />
       <EventHistory subject={subject} />
     </div>
   );

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Risk, Subject } from "../../types/monitoring";
 import { responseLabel, riskLabels } from "../../types/monitoring";
-import { formatDateTime, riskBadgeClass } from "../../utils/format";
+import { formatDateTime, riskBadgeClass, telephoneHref } from "../../utils/format";
 import Icon from "../common/Icon";
 
 type SubjectListProps = {
@@ -70,7 +70,7 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
               <th>위험 단계</th>
               <th>위험 점수</th>
               <th>최근 알림 응답</th>
-              <th>마지막 가전 활동</th>
+              <th>전화번호</th>
               <th>상세</th>
             </tr>
           </thead>
@@ -93,10 +93,9 @@ export default function SubjectList({ subjects, loading, dataUpdatedAt }: Subjec
                 <td className="font-bold">{subject.riskScore}점</td>
                 <td>{responseLabel(subject.latestAlert?.subjectResponse)}</td>
                 <td>
-                  {formatDateTime(subject.lastActivity?.occurredAt)}
-                  <small className="block text-stone-500">
-                    {subject.lastActivity?.applianceType}
-                  </small>
+                  {subject.phone ? (
+                    <a className="text-base text-stone-600 hover:text-brand-700 hover:underline" href={telephoneHref(subject.phone)}>{subject.phone}</a>
+                  ) : "미등록"}
                 </td>
                 <td>
                   <Link
