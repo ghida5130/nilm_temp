@@ -195,6 +195,30 @@ V17은 notifications에 created_at/updated_at을 더한다. 기존 행은 응답
 이미 수정된 V2를 DB에 적용했거나 수동으로 같은 테이블을 만든 환경은
 이력과 스키마를 먼저 확인해야 한다. 자동 repair나 데이터 삭제는 하지 않는다.
 
+## 위험 판단의 소유자
+
+판단 하나에는 주인이 하나다. 두 곳이 같은 사건을 각자 판단하면 알림이 겹치고
+화면 등급이 누구의 판단인지 흐려진다.
+
+| 판단 | 소유자 | 모니터링의 처리 (`app.risk.event-routing.*`) |
+| --- | --- | --- |
+| 루틴 미사용 `ROUTINE_MISSED` | 판단에 쓰지 않음 | `SHADOW`. 저장·화면 표시만, 등급·알림 없음 |
+| 장시간 무활동 `PROLONGED_INACTIVITY` | 분석 서비스 | `IMMEDIATE:WARNING` |
+| 장시간 사용 `PROLONGED_APPLIANCE_USE` | 분석 서비스 | `IMMEDIATE:DANGER` |
+| 활동 감소 A | 모니터링 자체 평가 | 참고 점수만. 등급·알림 없음 |
+
+- 알림은 유형과 관계없이 모두 "현재 위험하신가요?"에 예/아니오 응답을 받는다
+  (`app.risk.event-routing.response-deadline-seconds` 안에 답이 없으면 무응답 처리).
+- 화면 등급(`current_risk_level`)은 이벤트 등급 슬롯에서만 온다. 자체 평가는 등급을 내지 않는다
+  (`monitoring-score-v2-A`). 이벤트 등급이 없는 동안 화면 점수는 A 참고 점수다.
+- 이벤트 등급이 이어지는 동안 타이머가 `app.risk.realert-interval`(1시간)마다 다시 알린다.
+  등급은 가전이 꺼지거나 `app.risk.event-level-max-hold`(6시간)가 지나면 해제된다.
+- 무활동은 외출 중이거나 기기가 끊겨 있던 시각의 이벤트면 알리지 않는다.
+- v1(`monitoring-score-v1-MIA`)은 M·I·A 중 최대값으로 등급을 냈다. 그때 남은
+  `assessed_risk_level`·`pending_risk_level`은 다음 평가가 지운다.
+- Gold 프로필의 `routine_baselines`는 계속 받아 저장하고 담당자 프로필 화면에 보여 준다.
+  점수 계산에는 쓰지 않는다.
+
 ## 위험 평가의 현재 입력 계약
 
 평가가 프로필과 맞대는 값은 Gold와 같은 뜻이어야 한다. 세 가지를 맞춰 두었다.
@@ -221,15 +245,12 @@ V17은 notifications에 created_at/updated_at을 더한다. 기존 행은 응답
 초(`covered_seconds`)를 함께 적는다. 스냅샷 간격이 `app.risk.observation-gap-threshold`
 (120초, 분석 서비스의 데이터 공백 기준과 같은 값)를 넘으면 그 사이는 보지 못한 구간이다.
 하루 커버리지가 `app.risk.min-observation-coverage`(0.95, Gold가 기준선 표본으로 받아들이는
-관측일의 하한과 같은 값)에 못 미치면 "오늘 한 번도 쓰지 않았다"를 확정하지 않고
-루틴 미사용(M)과 활동 감소(A)를 제외한다. 무활동(I)은 경과로 세려는 구간에 공백이 있으면
-제외한다. 제외는 0점이 아니다. 등급도 내지 않는다.
+관측일의 하한과 같은 값)에 못 미치면 활동이 적었다고 확정하지 않고 활동 감소(A)를 제외한다.
+제외는 0점이 아니다.
 
-**통합 지점.** 위 입력은 `CurrentStateProvider.of(householdId, away, now)`가 만든다.
-`RiskAssessmentService`의 `CurrentState state = currentState(subject, now);`를
-`CurrentState state = currentStates.of(subject.getHouseholdId(), subject.isAwayAt(now), now);`로
-바꾸면 세 지표가 모두 산다. 그 전까지 옛 경로는 관측 커버리지와 유효 사용을 확인할 수 없어
-M과 A를 `USAGE_UNVERIFIED`로 제외하고 무활동만 계산한다.
+**입력 경로.** 위 입력은 `CurrentStateProvider.of(householdId, away, now)`가 만든다.
+관측 커버리지와 유효 사용을 싣지 않는 옛 입력(`ActivityLedger.coarse`)으로는 A를
+`USAGE_UNVERIFIED`로 제외한다.
 
 ## 현재 동작의 한계
 
@@ -240,5 +261,5 @@ SENT는 한 개 이상의 푸시 서비스 접수 성공이며 사용자 열람�
 푸시 실패 시 이벤트는 유지되며 일반 발송 실패는 FAILED로 기록한다.
 auth_sub가 없는 대상자는 이벤트만 저장하고 알림 생성 생략 로그를 남긴다.
 관측이 끊긴 동안 켜져 있던 가전의 사용시간은 공백까지 포함해 세어져 실제보다 길어진다.
-그 구간은 커버리지가 낮아 M·A가 제외되고, 사용시간이 길어지는 방향은 위험을 낮추는 쪽이다.
+그 구간은 커버리지가 낮아 A가 제외된다.
 스냅샷 계약에 분석 측 품질·커버리지 필드가 없어 모니터링은 자기가 본 것만으로 판정한다.
