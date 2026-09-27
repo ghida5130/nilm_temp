@@ -1,5 +1,24 @@
 # Monitoring: Kafka 이벤트와 Web Push
 
+## 발표용 로컬 보고서 (Thymeleaf)
+
+`GET /reports/demo/{householdId}`에서 현재 monitoring DB의 가구별 최신 보고서를 로그인 없이 조회합니다.
+예: `http://localhost:8082/reports/demo/H001` (실제 저장된 가구 ID 사용).
+별도 권한 검사나 운영/실험 전환은 없습니다. 보안 활성화 시에도 이 GET 경로만 추가 공개합니다.
+
+- `DEMO_REPORT_DB_URL`, `DEMO_REPORT_DB_USER`, `DEMO_REPORT_DB_PASSWORD`: 생략하면 현재 `spring.datasource` 연결 설정을 사용합니다. 원격 실험 DB 기본 주소는 없습니다.
+- 보고서 조회는 읽기 전용 DataSource/JdbcTemplate을 사용합니다.
+- `infrastructure/local/compose.report-demo.yaml`은 `nilm-net`의 `postgres:5432/monitoring_db`에서 보고서를 읽습니다. 애플리케이션의 JPA/Flyway/예약 작업은 별도 `nilm_report_demo` DB를 사용합니다.
+- 로컬 이미지 `nilm-demo-report:local`과 계정 파일 `infrastructure/local/report-demo.env`를 준비한 후 `docker compose -f infrastructure/local/compose.report-demo.yaml up -d`로 실행합니다.
+- 기존 reporting 조회 뷰 5개를 읽습니다. 가구별 `period_end DESC, generated_at DESC, report_id DESC` 순으로 최신 보고서를 선택합니다.
+- 5개 쿼리는 읽기 전용 REPEATABLE READ 트랜잭션으로 실행해 화면 전체가 같은 보고서 스냅샷을 사용합니다.
+- 요약, 가전별 일일 사용량, 근거 표와 날짜별 유효/부분 평가 최대 점수 차트 하나를 표시합니다.
+- 근거 표는 `?evidencePage=0`부터 페이지당 100건씩 표시합니다. 점수 차트와 사용량 표는 보고서 전체 기간을 유지합니다.
+- 로컬 DB에서 현재 보고서가 있는 가구: [H008](http://localhost:8082/reports/demo/H008), [H009](http://localhost:8082/reports/demo/H009), [H010](http://localhost:8082/reports/demo/H010).
+- 메인 색상은 `#fb7f26`, `#ffffff`입니다. Chart.js 4.4.8을 CDN에서 불러오므로 발표 브라우저의 인터넷 연결이 필요합니다.
+- 가구 보고서가 없으면 404입니다. monitoring DB 접속 및 reporting 뷰 SELECT 권한이 필요합니다.
+- 위 주소는 monitoring-service에 직접 접속하는 주소입니다. 기존 Gateway는 `/reports/**`를 라우팅하지 않으므로 발표 시 서비스 포트 또는 별도로 설정한 프록시를 사용합니다.
+
 ## 이번 구현 범위
 
 - `analysis.event.v1`을 수신하고 JSON 필수 값과 점수 범위를 검증한다.
